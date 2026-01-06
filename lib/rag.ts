@@ -1,44 +1,112 @@
 // ============================================================================
-// RAG (Retrieval-Augmented Generation) Query Engine (LangChain Integration)
+// RAG (Retrieval-Augmented Generation) Query Engine - Advanced Hybrid Search
 // ============================================================================
 
-import { SupabaseVectorStore } from '@langchain/community/vectorstores/supabase';
 import { createServerClient } from '@/lib/supabase';
 import { embeddingsModel } from '@/lib/gemini';
-import { encode } from '@toon-format/toon';
-import type { MatchedChunk, RAGQuery, RAGResult, ChunkMetadata } from '@/types';
+import type { MatchedChunk, RAGQuery, RAGResult, ChunkMetadata, HybridSearchResult } from '@/types';
 
 // -----------------------------------------------------------------------------
 // Configuration
 // -----------------------------------------------------------------------------
 
-const DEFAULT_MATCH_THRESHOLD = 0.7;
-const DEFAULT_MATCH_COUNT = 5;
+const DEFAULT_MATCH_THRESHOLD = 0.5;  // Lower threshold for hybrid search
+const DEFAULT_MATCH_COUNT = 25;        // Get more chunks for reranking
+const FINAL_CHUNK_COUNT = 7;           // Return top 7 after processing
 
 // -----------------------------------------------------------------------------
-// Vector Store Factory
+// Hybrid Search Function (Vector + Keyword with RRF)
 // -----------------------------------------------------------------------------
 
 /**
- * Create a LangChain SupabaseVectorStore instance
+ * Perform hybrid search combining vector similarity and keyword matching
+ * Uses Reciprocal Rank Fusion (RRF) to merge results
  */
-function createVectorStore() {
+export async function hybridSearch(
+  query: string,
+  matchCount: number = DEFAULT_MATCH_COUNT
+): Promise<HybridSearchResult[]> {
   const supabase = createServerClient();
   
-  return new SupabaseVectorStore(embeddingsModel, {
-    client: supabase,
-    tableName: 'dubai_code_chunks',
-    queryName: 'match_dubai_code',
+  // Generate embedding for the query
+  const queryEmbedding = await embeddingsModel.embedQuery(query);
+  
+  // Call hybrid search RPC
+  const { data, error } = await supabase.rpc('match_dubai_code_hybrid', {
+    query_text: query,
+    query_embedding: queryEmbedding,
+    match_count: matchCount,
+    keyword_weight: 0.3,
+    vector_weight: 0.7,
+    rrf_k: 60,
   });
+
+  if (error) {
+    console.error('Hybrid search error:', error);
+    throw new Error(`Hybrid search failed: ${error.message}`);
+  }
+
+  // Transform to our type
+  return (data || []).map((item: {
+    id: number;
+    content: string;
+    metadata: ChunkMetadata;
+    vector_similarity: number;
+    keyword_rank: number;
+    hybrid_score: number;
+  }) => ({
+    id: item.id,
+    content: item.content,
+    metadata: item.metadata || {},
+    vectorSimilarity: item.vector_similarity || 0,
+    keywordRank: item.keyword_rank || 0,
+    hybridScore: item.hybrid_score || 0,
+  }));
 }
 
 // -----------------------------------------------------------------------------
-// RAG Query Function (LangChain-powered)
+// Exact Search Function (For specific section/table lookups)
 // -----------------------------------------------------------------------------
 
 /**
- * Query the Dubai Building Code using semantic search
- * Uses LangChain SupabaseVectorStore for simplified retrieval
+ * Search for exact matches (section numbers, table references, etc.)
+ */
+export async function exactSearch(
+  pattern: string,
+  matchCount: number = 10
+): Promise<MatchedChunk[]> {
+  const supabase = createServerClient();
+  
+  const { data, error } = await supabase.rpc('search_dubai_code_exact', {
+    search_pattern: pattern,
+    match_count: matchCount,
+  });
+
+  if (error) {
+    console.error('Exact search error:', error);
+    return [];
+  }
+
+  return (data || []).map((item: {
+    id: number;
+    content: string;
+    metadata: ChunkMetadata;
+    match_position: number;
+  }) => ({
+    id: item.id,
+    content: item.content,
+    metadata: item.metadata || {},
+    similarity: 1.0, // Exact match
+  }));
+}
+
+// -----------------------------------------------------------------------------
+// Main RAG Query Function (Enhanced with Hybrid Search)
+// -----------------------------------------------------------------------------
+
+/**
+ * Query the Dubai Building Code using hybrid search
+ * Combines vector similarity and keyword matching for best results
  */
 export async function queryDubaiCode(params: RAGQuery): Promise<RAGResult> {
   const { 
@@ -47,29 +115,47 @@ export async function queryDubaiCode(params: RAGQuery): Promise<RAGResult> {
     matchCount = DEFAULT_MATCH_COUNT 
   } = params;
 
-  const vectorStore = createVectorStore();
+  // Detect if query needs exact search (section numbers, etc.)
+  const needsExactSearch = /\b\d+\.\d+(\.\d+)?\b|section\s+\d+|table\s+\d+/i.test(query);
   
-  // Use LangChain similarity search with score
-  const results = await vectorStore.similaritySearchWithScore(query, matchCount);
-  
-  // Transform LangChain results to our format, filtering by threshold
-  const chunks: MatchedChunk[] = results
-    .filter(([, score]) => score >= matchThreshold)
-    .map(([doc, score], index) => ({
-      id: index + 1, // LangChain doesn't return IDs, use index
-      content: doc.pageContent,
-      metadata: {
-        page: (doc.metadata?.page as number) || 0,
-        chapter: doc.metadata?.chapter as string | undefined,
-        section: doc.metadata?.section as string | undefined,
-        tableId: doc.metadata?.tableId as string | undefined,
-        tableName: doc.metadata?.tableName as string | undefined,
-      } as ChunkMetadata,
-      similarity: score,
-    }));
+  let chunks: MatchedChunk[] = [];
 
-  // Build context string from chunks (TOON format for token efficiency)
-  const context = buildContextTOON(chunks);
+  if (needsExactSearch) {
+    // Extract the pattern and do exact search first
+    const patternMatch = query.match(/\b(\d+\.\d+(?:\.\d+)?)\b|section\s+(\d+[\.\d]*)|table\s+(\d+[-\d]*)/i);
+    if (patternMatch) {
+      const pattern = patternMatch[1] || patternMatch[2] || patternMatch[3];
+      const exactResults = await exactSearch(pattern, 5);
+      chunks.push(...exactResults);
+    }
+  }
+
+  // Always do hybrid search
+  const hybridResults = await hybridSearch(query, matchCount);
+  
+  // Convert hybrid results to MatchedChunk format
+  const hybridChunks: MatchedChunk[] = hybridResults.map(result => ({
+    id: result.id,
+    content: result.content,
+    metadata: result.metadata,
+    similarity: result.hybridScore * 10, // Normalize score
+  }));
+
+  // Merge results, avoiding duplicates
+  const seenIds = new Set(chunks.map(c => c.id));
+  for (const chunk of hybridChunks) {
+    if (!seenIds.has(chunk.id)) {
+      chunks.push(chunk);
+      seenIds.add(chunk.id);
+    }
+  }
+
+  // Sort by similarity and take top results
+  chunks.sort((a, b) => b.similarity - a.similarity);
+  chunks = chunks.slice(0, FINAL_CHUNK_COUNT);
+
+  // Build context string from chunks
+  const context = buildContext(chunks);
 
   return {
     chunks,
@@ -78,40 +164,96 @@ export async function queryDubaiCode(params: RAGQuery): Promise<RAGResult> {
 }
 
 // -----------------------------------------------------------------------------
-// Context Building (TOON Format - Token Optimized)
+// Multi-Query Search (For Query Expansion)
 // -----------------------------------------------------------------------------
 
-const MAX_CHUNK_LENGTH = 1200; // Increased for TOON efficiency
+/**
+ * Search with multiple queries and merge results using RRF
+ */
+export async function multiQuerySearch(
+  queries: string[],
+  matchCountPerQuery: number = 10
+): Promise<MatchedChunk[]> {
+  const allResults: Map<number, { chunk: MatchedChunk; ranks: number[] }> = new Map();
+
+  // Search for each query
+  for (let queryIdx = 0; queryIdx < queries.length; queryIdx++) {
+    const query = queries[queryIdx];
+    
+    try {
+      const results = await hybridSearch(query, matchCountPerQuery);
+      
+      // Track rank for each result
+      results.forEach((result, rank) => {
+        const existing = allResults.get(result.id);
+        
+        if (existing) {
+          existing.ranks.push(rank + 1); // 1-indexed rank
+        } else {
+          allResults.set(result.id, {
+            chunk: {
+              id: result.id,
+              content: result.content,
+              metadata: result.metadata,
+              similarity: result.hybridScore,
+            },
+            ranks: [rank + 1],
+          });
+        }
+      });
+    } catch (error) {
+      console.error(`Search failed for query "${query}":`, error);
+    }
+  }
+
+  // Calculate RRF score across all queries
+  const K = 60; // RRF constant
+  const scoredChunks = Array.from(allResults.values()).map(item => {
+    // RRF score = sum of 1/(k + rank) for each query
+    const rrfScore = item.ranks.reduce((sum, rank) => sum + 1 / (K + rank), 0);
+    
+    return {
+      ...item.chunk,
+      similarity: rrfScore,
+    };
+  });
+
+  // Sort by RRF score
+  scoredChunks.sort((a, b) => b.similarity - a.similarity);
+
+  return scoredChunks.slice(0, FINAL_CHUNK_COUNT);
+}
+
+// -----------------------------------------------------------------------------
+// Context Building (Clean Format for LLM)
+// -----------------------------------------------------------------------------
+
+const MAX_CHUNK_LENGTH = 1000;
 
 /**
- * Build context in TOON format for maximum token efficiency
- * Converts chunks array to compact tabular representation
+ * Build context string for LLM consumption
+ * Uses a clean, structured format with source attribution
  */
-function buildContextTOON(chunks: MatchedChunk[]): string {
+function buildContext(chunks: MatchedChunk[]): string {
   if (chunks.length === 0) {
     return '';
   }
 
-  // Convert chunks to structured data for TOON
-  const chunksData = chunks.map((chunk, index) => ({
-    id: index + 1,
-    page: chunk.metadata.page || 0,
-    section: chunk.metadata.section || '',
-    similarity: Math.round(chunk.similarity * 100) / 100,
-    content: chunk.content.length > MAX_CHUNK_LENGTH 
+  // Build structured context with clear source attribution
+  const contextParts = chunks.map((chunk, index) => {
+    const page = chunk.metadata.page || 'N/A';
+    const section = chunk.metadata.section || '';
+    const chapter = chunk.metadata.chapter || '';
+    
+    const content = chunk.content.length > MAX_CHUNK_LENGTH 
       ? chunk.content.slice(0, MAX_CHUNK_LENGTH) + '...' 
-      : chunk.content,
-  }));
+      : chunk.content;
 
-  // Encode to TOON format (saves ~40% tokens vs JSON)
-  const toonEncoded = encode({
-    source: 'Dubai Building Code 2021',
-    chunks: chunksData,
-  }, {
-    indent: 2,
-    delimiter: ',', // Use comma for compatibility
+    const header = `[SOURCE ${index + 1}] Page ${page}${section ? `, Section ${section}` : ''}${chapter ? `, ${chapter}` : ''}`;
+    
+    return `${header}\n${content}`;
   });
 
-  return `CONTEXT (TOON format - Dubai Building Code 2021):\n${toonEncoded}`;
+  return `CONTEXT FROM DUBAI BUILDING CODE 2021:\n\n${contextParts.join('\n\n---\n\n')}`;
 }
 

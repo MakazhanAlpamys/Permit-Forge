@@ -1,43 +1,56 @@
 'use server';
 
 // ============================================================================
-// Chat Server Action with Rate Limiting
+// Chat Server Action with Advanced RAG Pipeline
 // ============================================================================
 
-import { queryDubaiCode } from '@/lib/rag';
+import { queryDubaiCode, multiQuerySearch } from '@/lib/rag';
 import { generateChatResponse, COMPLIANCE_SYSTEM_PROMPT } from '@/lib/gemini';
+import { 
+  expandQuery, 
+  rerankChunks, 
+  verifyAnswer, 
+  detectQueryType 
+} from '@/lib/agents';
 import type { 
   ChatRequest, 
   ChatResponse, 
   Citation, 
   ComplianceStatus,
-  MatchedChunk 
+  MatchedChunk,
+  EnhancedCitation,
+  VerifiedAnswer
 } from '@/types';
+
+// -----------------------------------------------------------------------------
+// Configuration: Advanced RAG Pipeline
+// -----------------------------------------------------------------------------
+
+const ENABLE_QUERY_EXPANSION = true;    // Generate multiple search queries
+const ENABLE_RERANKING = true;          // AI-powered relevance scoring
+const ENABLE_VERIFICATION = true;       // Self-check for hallucinations
+const MAX_EXPANDED_QUERIES = 4;         // Max queries after expansion
+const RERANK_TOP_K = 7;                 // Keep top 7 after reranking
 
 // -----------------------------------------------------------------------------
 // Rate Limiting Configuration
 // -----------------------------------------------------------------------------
 
-const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 10; // Max 10 requests per minute
-const MIN_REQUEST_INTERVAL_MS = 2000; // Min 2 seconds between requests
+const RATE_LIMIT_WINDOW_MS = 60000;
+const MAX_REQUESTS_PER_WINDOW = 10;
+const MIN_REQUEST_INTERVAL_MS = 2000;
 
-// Simple in-memory rate limiter (use Redis in production)
 const requestLog: Map<string, number[]> = new Map();
 let lastRequestTime = 0;
 
 function checkRateLimit(clientId: string = 'default'): { allowed: boolean; retryAfter?: number } {
   const now = Date.now();
   
-  // Check minimum interval between requests
   if (now - lastRequestTime < MIN_REQUEST_INTERVAL_MS) {
     return { allowed: false, retryAfter: MIN_REQUEST_INTERVAL_MS - (now - lastRequestTime) };
   }
   
-  // Get request history for this client
   const requests = requestLog.get(clientId) || [];
-  
-  // Filter to only requests within the window
   const recentRequests = requests.filter(time => now - time < RATE_LIMIT_WINDOW_MS);
   
   if (recentRequests.length >= MAX_REQUESTS_PER_WINDOW) {
@@ -46,7 +59,6 @@ function checkRateLimit(clientId: string = 'default'): { allowed: boolean; retry
     return { allowed: false, retryAfter };
   }
   
-  // Update request log
   recentRequests.push(now);
   requestLog.set(clientId, recentRequests);
   lastRequestTime = now;
@@ -79,7 +91,7 @@ function validateMessage(message: string): { valid: boolean; error?: string } {
 }
 
 // -----------------------------------------------------------------------------
-// Main Chat Action
+// Main Chat Action with Advanced RAG Pipeline
 // -----------------------------------------------------------------------------
 
 export async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
@@ -120,36 +132,111 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
 
     const trimmedMessage = message.trim();
     
-    // Step 1: Get RAG context from Dubai Building Code
-    // Note: Using original message - AI will handle any language in the query
-    // Gemini embeddings support multilingual queries naturally
-    const ragResult = await queryDubaiCode({
-      query: trimmedMessage, // Use original message, no translation needed
-      matchThreshold: 0.70,
-      matchCount: 5,
-    });
+    console.log('🚀 Starting Advanced RAG Pipeline...');
+    console.log(`📝 Query: "${trimmedMessage}"`);
 
-    // Step 2: Generate response using Gemini (with conversation history)
+    // =========================================================================
+    // STEP 1: Query Type Detection
+    // =========================================================================
+    const queryType = detectQueryType(trimmedMessage);
+    console.log(`🔍 Query type detected: ${queryType}`);
+
+    // =========================================================================
+    // STEP 2: Query Expansion (Generate multiple search variations)
+    // =========================================================================
+    let searchQueries = [trimmedMessage];
+    
+    if (ENABLE_QUERY_EXPANSION && queryType !== 'exact') {
+      console.log('🔄 Expanding query...');
+      const expandedQueries = await expandQuery(trimmedMessage);
+      searchQueries = expandedQueries.slice(0, MAX_EXPANDED_QUERIES);
+      console.log(`✅ Generated ${searchQueries.length} query variations`);
+    }
+
+    // =========================================================================
+    // STEP 3: Hybrid Search (Vector + Keyword with RRF)
+    // =========================================================================
+    console.log('🔍 Performing hybrid search...');
+    let chunks: MatchedChunk[];
+    
+    if (searchQueries.length > 1) {
+      // Multi-query search with RRF fusion
+      chunks = await multiQuerySearch(searchQueries, 15);
+    } else {
+      // Single query hybrid search
+      const ragResult = await queryDubaiCode({
+        query: trimmedMessage,
+        matchThreshold: 0.4,  // Lower threshold for hybrid
+        matchCount: 25,       // Get more for reranking
+      });
+      chunks = ragResult.chunks;
+    }
+    
+    console.log(`✅ Found ${chunks.length} relevant chunks`);
+
+    // =========================================================================
+    // STEP 4: Re-ranking (AI-powered relevance scoring)
+    // =========================================================================
+    if (ENABLE_RERANKING && chunks.length > RERANK_TOP_K) {
+      console.log('📊 Re-ranking chunks by relevance...');
+      chunks = await rerankChunks(trimmedMessage, chunks, RERANK_TOP_K);
+      console.log(`✅ Selected top ${chunks.length} most relevant chunks`);
+    }
+
+    // =========================================================================
+    // STEP 5: Generate Answer with Citations
+    // =========================================================================
+    console.log('💬 Generating answer with citations...');
+    
+    // Build context for answer generation
+    const context = chunks.map((chunk, idx) => 
+      `[SOURCE ${idx + 1}] Page ${chunk.metadata.page}, Section: ${chunk.metadata.section || 'N/A'}, Chapter: ${chunk.metadata.chapter || 'N/A'}:\n"${chunk.content}"`
+    ).join('\n\n');
+
     const responseText = await generateChatResponse({
       systemPrompt: COMPLIANCE_SYSTEM_PROMPT,
-      userMessage: message, // Original message to detect user's language
-      context: ragResult.context, // ONLY PDF context, no TOON
-      conversationHistory, // Previous messages for context
+      userMessage: message,
+      context: context,
+      conversationHistory,
     });
 
-    // Step 3: Extract citations from matched chunks
-    const citations = extractCitations(ragResult.chunks);
+    // =========================================================================
+    // STEP 6: Answer Verification (Self-check for hallucinations)
+    // =========================================================================
+    let finalResponse = responseText;
+    let verificationResult: VerifiedAnswer | null = null;
 
-    // Step 4: Determine compliance status
-    const complianceStatus = determineComplianceStatus(responseText);
+    if (ENABLE_VERIFICATION && chunks.length > 0) {
+      console.log('✔️ Verifying answer against sources...');
+      verificationResult = await verifyAnswer(responseText, chunks, trimmedMessage);
+      
+      if (!verificationResult.isVerified && verificationResult.confidence < 50) {
+        // Low confidence - add disclaimer
+        finalResponse = responseText + '\n\n⚠️ Note: I could not fully verify all details in this response against the source documents. Please cross-reference with the official Dubai Building Code.';
+      }
+      
+      console.log(`✅ Verification complete (confidence: ${verificationResult.confidence}%)`);
+    }
+
+    // =========================================================================
+    // STEP 7: Extract Enhanced Citations
+    // =========================================================================
+    const citations = extractEnhancedCitations(chunks, verificationResult);
+
+    // =========================================================================
+    // STEP 8: Determine Compliance Status
+    // =========================================================================
+    const complianceStatus = determineComplianceStatus(finalResponse);
+
+    console.log('🎉 Advanced RAG Pipeline complete!');
 
     return {
-      message: responseText,
+      message: finalResponse,
       citations,
       complianceStatus,
     };
   } catch (error) {
-    console.error('Chat error:', error);
+    console.error('❌ Chat error:', error);
     return {
       message: 'I apologize, but I encountered an error processing your request. Please try again.',
       citations: [],
@@ -159,15 +246,30 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
 }
 
 // -----------------------------------------------------------------------------
-// Citation Extraction
+// Enhanced Citation Extraction
 // -----------------------------------------------------------------------------
 
-function extractCitations(chunks: MatchedChunk[]): Citation[] {
-  return chunks.map(chunk => ({
+function extractEnhancedCitations(
+  chunks: MatchedChunk[], 
+  verificationResult: VerifiedAnswer | null
+): Citation[] {
+  // If we have verification result with enhanced citations, use those
+  if (verificationResult?.citations && verificationResult.citations.length > 0) {
+    return verificationResult.citations.map((ec: EnhancedCitation, idx: number) => ({
+      chunkId: ec.chunkId,
+      page: ec.page,
+      section: ec.section,
+      excerpt: ec.exactQuote || ec.context.slice(0, 200),
+      similarity: ec.similarity,
+    }));
+  }
+
+  // Fallback to standard extraction
+  return chunks.slice(0, 5).map(chunk => ({
     chunkId: chunk.id,
     page: chunk.metadata.page || 0,
     section: chunk.metadata.section,
-    excerpt: truncateExcerpt(chunk.content, 150),
+    excerpt: truncateExcerpt(chunk.content, 200),
     similarity: chunk.similarity,
   }));
 }
@@ -186,7 +288,6 @@ function truncateExcerpt(text: string, maxLength: number): string {
 function determineComplianceStatus(responseText: string): ComplianceStatus {
   const lowerResponse = responseText.toLowerCase();
 
-  // Check for explicit compliance indicators
   const compliantIndicators = [
     'is compliant',
     'meets the requirement',
@@ -209,18 +310,6 @@ function determineComplianceStatus(responseText: string): ComplianceStatus {
     'insufficient',
   ];
 
-  const reviewIndicators = [
-    'requires review',
-    'needs verification',
-    'should be verified',
-    'consult with',
-    'depends on',
-    'may require',
-    'additional information needed',
-    'unclear',
-    'not enough information',
-  ];
-
   // Check for non-compliant first (most critical)
   for (const indicator of nonCompliantIndicators) {
     if (lowerResponse.includes(indicator)) {
@@ -235,6 +324,5 @@ function determineComplianceStatus(responseText: string): ComplianceStatus {
     }
   }
 
-  // Default to pending
   return 'pending';
 }

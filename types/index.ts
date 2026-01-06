@@ -71,6 +71,39 @@ export interface ChatResponse {
 }
 
 // -----------------------------------------------------------------------------
+// Enhanced RAG Types (Advanced RAG Pipeline)
+// -----------------------------------------------------------------------------
+
+export interface EnhancedCitation {
+  chunkId: number;
+  page: number;
+  section?: string;
+  chapter?: string;
+  exactQuote: string;      // Direct quote from the document
+  context: string;         // Surrounding context
+  similarity: number;      // Vector similarity score
+  confidence: number;      // Verification confidence (0-100)
+}
+
+export interface VerifiedAnswer {
+  answer: string;
+  isVerified: boolean;
+  confidence: number;
+  supportingQuotes: string[];
+  unsupportedClaims: string[];
+  citations: EnhancedCitation[];
+}
+
+export interface HybridSearchResult {
+  id: number;
+  content: string;
+  metadata: ChunkMetadata;
+  vectorSimilarity: number;
+  keywordRank: number;
+  hybridScore: number;
+}
+
+// -----------------------------------------------------------------------------
 // Chat History Types
 // -----------------------------------------------------------------------------
 
@@ -90,3 +123,23 @@ export interface IngestionResult {
   chunksProcessed: number;
   error?: string;
 }
+
+// -----------------------------------------------------------------------------
+// PDF Ingestion Types (Enhanced)
+// -----------------------------------------------------------------------------
+
+export interface PageContent {
+  pageNumber: number;
+  text: string;
+  chapter?: string;
+  sections: string[];
+}
+
+export interface EnhancedChunkMetadata extends ChunkMetadata {
+  paragraph?: number;
+  startOffset?: number;
+  endOffset?: number;
+  headings?: string[];
+  isTable?: boolean;
+}
+
