@@ -223,7 +223,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
                           key={session.id}
                           className={`
                             group relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm
-                            transition-colors cursor-pointer
+                            transition-colors cursor-pointer overflow-hidden
                             ${isActive 
                               ? 'bg-primary/10 text-primary' 
                               : 'text-muted-foreground hover:bg-muted hover:text-foreground'
@@ -232,8 +232,8 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
                           onClick={() => handleSelectSession(session.id)}
                         >
                           <MessageSquare className="h-4 w-4 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="truncate font-medium">
+                          <div className="flex-1 min-w-0 overflow-hidden">
+                            <p className="truncate font-medium text-ellipsis overflow-hidden whitespace-nowrap max-w-[140px]">
                               {session.title}
                             </p>
                             <p className="text-xs text-muted-foreground">

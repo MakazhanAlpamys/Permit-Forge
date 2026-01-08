@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { CitationsList } from './source-citation';
 import { complianceStatusConfig } from '@/lib/constants';
 import { User, Bot } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import type { ChatMessage } from '@/types';
 
 interface MessageBubbleProps {
@@ -50,8 +51,28 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           )}
 
           {/* Message Text */}
-          <div className={`text-sm leading-relaxed whitespace-pre-wrap ${isUser ? '' : 'prose prose-sm dark:prose-invert max-w-none'}`}>
-            {formatMessageContent(message.content)}
+          <div className={`text-sm leading-relaxed ${isUser ? '' : 'prose prose-sm dark:prose-invert max-w-none'}`}>
+            {isUser ? (
+              <span className="whitespace-pre-wrap">{message.content}</span>
+            ) : (
+              <ReactMarkdown
+                components={{
+                  // Customize markdown rendering
+                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                  ul: ({ children }) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
+                  ol: ({ children }) => <ol className="list-decimal ml-4 mb-2">{children}</ol>,
+                  li: ({ children }) => <li className="mb-1">{children}</li>,
+                  strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                  em: ({ children }) => <em className="italic">{children}</em>,
+                  code: ({ children }) => <code className="bg-muted px-1 py-0.5 rounded text-xs">{children}</code>,
+                  h1: ({ children }) => <h1 className="text-lg font-bold mb-2">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-base font-semibold mb-2">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-sm font-semibold mb-1">{children}</h3>,
+                }}
+              >
+                {message.content}
+              </ReactMarkdown>
+            )}
           </div>
         </div>
 
@@ -72,11 +93,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 // ============================================================================
 // Helper Functions
 // ============================================================================
-
-function formatMessageContent(content: string): string {
-  // Basic formatting - could be enhanced with markdown parsing
-  return content;
-}
 
 function formatTimestamp(date: Date): string {
   return new Intl.DateTimeFormat('en-US', {

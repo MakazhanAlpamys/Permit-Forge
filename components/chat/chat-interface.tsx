@@ -14,7 +14,8 @@ import { MessageBubble, LoadingMessage } from './message-bubble';
 import { 
   Send, 
   Sparkles,
-  RotateCcw
+  RotateCcw,
+  Square
 } from 'lucide-react';
 import type { ChatMessage } from '@/types';
 
@@ -40,10 +41,12 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
   const [isLoading, setIsLoading] = useState(false);
   const [cooldown, setCooldown] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [isCancelled, setIsCancelled] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastRequestRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isMountedRef = useRef(true);
 
   // Load messages when session changes
   useEffect(() => {
@@ -63,7 +66,9 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
 
   // Cleanup on unmount
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
@@ -105,6 +110,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       abortControllerRef.current.abort();
     }
     abortControllerRef.current = new AbortController();
+    setIsCancelled(false);
 
     // Create or use existing session
     let activeSessionId = currentSessionId;
@@ -147,8 +153,8 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
         sessionId: activeSessionId || undefined,
       });
 
-      // Check if request was aborted
-      if (abortControllerRef.current?.signal.aborted) return;
+      // Check if request was aborted or cancelled or component unmounted
+      if (abortControllerRef.current?.signal.aborted || !isMountedRef.current) return;
 
       // Create assistant message
       const assistantMessage: ChatMessage = {
@@ -160,7 +166,9 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
         timestamp: new Date(),
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      if (isMountedRef.current) {
+        setMessages(prev => [...prev, assistantMessage]);
+      }
 
       // Save assistant message to database
       if (activeSessionId) {
@@ -173,18 +181,34 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
         });
       }
     } catch (error) {
-      // Create error message
-      const errorMessage: ChatMessage = {
-        id: `error-${Date.now()}`,
-        role: 'assistant',
-        content: 'Sorry, I encountered an error while processing your request. Please try again.',
-        timestamp: new Date(),
-        complianceStatus: 'pending',
-      };
+      // Don't show error if cancelled or unmounted
+      if (!isMountedRef.current) return;
+      
+      // Create error message only if not cancelled
+      if (!isCancelled) {
+        const errorMessage: ChatMessage = {
+          id: `error-${Date.now()}`,
+          role: 'assistant',
+          content: 'Sorry, I encountered an error while processing your request. Please try again.',
+          timestamp: new Date(),
+          complianceStatus: 'pending',
+        };
 
-      setMessages(prev => [...prev, errorMessage]);
+        setMessages(prev => [...prev, errorMessage]);
+      }
       console.error('Chat error:', error);
     } finally {
+      if (isMountedRef.current) {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  // Handle stop generation
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setIsCancelled(true);
       setIsLoading(false);
     }
   };
@@ -253,14 +277,26 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
                 rows={1}
                 disabled={isLoading}
               />
-              <Button
-                onClick={() => handleSendMessage()}
-                disabled={!inputValue.trim() || isLoading}
-                size="icon"
-                className="absolute right-2 bottom-2 h-8 w-8"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
+              {isLoading ? (
+                <Button
+                  onClick={handleStopGeneration}
+                  size="icon"
+                  variant="destructive"
+                  className="absolute right-2 bottom-2 h-8 w-8"
+                  title="Stop generation"
+                >
+                  <Square className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => handleSendMessage()}
+                  disabled={!inputValue.trim()}
+                  size="icon"
+                  className="absolute right-2 bottom-2 h-8 w-8"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </div>
 
