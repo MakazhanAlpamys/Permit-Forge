@@ -10,7 +10,6 @@ import type { MatchedChunk, RAGQuery, RAGResult, ChunkMetadata, HybridSearchResu
 // Configuration
 // -----------------------------------------------------------------------------
 
-const DEFAULT_MATCH_THRESHOLD = 0.5;  // Lower threshold for hybrid search
 const DEFAULT_MATCH_COUNT = 25;        // Get more chunks for reranking
 const FINAL_CHUNK_COUNT = 7;           // Return top 7 after processing
 
@@ -27,10 +26,10 @@ export async function hybridSearch(
   matchCount: number = DEFAULT_MATCH_COUNT
 ): Promise<HybridSearchResult[]> {
   const supabase = createServerClient();
-  
+
   // Generate embedding for the query
   const queryEmbedding = await embeddingsModel.embedQuery(query);
-  
+
   // Call hybrid search RPC
   const { data, error } = await supabase.rpc('match_dubai_code_hybrid', {
     query_text: query,
@@ -76,7 +75,7 @@ export async function exactSearch(
   matchCount: number = 10
 ): Promise<MatchedChunk[]> {
   const supabase = createServerClient();
-  
+
   const { data, error } = await supabase.rpc('search_dubai_code_exact', {
     search_pattern: pattern,
     match_count: matchCount,
@@ -109,15 +108,14 @@ export async function exactSearch(
  * Combines vector similarity and keyword matching for best results
  */
 export async function queryDubaiCode(params: RAGQuery): Promise<RAGResult> {
-  const { 
-    query, 
-    matchThreshold = DEFAULT_MATCH_THRESHOLD, 
-    matchCount = DEFAULT_MATCH_COUNT 
+  const {
+    query,
+    matchCount = DEFAULT_MATCH_COUNT
   } = params;
 
   // Detect if query needs exact search (section numbers, etc.)
   const needsExactSearch = /\b\d+\.\d+(\.\d+)?\b|section\s+\d+|table\s+\d+/i.test(query);
-  
+
   let chunks: MatchedChunk[] = [];
 
   if (needsExactSearch) {
@@ -132,7 +130,7 @@ export async function queryDubaiCode(params: RAGQuery): Promise<RAGResult> {
 
   // Always do hybrid search
   const hybridResults = await hybridSearch(query, matchCount);
-  
+
   // Convert hybrid results to MatchedChunk format
   const hybridChunks: MatchedChunk[] = hybridResults.map(result => ({
     id: result.id,
@@ -179,14 +177,14 @@ export async function multiQuerySearch(
   // Search for each query
   for (let queryIdx = 0; queryIdx < queries.length; queryIdx++) {
     const query = queries[queryIdx];
-    
+
     try {
       const results = await hybridSearch(query, matchCountPerQuery);
-      
+
       // Track rank for each result
       results.forEach((result, rank) => {
         const existing = allResults.get(result.id);
-        
+
         if (existing) {
           existing.ranks.push(rank + 1); // 1-indexed rank
         } else {
@@ -211,7 +209,7 @@ export async function multiQuerySearch(
   const scoredChunks = Array.from(allResults.values()).map(item => {
     // RRF score = sum of 1/(k + rank) for each query
     const rrfScore = item.ranks.reduce((sum, rank) => sum + 1 / (K + rank), 0);
-    
+
     return {
       ...item.chunk,
       similarity: rrfScore,
@@ -244,13 +242,13 @@ function buildContext(chunks: MatchedChunk[]): string {
     const page = chunk.metadata.page || 'N/A';
     const section = chunk.metadata.section || '';
     const chapter = chunk.metadata.chapter || '';
-    
-    const content = chunk.content.length > MAX_CHUNK_LENGTH 
-      ? chunk.content.slice(0, MAX_CHUNK_LENGTH) + '...' 
+
+    const content = chunk.content.length > MAX_CHUNK_LENGTH
+      ? chunk.content.slice(0, MAX_CHUNK_LENGTH) + '...'
       : chunk.content;
 
     const header = `[SOURCE ${index + 1}] Page ${page}${section ? `, Section ${section}` : ''}${chapter ? `, ${chapter}` : ''}`;
-    
+
     return `${header}\n${content}`;
   });
 

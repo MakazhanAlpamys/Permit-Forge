@@ -1,4 +1,4 @@
-    // ============================================================================
+// ============================================================================
 // AI Agents for Advanced RAG (Query Expansion, Re-ranking, Verification)
 // ============================================================================
 
@@ -57,7 +57,7 @@ export async function expandQuery(userQuery: string): Promise<string[]> {
     ]);
 
     const content = response.content as string;
-    
+
     // Parse JSON array from response
     const jsonMatch = content.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
@@ -65,7 +65,7 @@ export async function expandQuery(userQuery: string): Promise<string[]> {
       // Always include original query first
       return [userQuery, ...queries.filter(q => q !== userQuery)].slice(0, 5);
     }
-    
+
     // Fallback: return original query
     return [userQuery];
   } catch (error) {
@@ -117,7 +117,7 @@ export async function rerankChunks(
 
   try {
     // Format chunks for the prompt
-    const chunksText = chunks.map((chunk, idx) => 
+    const chunksText = chunks.map((chunk, idx) =>
       `[CHUNK ${idx + 1}] (Page ${chunk.metadata.page}, Section: ${chunk.metadata.section || 'N/A'}):\n${chunk.content.slice(0, 500)}...`
     ).join('\n\n');
 
@@ -130,12 +130,12 @@ export async function rerankChunks(
     ]);
 
     const content = response.content as string;
-    
+
     // Parse JSON array from response
     const jsonMatch = content.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       const scores = JSON.parse(jsonMatch[0]) as RerankResult[];
-      
+
       // Map scores back to chunks and sort by score
       const scoredChunks = chunks.map((chunk, idx) => {
         const scoreObj = scores.find(s => s.id === idx + 1);
@@ -147,10 +147,10 @@ export async function rerankChunks(
 
       // Sort by rerank score and take top K
       scoredChunks.sort((a, b) => b.rerankScore - a.rerankScore);
-      
+
       // Filter out low relevance chunks (below 40)
       const relevantChunks = scoredChunks.filter(c => c.rerankScore >= 40);
-      
+
       return relevantChunks.slice(0, topK);
     }
 
@@ -210,7 +210,7 @@ export async function verifyAnswer(
 ): Promise<VerifiedAnswer> {
   try {
     // Format chunks for verification
-    const chunksText = chunks.map((chunk, idx) => 
+    const chunksText = chunks.map((chunk, idx) =>
       `[SOURCE ${idx + 1}] Page ${chunk.metadata.page}, Section: ${chunk.metadata.section || 'N/A'}:\n"${chunk.content}"`
     ).join('\n\n');
 
@@ -223,14 +223,14 @@ export async function verifyAnswer(
     ]);
 
     const content = response.content as string;
-    
+
     // Parse JSON from response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const result = JSON.parse(jsonMatch[0]) as VerificationResult;
-      
+
       // Build enhanced citations with exact quotes
-      const citations: EnhancedCitation[] = chunks.slice(0, 5).map((chunk, idx) => ({
+      const citations: EnhancedCitation[] = chunks.slice(0, 5).map((chunk) => ({
         chunkId: chunk.id,
         page: chunk.metadata.page || 0,
         section: chunk.metadata.section,
@@ -291,7 +291,7 @@ export async function verifyAnswer(
 function extractRelevantQuote(content: string, question: string): string {
   // Split into sentences
   const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
-  
+
   if (sentences.length === 0) {
     return content.slice(0, 200);
   }
@@ -309,13 +309,13 @@ function extractRelevantQuote(content: string, question: string): string {
 
   // Sort by score and take best match
   scored.sort((a, b) => b.score - a.score);
-  
+
   const bestSentence = scored[0]?.sentence || sentences[0];
-  
+
   // Return up to 2 sentences for context
   const bestIdx = sentences.findIndex(s => s.trim() === bestSentence);
   const contextSentences = sentences.slice(bestIdx, bestIdx + 2);
-  
+
   return contextSentences.join('. ').trim() + '.';
 }
 
