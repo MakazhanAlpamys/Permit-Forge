@@ -69,9 +69,25 @@ graph LR
     npm run dev
     ```
 
+### Create Users
+
+After running the database migration, create users via terminal:
+
+```bash
+npx tsx scripts/create-user.ts
+```
+
+The script will prompt for:
+- **Username** (required)
+- **Password** (required)  
+- **Full Name** (optional)
+- **Role**: `admin` or `user` (default: user)
+
 ### Initial Setup
-1.  **Ingest Data**: Log in as Admin (default: `admin` / `admin123`) and navigate to `/admin` to ingest the Dubai Building Code PDF.
-2.  **Start Chatting**: Log in as User (default: `user` / `user123`) to test the chat interface.
+1.  **Create Admin User**: Run the script above with role `admin`
+2.  **Ingest Data**: Log in as Admin and navigate to `/admin` to ingest the Dubai Building Code PDF
+3.  **Create Regular Users**: Run the script again for team members
+4.  **Start Chatting**: Log in to test the chat interface
 
 ---
 

@@ -5,9 +5,13 @@
 // Usage: npx tsx scripts/create-user.ts
 // ============================================================================
 
+import { config } from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import * as readline from 'readline';
 import bcrypt from 'bcryptjs';
+
+// Load environment variables from .env.local
+config({ path: '.env.local' });
 
 const BCRYPT_SALT_ROUNDS = 12;
 
