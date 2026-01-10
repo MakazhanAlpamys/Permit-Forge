@@ -10,8 +10,11 @@ import {
   expandQuery, 
   rerankChunks, 
   verifyAnswer, 
-  detectQueryType 
+  detectQueryType,
+  classifyTopic
 } from '@/lib/agents';
+import { createServerClient } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 import type { 
   ChatRequest, 
   ChatResponse, 
@@ -33,37 +36,50 @@ const MAX_EXPANDED_QUERIES = 4;         // Max queries after expansion
 const RERANK_TOP_K = 7;                 // Keep top 7 after reranking
 
 // -----------------------------------------------------------------------------
-// Rate Limiting Configuration
+// Rate Limiting Configuration (Supabase-based)
 // -----------------------------------------------------------------------------
 
-const RATE_LIMIT_WINDOW_MS = 60000;
+const RATE_LIMIT_WINDOW_SECONDS = 60;
 const MAX_REQUESTS_PER_WINDOW = 10;
 const MIN_REQUEST_INTERVAL_MS = 2000;
 
-const requestLog: Map<string, number[]> = new Map();
-let lastRequestTime = 0;
+interface RateLimitResult {
+  allowed: boolean;
+  retry_after_ms: number;
+  current_count: number;
+}
 
-function checkRateLimit(clientId: string = 'default'): { allowed: boolean; retryAfter?: number } {
-  const now = Date.now();
-  
-  if (now - lastRequestTime < MIN_REQUEST_INTERVAL_MS) {
-    return { allowed: false, retryAfter: MIN_REQUEST_INTERVAL_MS - (now - lastRequestTime) };
+async function checkRateLimitDB(userId: string): Promise<{ allowed: boolean; retryAfter?: number }> {
+  try {
+    const supabase = createServerClient();
+    
+    const { data, error } = await supabase.rpc('check_rate_limit', {
+      p_user_id: userId,
+      p_window_seconds: RATE_LIMIT_WINDOW_SECONDS,
+      p_max_requests: MAX_REQUESTS_PER_WINDOW,
+      p_min_interval_ms: MIN_REQUEST_INTERVAL_MS,
+    });
+
+    if (error) {
+      console.error('Rate limit check error:', error);
+      // Allow on error to not block users
+      return { allowed: true };
+    }
+
+    const result = data?.[0] as RateLimitResult | undefined;
+    
+    if (!result) {
+      return { allowed: true };
+    }
+
+    return {
+      allowed: result.allowed,
+      retryAfter: result.allowed ? undefined : result.retry_after_ms,
+    };
+  } catch (error) {
+    console.error('Rate limit error:', error);
+    return { allowed: true };
   }
-  
-  const requests = requestLog.get(clientId) || [];
-  const recentRequests = requests.filter(time => now - time < RATE_LIMIT_WINDOW_MS);
-  
-  if (recentRequests.length >= MAX_REQUESTS_PER_WINDOW) {
-    const oldestRequest = recentRequests[0];
-    const retryAfter = RATE_LIMIT_WINDOW_MS - (now - oldestRequest);
-    return { allowed: false, retryAfter };
-  }
-  
-  recentRequests.push(now);
-  requestLog.set(clientId, recentRequests);
-  lastRequestTime = now;
-  
-  return { allowed: true };
 }
 
 // -----------------------------------------------------------------------------
@@ -98,6 +114,16 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
   try {
     const { message, sessionId } = request;
 
+    // Get current user for rate limiting
+    const user = await getSession();
+    if (!user) {
+      return {
+        message: 'Please log in to use the chat.',
+        citations: [],
+        complianceStatus: 'pending',
+      };
+    }
+
     // Load conversation history if sessionId exists
     let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     if (sessionId) {
@@ -119,8 +145,8 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
       };
     }
 
-    // Rate limiting
-    const rateCheck = checkRateLimit();
+    // Rate limiting (Supabase-based)
+    const rateCheck = await checkRateLimitDB(user.id);
     if (!rateCheck.allowed) {
       const seconds = Math.ceil((rateCheck.retryAfter || 0) / 1000);
       return {
@@ -134,6 +160,32 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
     
     console.log('🚀 Starting Advanced RAG Pipeline...');
     console.log(`📝 Query: "${trimmedMessage}"`);
+
+    // =========================================================================
+    // STEP 0: Topic Classification (Skip RAG for off-topic/greetings)
+    // =========================================================================
+    console.log('🎯 Classifying topic...');
+    const topicClassification = await classifyTopic(trimmedMessage);
+    
+    if (!topicClassification.isOnTopic) {
+      console.log('❌ Off-topic query detected, responding without RAG');
+      return {
+        message: "I'm Emirate Forge, a Dubai Building Code 2021 assistant. I can help you with questions about building regulations, parking requirements, fire safety, structural requirements, and more. Feel free to ask me anything about the Dubai Building Code!",
+        citations: [],
+        complianceStatus: 'pending',
+      };
+    }
+
+    if (!topicClassification.shouldUseRAG) {
+      console.log('👋 Greeting detected, responding without RAG');
+      return {
+        message: "Hello! I'm Emirate Forge, your Dubai Building Code 2021 assistant. I can help you with:\n\n- **Parking requirements** for different building types\n- **Fire safety** regulations and exit requirements\n- **Building heights** and setback rules\n- **Structural requirements** and load specifications\n- **Accessibility** standards\n- **MEP systems** requirements\n\nJust ask me any question about the Dubai Building Code!",
+        citations: [],
+        complianceStatus: 'pending',
+      };
+    }
+
+    console.log('✅ On-topic query, proceeding with RAG pipeline');
 
     // =========================================================================
     // STEP 1: Query Type Detection

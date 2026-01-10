@@ -25,6 +25,89 @@ const agentModel = new ChatGoogleGenerativeAI({
 });
 
 // -----------------------------------------------------------------------------
+// 0. TOPIC CLASSIFIER - Check if query is about Dubai Building Code
+// -----------------------------------------------------------------------------
+
+const TOPIC_CLASSIFIER_PROMPT = `You are a query classifier for a Dubai Building Code 2021 assistant.
+
+Determine if the user's message is related to:
+- Building codes, construction, architecture
+- Parking requirements, fire safety, structural requirements
+- Building permits, regulations, compliance
+- Dubai/UAE construction standards
+- Greetings or questions about what you can help with
+
+OUTPUT FORMAT: Return ONLY one word:
+- "ON_TOPIC" if the query is about building codes, construction, or asking what you can help with
+- "OFF_TOPIC" if it's completely unrelated (cooking, sports, movies, personal questions, etc.)
+
+Examples:
+- "What are parking requirements?" → ON_TOPIC
+- "Hello" → ON_TOPIC
+- "What can you help with?" → ON_TOPIC
+- "How to make pasta?" → OFF_TOPIC
+- "Who won the world cup?" → OFF_TOPIC
+
+USER MESSAGE: `;
+
+export interface TopicClassification {
+  isOnTopic: boolean;
+  shouldUseRAG: boolean;
+}
+
+/**
+ * Quickly classify if the query is related to Dubai Building Code
+ * This saves API calls by skipping RAG for off-topic queries
+ */
+export async function classifyTopic(userQuery: string): Promise<TopicClassification> {
+  // Quick patterns that are obviously on-topic (skip LLM call)
+  const onTopicPatterns = [
+    /parking/i, /fire\s*safety/i, /building/i, /floor/i, /height/i,
+    /setback/i, /structure/i, /foundation/i, /permit/i, /code/i,
+    /section\s*\d/i, /chapter\s*\d/i, /requirement/i, /regulation/i,
+    /dubai/i, /compliance/i, /construct/i, /architect/i, /MEP/i,
+    /elevator/i, /stair/i, /exit/i, /egress/i, /ventilation/i,
+    /plumbing/i, /electrical/i, /load/i, /concrete/i, /steel/i,
+  ];
+
+  // Check if obviously on-topic
+  for (const pattern of onTopicPatterns) {
+    if (pattern.test(userQuery)) {
+      return { isOnTopic: true, shouldUseRAG: true };
+    }
+  }
+
+  // Greetings - on-topic but don't use RAG
+  const greetingPatterns = [
+    /^(hi|hello|hey|greetings|good\s*(morning|afternoon|evening))[\s!?.]*$/i,
+    /^(what can you|how can you|what do you|can you help)/i,
+    /^(help|помоги|привет|здравствуй)/i,
+  ];
+
+  for (const pattern of greetingPatterns) {
+    if (pattern.test(userQuery.trim())) {
+      return { isOnTopic: true, shouldUseRAG: false };
+    }
+  }
+
+  // Use LLM for ambiguous cases
+  try {
+    const response = await agentModel.invoke([
+      new HumanMessage(TOPIC_CLASSIFIER_PROMPT + userQuery),
+    ]);
+
+    const content = (response.content as string).trim().toUpperCase();
+    const isOnTopic = content.includes('ON_TOPIC');
+    
+    return { isOnTopic, shouldUseRAG: isOnTopic };
+  } catch (error) {
+    console.error('Topic classification error:', error);
+    // Default to on-topic to avoid blocking legitimate queries
+    return { isOnTopic: true, shouldUseRAG: true };
+  }
+}
+
+// -----------------------------------------------------------------------------
 // 1. QUERY EXPANSION - Generate multiple search variations
 // -----------------------------------------------------------------------------
 

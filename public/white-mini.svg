@@ -1,0 +1,33 @@
+<svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Фон прозрачный -->
+  <rect width="400" height="400" fill="none"/>
+  
+  <!-- Монограмма EF - F меньше с кругом -->
+  <g id="monogram" transform="translate(200, 200)">
+    <!-- Буква E основная -->
+    <text x="-30" y="20" 
+          text-anchor="middle"
+          dominant-baseline="middle"
+          font-family="'SF Mono', 'Roboto Mono', 'Courier New', monospace" 
+          font-size="180" 
+          font-weight="700" 
+          fill="#ffffff"
+          letter-spacing="0">E</text>
+    
+    <!-- Круг вокруг F -->
+    <circle cx="60" cy="-35" r="32" 
+            fill="none" 
+            stroke="#ffffff" 
+            stroke-width="5"/>
+    
+    <!-- Буква F меньше внутри круга -->
+    <text x="60" y="-35" 
+          text-anchor="middle"
+          dominant-baseline="central"
+          font-family="'SF Mono', 'Roboto Mono', 'Courier New', monospace" 
+          font-size="60" 
+          font-weight="700" 
+          fill="#ffffff"
+          letter-spacing="0">F</text>
+  </g>
+</svg>

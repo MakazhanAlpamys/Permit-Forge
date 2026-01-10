@@ -103,7 +103,7 @@ function formatTimestamp(date: Date): string {
 }
 
 // ============================================================================
-// Loading Message Component
+// Loading Message Component - Premium Skeleton Style
 // ============================================================================
 
 export function LoadingMessage() {
@@ -115,14 +115,75 @@ export function LoadingMessage() {
         </AvatarFallback>
       </Avatar>
       <div className="flex-1 max-w-[85%]">
-        <div className="rounded-2xl rounded-tl-sm bg-muted px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="flex gap-1">
-              <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce [animation-delay:-0.3s]" />
-              <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce [animation-delay:-0.15s]" />
-              <span className="w-2 h-2 bg-muted-foreground/50 rounded-full animate-bounce" />
+        <div className="rounded-2xl rounded-tl-sm bg-muted px-4 py-4 space-y-3">
+          {/* Skeleton lines - mimics text loading */}
+          <div className="space-y-2.5">
+            <div className="h-4 bg-muted-foreground/20 rounded-md w-[90%] animate-pulse" />
+            <div className="h-4 bg-muted-foreground/20 rounded-md w-[75%] animate-pulse [animation-delay:75ms]" />
+            <div className="h-4 bg-muted-foreground/20 rounded-md w-[85%] animate-pulse [animation-delay:150ms]" />
+          </div>
+          
+          {/* Skeleton for potential list items */}
+          <div className="space-y-2 pt-1">
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-3 bg-muted-foreground/20 rounded-full animate-pulse [animation-delay:200ms]" />
+              <div className="h-3.5 bg-muted-foreground/20 rounded-md w-[60%] animate-pulse [animation-delay:200ms]" />
             </div>
-            <span className="text-sm text-muted-foreground">Analyzing Dubai Building Code...</span>
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-3 bg-muted-foreground/20 rounded-full animate-pulse [animation-delay:275ms]" />
+              <div className="h-3.5 bg-muted-foreground/20 rounded-md w-[50%] animate-pulse [animation-delay:275ms]" />
+            </div>
+          </div>
+
+          {/* Status indicator */}
+          <div className="flex items-center gap-2 pt-2 border-t border-muted-foreground/10">
+            <div className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </div>
+            <span className="text-xs text-muted-foreground">Analyzing Dubai Building Code...</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Streaming Message Component - For real-time text display
+// ============================================================================
+
+interface StreamingMessageProps {
+  content: string;
+  isComplete: boolean;
+}
+
+export function StreamingMessage({ content, isComplete }: StreamingMessageProps) {
+  return (
+    <div className="flex gap-3">
+      <Avatar className="h-8 w-8 shrink-0 bg-emerald-600">
+        <AvatarFallback className="bg-emerald-600 text-white">
+          <Bot className="h-4 w-4" />
+        </AvatarFallback>
+      </Avatar>
+      <div className="flex-1 max-w-[85%]">
+        <div className="rounded-2xl rounded-tl-sm bg-muted px-4 py-3">
+          <div className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+            <ReactMarkdown
+              components={{
+                p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                ul: ({ children }) => <ul className="list-disc ml-4 mb-2">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal ml-4 mb-2">{children}</ol>,
+                li: ({ children }) => <li className="mb-1">{children}</li>,
+                strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                code: ({ children }) => <code className="bg-muted px-1 py-0.5 rounded text-xs">{children}</code>,
+              }}
+            >
+              {content}
+            </ReactMarkdown>
+            {!isComplete && (
+              <span className="inline-block w-2 h-4 bg-emerald-500 animate-pulse ml-0.5 align-middle" />
+            )}
           </div>
         </div>
       </div>

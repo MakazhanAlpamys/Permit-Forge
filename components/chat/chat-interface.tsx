@@ -1,23 +1,22 @@
 'use client';
 
 // ============================================================================
-// Chat Interface Component with Chat History Support
+// Chat Interface Component with Streaming Support
 // ============================================================================
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { sendChatMessage } from '@/actions/chat';
 import { createChatSession, saveMessageToSession, getSessionMessages } from '@/actions/chat-history';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { MessageBubble, LoadingMessage } from './message-bubble';
+import { MessageBubble, LoadingMessage, StreamingMessage } from './message-bubble';
 import { 
   Send, 
   Sparkles,
   RotateCcw,
   Square
 } from 'lucide-react';
-import type { ChatMessage } from '@/types';
+import type { ChatMessage, Citation } from '@/types';
 
 // ============================================================================
 // Anti-Spam Configuration
@@ -39,6 +38,8 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingContent, setStreamingContent] = useState('');
   const [cooldown, setCooldown] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isCancelled, setIsCancelled] = useState(false);
@@ -87,14 +88,14 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading, scrollToBottom]);
+  }, [messages, isLoading, isStreaming, streamingContent, scrollToBottom]);
 
-  // Handle sending a message with anti-spam protection
+  // Handle sending a message with streaming
   const handleSendMessage = async (messageText?: string) => {
     const text = (messageText || inputValue).trim().slice(0, MAX_MESSAGE_LENGTH);
     
     // Prevent empty or duplicate requests
-    if (!text || isLoading || cooldown) return;
+    if (!text || isLoading || isStreaming || cooldown) return;
 
     // Rate limiting check
     const now = Date.now();
@@ -136,6 +137,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     setMessages(prev => [...prev, userMessage]);
     setInputValue('');
     setIsLoading(true);
+    setStreamingContent('');
 
     // Save user message to database
     if (activeSessionId) {
@@ -147,37 +149,80 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     }
 
     try {
-      // Call the chat action with sessionId for conversation history
-      const response = await sendChatMessage({ 
-        message: text,
-        sessionId: activeSessionId || undefined,
+      // Use streaming API
+      const response = await fetch('/api/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          message: text,
+          sessionId: activeSessionId,
+        }),
+        signal: abortControllerRef.current.signal,
       });
 
-      // Check if request was aborted or cancelled or component unmounted
-      if (abortControllerRef.current?.signal.aborted || !isMountedRef.current) return;
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
 
-      // Create assistant message
+      // Switch to streaming mode
+      setIsLoading(false);
+      setIsStreaming(true);
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let fullContent = '';
+      let citations: Citation[] = [];
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          
+          // Check for citations marker
+          if (chunk.includes('__CITATIONS__')) {
+            const [textPart, citationsPart] = chunk.split('__CITATIONS__');
+            fullContent += textPart;
+            try {
+              citations = JSON.parse(citationsPart);
+            } catch {
+              // Ignore parse errors
+            }
+          } else {
+            fullContent += chunk;
+          }
+          
+          if (isMountedRef.current) {
+            setStreamingContent(fullContent);
+          }
+        }
+      }
+
+      // Check if cancelled
+      if (!isMountedRef.current || isCancelled) return;
+
+      // Create final assistant message
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: response.message,
-        citations: response.citations,
-        complianceStatus: response.complianceStatus,
+        content: fullContent,
+        citations: citations,
+        complianceStatus: 'pending',
         timestamp: new Date(),
       };
 
-      if (isMountedRef.current) {
-        setMessages(prev => [...prev, assistantMessage]);
-      }
+      setMessages(prev => [...prev, assistantMessage]);
+      setStreamingContent('');
 
       // Save assistant message to database
       if (activeSessionId) {
         await saveMessageToSession({
           sessionId: activeSessionId,
           role: 'assistant',
-          content: response.message,
-          citations: response.citations,
-          complianceStatus: response.complianceStatus,
+          content: fullContent,
+          citations: citations,
+          complianceStatus: 'pending',
         });
       }
     } catch (error) {
@@ -185,7 +230,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       if (!isMountedRef.current) return;
       
       // Create error message only if not cancelled
-      if (!isCancelled) {
+      if (!isCancelled && !(error instanceof DOMException && error.name === 'AbortError')) {
         const errorMessage: ChatMessage = {
           id: `error-${Date.now()}`,
           role: 'assistant',
@@ -200,6 +245,8 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     } finally {
       if (isMountedRef.current) {
         setIsLoading(false);
+        setIsStreaming(false);
+        setStreamingContent('');
       }
     }
   };
@@ -210,6 +257,8 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       abortControllerRef.current.abort();
       setIsCancelled(true);
       setIsLoading(false);
+      setIsStreaming(false);
+      setStreamingContent('');
     }
   };
 
@@ -230,18 +279,27 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     }
   };
 
+  // Handle selecting an example question
+  const handleSelectQuestion = (question: string) => {
+    setInputValue(question);
+    textareaRef.current?.focus();
+  };
+
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Chat Messages Area - Maximum height for more chat space */}
       <ScrollArea ref={scrollAreaRef} className="h-[calc(100vh-200px)] px-4 py-4">
-        {messages.length === 0 ? (
-          <EmptyState />
+        {messages.length === 0 && !isLoading && !isStreaming ? (
+          <EmptyState onSelectQuestion={handleSelectQuestion} />
         ) : (
           <div className="space-y-6 max-w-3xl mx-auto">
             {messages.map(message => (
               <MessageBubble key={message.id} message={message} />
             ))}
             {isLoading && <LoadingMessage />}
+            {isStreaming && streamingContent && (
+              <StreamingMessage content={streamingContent} isComplete={false} />
+            )}
           </div>
         )}
       </ScrollArea>
@@ -250,7 +308,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       <div className="border-t border-border bg-card/50 p-4">
         <div className="max-w-3xl mx-auto">
           {/* Clear Chat Button (when messages exist) */}
-          {messages.length > 0 && (
+          {messages.length > 0 && !isLoading && !isStreaming && (
             <div className="flex justify-center mb-3">
               <Button 
                 variant="ghost" 
@@ -275,9 +333,9 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
                 placeholder="Ask about Dubai Building Code compliance..."
                 className="min-h-[52px] max-h-[200px] pr-12 resize-none bg-background"
                 rows={1}
-                disabled={isLoading}
+                disabled={isLoading || isStreaming}
               />
-              {isLoading ? (
+              {(isLoading || isStreaming) ? (
                 <Button
                   onClick={handleStopGeneration}
                   size="icon"
@@ -312,10 +370,41 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
 }
 
 // ============================================================================
-// Empty State Component
+// Example Questions
 // ============================================================================
 
-function EmptyState() {
+const EXAMPLE_QUESTIONS = [
+  {
+    title: "Building Height",
+    question: "How is the maximum allowable building height determined when specific plot-limitations are not defined in the Development Control Regulations (DCR)?",
+    icon: "🏗️",
+  },
+  {
+    title: "Window-to-Wall Ratio",
+    question: "What are the specific constraints for Window-to-Wall Ratio (WWR) under the Elemental Method, and how does building orientation affect allowable glazing?",
+    icon: "🪟",
+  },
+  {
+    title: "Vertical Transportation",
+    question: "Under what conditions is a performance-based Vertical Transportation design (Method 2) mandatory instead of the prescriptive Method 1?",
+    icon: "🛗",
+  },
+  {
+    title: "Seismic Requirements",
+    question: "How does the DBC modify the seismic hazard assessment of ASCE/SEI 7-16 for Dubai, and why is the USA's 'two-thirds' factor excluded?",
+    icon: "🌍",
+  },
+];
+
+// ============================================================================
+// Empty State Component with Example Questions
+// ============================================================================
+
+interface EmptyStateProps {
+  onSelectQuestion: (question: string) => void;
+}
+
+function EmptyState({ onSelectQuestion }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center px-4">
       {/* Logo/Icon */}
@@ -327,10 +416,34 @@ function EmptyState() {
       <h2 className="text-2xl font-semibold text-foreground mb-2">
         Dubai Building Code Assistant
       </h2>
-      <p className="text-muted-foreground max-w-md">
+      <p className="text-muted-foreground max-w-md mb-8">
         Ask me anything about Dubai Building Code compliance, parking requirements, 
         fire safety, or other regulatory requirements.
       </p>
+
+      {/* Example Questions Grid */}
+      <div className="w-full max-w-2xl">
+        <p className="text-sm text-muted-foreground mb-3">Try asking:</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {EXAMPLE_QUESTIONS.map((item, index) => (
+            <button
+              key={index}
+              onClick={() => onSelectQuestion(item.question)}
+              className="group flex items-start gap-3 p-4 rounded-xl border border-border bg-card/50 hover:bg-card hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/5 transition-all duration-200 text-left"
+            >
+              <span className="text-2xl">{item.icon}</span>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm text-foreground group-hover:text-emerald-500 transition-colors">
+                  {item.title}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                  {item.question}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

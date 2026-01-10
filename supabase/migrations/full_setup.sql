@@ -4,6 +4,25 @@
 -- ============================================================================
 
 -- ============================================================================
+-- 0. DROP EXISTING TABLES (Clean slate)
+-- ============================================================================
+
+-- Drop tables in correct order (respecting foreign keys)
+DROP TABLE IF EXISTS rate_limits CASCADE;
+DROP TABLE IF EXISTS chat_messages CASCADE;
+DROP TABLE IF EXISTS chat_sessions CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS dubai_code_chunks CASCADE;
+
+-- Drop functions
+DROP FUNCTION IF EXISTS match_dubai_code CASCADE;
+DROP FUNCTION IF EXISTS search_dubai_code_keywords CASCADE;
+DROP FUNCTION IF EXISTS match_dubai_code_hybrid CASCADE;
+DROP FUNCTION IF EXISTS search_dubai_code_exact CASCADE;
+DROP FUNCTION IF EXISTS update_session_timestamp CASCADE;
+DROP FUNCTION IF EXISTS check_rate_limit CASCADE;
+
+-- ============================================================================
 -- 1. EXTENSIONS
 -- ============================================================================
 
@@ -302,7 +321,95 @@ GRANT ALL ON chat_sessions TO anon, authenticated;
 GRANT ALL ON chat_messages TO anon, authenticated;
 
 -- ============================================================================
--- 6. DEFAULT USERS (Create via application script)
+-- 6. RATE LIMITING SYSTEM
+-- ============================================================================
+
+-- Create rate_limits table to track API requests per user
+CREATE TABLE IF NOT EXISTS rate_limits (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  request_timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index for fast lookups by user and time
+CREATE INDEX IF NOT EXISTS rate_limits_user_time_idx 
+ON rate_limits(user_id, request_timestamp DESC);
+
+-- Function to check and record rate limit
+CREATE OR REPLACE FUNCTION check_rate_limit(
+  p_user_id UUID,
+  p_window_seconds INT DEFAULT 60,
+  p_max_requests INT DEFAULT 10,
+  p_min_interval_ms INT DEFAULT 2000
+)
+RETURNS TABLE (
+  allowed BOOLEAN,
+  retry_after_ms INT,
+  current_count INT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_window_start TIMESTAMP WITH TIME ZONE;
+  v_last_request TIMESTAMP WITH TIME ZONE;
+  v_request_count INT;
+  v_ms_since_last INT;
+BEGIN
+  v_window_start := NOW() - (p_window_seconds || ' seconds')::INTERVAL;
+  
+  -- Get count of requests in window and last request time
+  SELECT 
+    COUNT(*),
+    MAX(request_timestamp)
+  INTO v_request_count, v_last_request
+  FROM rate_limits
+  WHERE user_id = p_user_id
+    AND request_timestamp > v_window_start;
+  
+  -- Check minimum interval between requests
+  IF v_last_request IS NOT NULL THEN
+    v_ms_since_last := EXTRACT(EPOCH FROM (NOW() - v_last_request)) * 1000;
+    
+    IF v_ms_since_last < p_min_interval_ms THEN
+      RETURN QUERY SELECT 
+        FALSE::BOOLEAN,
+        (p_min_interval_ms - v_ms_since_last)::INT,
+        v_request_count::INT;
+      RETURN;
+    END IF;
+  END IF;
+  
+  -- Check max requests per window
+  IF v_request_count >= p_max_requests THEN
+    RETURN QUERY SELECT 
+      FALSE::BOOLEAN,
+      (p_window_seconds * 1000)::INT,
+      v_request_count::INT;
+    RETURN;
+  END IF;
+  
+  -- Request allowed - record it
+  INSERT INTO rate_limits (user_id, request_timestamp)
+  VALUES (p_user_id, NOW());
+  
+  -- Clean up old records (keep only last hour)
+  DELETE FROM rate_limits
+  WHERE user_id = p_user_id
+    AND request_timestamp < NOW() - INTERVAL '1 hour';
+  
+  RETURN QUERY SELECT 
+    TRUE::BOOLEAN,
+    0::INT,
+    (v_request_count + 1)::INT;
+END;
+$$;
+
+-- Grant permissions for rate limiting
+GRANT ALL ON rate_limits TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION check_rate_limit TO anon, authenticated;
+
+-- ============================================================================
+-- 7. DEFAULT USERS (Create via application script)
 -- ============================================================================
 -- 
 -- IMPORTANT: bcrypt hashes cannot be generated in SQL.
@@ -320,7 +427,7 @@ GRANT ALL ON chat_messages TO anon, authenticated;
 --
 
 -- ============================================================================
--- 7. VERIFICATION
+-- 8. VERIFICATION
 -- ============================================================================
 
 SELECT 
@@ -328,4 +435,5 @@ SELECT
   (SELECT COUNT(*) FROM dubai_code_chunks) AS chunks_count,
   (SELECT COUNT(*) FROM users) AS users_count,
   (SELECT COUNT(*) FROM chat_sessions) AS sessions_count,
-  (SELECT COUNT(*) FROM chat_messages) AS messages_count;
+  (SELECT COUNT(*) FROM chat_messages) AS messages_count,
+  (SELECT COUNT(*) FROM rate_limits) AS rate_limits_count;

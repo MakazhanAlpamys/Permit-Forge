@@ -4,7 +4,7 @@
 
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai';
-import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
 
 // Environment variable validation
 const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -99,7 +99,7 @@ export async function generateChatResponse(options: GeminiChatOptions): Promise<
     if (msg.role === 'user') {
       messages.push(new HumanMessage(msg.content));
     } else {
-      messages.push(new SystemMessage(`Assistant: ${msg.content}`));
+      messages.push(new AIMessage(msg.content));
     }
   }
 
