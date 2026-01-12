@@ -708,8 +708,15 @@ $$;
 -- 10. PERMISSIONS
 -- ============================================================================
 
--- Grant permissions for RAG system
-GRANT SELECT ON dubai_code_chunks TO anon, authenticated;
+-- Grant permissions for RAG system (dubai_code_chunks)
+-- SELECT: for reading chunks during RAG queries
+-- INSERT: for PDF ingestion (adding new chunks)
+-- DELETE: for clearing database before re-ingestion
+-- UPDATE: for potential future updates
+GRANT SELECT, INSERT, DELETE, UPDATE ON dubai_code_chunks TO anon, authenticated;
+GRANT USAGE, SELECT ON SEQUENCE dubai_code_chunks_id_seq TO anon, authenticated;
+
+-- Grant RPC function permissions
 GRANT EXECUTE ON FUNCTION match_dubai_code TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION search_dubai_code_keywords TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION match_dubai_code_hybrid TO anon, authenticated;
@@ -776,17 +783,35 @@ CREATE POLICY "Allow update for login" ON users
   WITH CHECK (true);
 
 -- -----------------------------------------------------------------------------
--- DUBAI_CODE_CHUNKS POLICIES (Read-only for all)
+-- DUBAI_CODE_CHUNKS POLICIES (Full access for PDF ingestion)
 -- -----------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Anyone can read chunks" ON dubai_code_chunks;
-CREATE POLICY "Anyone can read chunks" ON dubai_code_chunks
+DROP POLICY IF EXISTS "Service role manages chunks" ON dubai_code_chunks;
+DROP POLICY IF EXISTS "Allow insert chunks" ON dubai_code_chunks;
+DROP POLICY IF EXISTS "Allow delete chunks" ON dubai_code_chunks;
+DROP POLICY IF EXISTS "Allow read chunks" ON dubai_code_chunks;
+DROP POLICY IF EXISTS "Service role full access" ON dubai_code_chunks;
+
+-- SELECT: Allow everyone to read chunks (for RAG queries)
+CREATE POLICY "Allow read chunks" ON dubai_code_chunks
   FOR SELECT 
   TO anon, authenticated
   USING (true);
 
--- Service role can insert/delete chunks (for ingestion)
-DROP POLICY IF EXISTS "Service role manages chunks" ON dubai_code_chunks;
-CREATE POLICY "Service role manages chunks" ON dubai_code_chunks
+-- INSERT: Allow everyone to insert chunks (for PDF ingestion)
+CREATE POLICY "Allow insert chunks" ON dubai_code_chunks
+  FOR INSERT
+  TO anon, authenticated
+  WITH CHECK (true);
+
+-- DELETE: Allow everyone to delete chunks (for clearing database)
+CREATE POLICY "Allow delete chunks" ON dubai_code_chunks
+  FOR DELETE
+  TO anon, authenticated
+  USING (true);
+
+-- Service role has full access (bypasses RLS anyway, but explicit)
+CREATE POLICY "Service role full access" ON dubai_code_chunks
   FOR ALL
   TO service_role
   USING (true)
