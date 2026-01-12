@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback } from 'react';
-import { ingestPDF, clearChunks, getIngestionStatus, testRAGQuery } from '@/actions/ingest-pdf';
+import { clearChunks, getIngestionStatus, testRAGQuery } from '@/actions/ingest-pdf';
 import { 
   getDashboardStats, 
   getWeeklyActivity, 
@@ -55,6 +55,14 @@ interface StatusInfo {
   chunksProcessed: number;
 }
 
+interface ProgressInfo {
+  stage: string;
+  progress: number;
+  total: number;
+  message: string;
+  chunksProcessed?: number;
+}
+
 interface DiagnosticInfo {
   dbConnected: boolean;
   chunkCount: number;
@@ -91,6 +99,9 @@ export default function AdminPage() {
     rpcWorking: false,
     loading: true,
   });
+
+  // Progress state for PDF ingestion
+  const [progress, setProgress] = useState<ProgressInfo | null>(null);
 
   // Load dashboard data
   const loadDashboardData = useCallback(async () => {
@@ -158,24 +169,69 @@ export default function AdminPage() {
 
   const handleIngestPDF = async () => {
     setStatus(prev => ({ ...prev, ingestion: 'loading', message: 'Starting PDF ingestion...' }));
+    setProgress({ stage: 'starting', progress: 0, total: 100, message: 'Connecting...' });
     
     try {
-      const result = await ingestPDF();
-      
-      if (result.success) {
-        setStatus({
-          ingestion: 'success',
-          clearing: 'idle',
-          message: `Successfully ingested ${result.chunksProcessed} chunks from Dubai Building Code`,
-          chunksProcessed: result.chunksProcessed,
-        });
-      } else {
-        setStatus({
-          ingestion: 'error',
-          clearing: 'idle',
-          message: result.error || 'Unknown error occurred',
-          chunksProcessed: 0,
-        });
+      // Use streaming API for progress updates
+      const response = await fetch('/api/ingest', {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to start ingestion');
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('No response stream');
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+
+        const text = decoder.decode(value);
+        const lines = text.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              setProgress({
+                stage: data.stage,
+                progress: data.progress,
+                total: data.total,
+                message: data.message,
+                chunksProcessed: data.chunksProcessed,
+              });
+
+              if (data.done) {
+                if (data.error) {
+                  setStatus({
+                    ingestion: 'error',
+                    clearing: 'idle',
+                    message: data.error,
+                    chunksProcessed: data.chunksProcessed || 0,
+                  });
+                } else {
+                  setStatus({
+                    ingestion: 'success',
+                    clearing: 'idle',
+                    message: data.message,
+                    chunksProcessed: data.chunksProcessed || 0,
+                  });
+                }
+                setProgress(null);
+              }
+            } catch {
+              // Ignore parse errors for incomplete chunks
+            }
+          }
+        }
       }
     } catch (error) {
       setStatus({
@@ -184,6 +240,7 @@ export default function AdminPage() {
         message: error instanceof Error ? error.message : 'Failed to ingest PDF',
         chunksProcessed: 0,
       });
+      setProgress(null);
     }
   };
 
@@ -447,6 +504,27 @@ export default function AdminPage() {
                         <span>Chunk size: 800 chars | Overlap: 150 chars</span>
                       </div>
                       
+                      {/* Progress Bar */}
+                      {progress && (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">{progress.message}</span>
+                            <span className="font-medium">{progress.progress}%</span>
+                          </div>
+                          <div className="h-3 w-full bg-muted rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-primary transition-all duration-300 ease-out"
+                              style={{ width: `${progress.progress}%` }}
+                            />
+                          </div>
+                          {progress.chunksProcessed !== undefined && progress.chunksProcessed > 0 && (
+                            <p className="text-xs text-muted-foreground text-center">
+                              {progress.chunksProcessed} chunks processed
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      
                       <Button 
                         onClick={async () => {
                           await handleIngestPDF();
@@ -459,7 +537,7 @@ export default function AdminPage() {
                         {status.ingestion === 'loading' ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Processing...
+                            {progress ? `${progress.progress}% - ${progress.stage}` : 'Processing...'}
                           </>
                         ) : (
                           <>

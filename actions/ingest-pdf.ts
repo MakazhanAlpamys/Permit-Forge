@@ -320,13 +320,36 @@ export async function clearChunks(): Promise<{ success: boolean; error?: string 
   try {
     const supabase = createServerClient();
     
+    // First, check if table exists and we have access
+    const { count, error: countError } = await supabase
+      .from('dubai_code_chunks')
+      .select('*', { count: 'exact', head: true });
+    
+    if (countError) {
+      console.error('Clear chunks - access check error:', countError);
+      return { 
+        success: false, 
+        error: `Access error: ${countError.message}. Please ensure the SQL migration has been run.` 
+      };
+    }
+    
+    // If no chunks, return success
+    if (count === 0) {
+      return { success: true };
+    }
+    
+    // Delete all rows
     const { error } = await supabase
       .from('dubai_code_chunks')
       .delete()
-      .neq('id', 0); // Delete all rows
+      .gte('id', 0); // Delete all rows (gte 0 matches all positive IDs)
 
     if (error) {
-      throw new Error(error.message);
+      console.error('Clear chunks - delete error:', error);
+      return { 
+        success: false, 
+        error: `Delete error: ${error.message}` 
+      };
     }
 
     return { success: true };
@@ -355,36 +378,40 @@ export async function getIngestionStatus(): Promise<{
   try {
     const supabase = createServerClient();
     
+    // Test connection with a simple query
     const { count, error } = await supabase
       .from('dubai_code_chunks')
       .select('*', { count: 'exact', head: true });
 
     if (error) {
+      console.error('Ingestion status - DB error:', error);
       return {
         hasChunks: false,
         chunkCount: 0,
         dbConnected: false,
-        error: error.message,
+        error: `Database error: ${error.message}. Make sure to run the SQL migration.`,
       };
     }
 
-    // Get page range from metadata
-    const { data: pageData } = await supabase
-      .from('dubai_code_chunks')
-      .select('metadata')
-      .limit(1000);
-
+    // Get page range from metadata if there are chunks
     let minPage = 1;
     let maxPage = 1;
     
-    if (pageData && pageData.length > 0) {
-      const pages = pageData
-        .map(d => (d.metadata as { page?: number })?.page)
-        .filter((p): p is number => typeof p === 'number');
-      
-      if (pages.length > 0) {
-        minPage = Math.min(...pages);
-        maxPage = Math.max(...pages);
+    if (count && count > 0) {
+      const { data: pageData, error: pageError } = await supabase
+        .from('dubai_code_chunks')
+        .select('metadata')
+        .limit(1000);
+
+      if (!pageError && pageData && pageData.length > 0) {
+        const pages = pageData
+          .map(d => (d.metadata as { page?: number })?.page)
+          .filter((p): p is number => typeof p === 'number');
+        
+        if (pages.length > 0) {
+          minPage = Math.min(...pages);
+          maxPage = Math.max(...pages);
+        }
       }
     }
 
@@ -419,6 +446,29 @@ export async function testRAGQuery(): Promise<{
   try {
     const supabase = createServerClient();
     
+    // First check if table has data
+    const { count, error: countError } = await supabase
+      .from('dubai_code_chunks')
+      .select('*', { count: 'exact', head: true });
+    
+    if (countError) {
+      console.error('RAG test - count error:', countError);
+      return {
+        success: false,
+        chunksFound: 0,
+        error: `Table access error: ${countError.message}. Make sure to run the SQL migration.`,
+      };
+    }
+    
+    // If no chunks, the RPC will work but return nothing
+    if (!count || count === 0) {
+      return {
+        success: true,
+        chunksFound: 0,
+        error: 'No chunks in database. Please ingest the PDF first.',
+      };
+    }
+    
     // Create a simple test embedding (768 zeros - just for connectivity test)
     const testEmbedding = new Array(768).fill(0);
     
@@ -429,6 +479,7 @@ export async function testRAGQuery(): Promise<{
     });
 
     if (error) {
+      console.error('RAG test - RPC error:', error);
       return {
         success: false,
         chunksFound: 0,

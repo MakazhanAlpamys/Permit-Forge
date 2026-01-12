@@ -359,36 +359,58 @@ export async function adminCreateUser(data: {
     const supabase = createServerClient();
     const passwordHash = await hashPassword(password);
     
+    // Check if username already exists
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('username', username)
+      .single();
+    
+    if (existingUser) {
+      return { success: false, error: 'Username already exists' };
+    }
+    
     const { data: newUser, error } = await supabase
       .from('users')
       .insert({
         username,
         password_hash: passwordHash,
-        full_name,
-        role,
+        full_name: full_name || null,
+        role: role || 'user',
       })
       .select('id')
       .single();
     
     if (error) {
+      console.error('Create user error:', error);
       if (error.code === '23505') {
         return { success: false, error: 'Username already exists' };
       }
-      throw error;
+      return { success: false, error: `Database error: ${error.message}` };
+    }
+    
+    if (!newUser) {
+      return { success: false, error: 'Failed to create user - no data returned' };
     }
     
     // Log the action
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: admin.id,
-      action: 'user_created',
-      targetUserId: newUser.id,
-      metadata: { username, role },
-      ...metadata,
-    });
+    try {
+      const metadata = await getRequestMetadata();
+      await logAuditEvent({
+        userId: admin.id,
+        action: 'user_created',
+        targetUserId: newUser.id,
+        metadata: { username, role: role || 'user' },
+        ...metadata,
+      });
+    } catch (auditError) {
+      console.error('Audit log error:', auditError);
+      // Don't fail the operation if audit log fails
+    }
     
     return { success: true, userId: newUser.id };
   } catch (error) {
+    console.error('adminCreateUser error:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to create user' 

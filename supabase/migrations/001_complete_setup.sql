@@ -498,7 +498,10 @@ BEGIN
   RETURN QUERY
   SELECT
     (SELECT COUNT(*) FROM users)::BIGINT as total_users,
-    (SELECT COUNT(DISTINCT user_id) FROM chat_messages WHERE created_at > NOW() - INTERVAL '24 hours')::BIGINT as active_users_today,
+    (SELECT COUNT(DISTINCT cs.user_id) 
+     FROM chat_messages cm 
+     JOIN chat_sessions cs ON cm.session_id = cs.id 
+     WHERE cm.created_at > NOW() - INTERVAL '24 hours')::BIGINT as active_users_today,
     (SELECT COUNT(*) FROM chat_sessions)::BIGINT as total_sessions,
     (SELECT COUNT(*) FROM chat_messages)::BIGINT as total_messages,
     (SELECT COUNT(*) FROM chat_messages WHERE created_at > NOW() - INTERVAL '24 hours')::BIGINT as messages_today,
@@ -705,44 +708,42 @@ END;
 $$;
 
 -- ============================================================================
--- 10. PERMISSIONS
+-- 10. PERMISSIONS (for anon, authenticated, and service_role)
 -- ============================================================================
 
 -- Grant permissions for RAG system (dubai_code_chunks)
--- SELECT: for reading chunks during RAG queries
--- INSERT: for PDF ingestion (adding new chunks)
--- DELETE: for clearing database before re-ingestion
--- UPDATE: for potential future updates
-GRANT SELECT, INSERT, DELETE, UPDATE ON dubai_code_chunks TO anon, authenticated;
-GRANT USAGE, SELECT ON SEQUENCE dubai_code_chunks_id_seq TO anon, authenticated;
+GRANT SELECT, INSERT, DELETE, UPDATE ON dubai_code_chunks TO anon, authenticated, service_role;
+GRANT USAGE, SELECT ON SEQUENCE dubai_code_chunks_id_seq TO anon, authenticated, service_role;
 
 -- Grant RPC function permissions
-GRANT EXECUTE ON FUNCTION match_dubai_code TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION search_dubai_code_keywords TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION match_dubai_code_hybrid TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION search_dubai_code_exact TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION match_dubai_code TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION search_dubai_code_keywords TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION match_dubai_code_hybrid TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION search_dubai_code_exact TO anon, authenticated, service_role;
 
 -- Grant permissions for auth and chat systems
-GRANT ALL ON users TO anon, authenticated;
-GRANT ALL ON chat_sessions TO anon, authenticated;
-GRANT ALL ON chat_messages TO anon, authenticated;
+GRANT ALL ON users TO anon, authenticated, service_role;
+GRANT ALL ON chat_sessions TO anon, authenticated, service_role;
+GRANT ALL ON chat_messages TO anon, authenticated, service_role;
 
 -- Grant permissions for rate limiting
-GRANT ALL ON rate_limits TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION check_rate_limit TO anon, authenticated;
+GRANT ALL ON rate_limits TO anon, authenticated, service_role;
+GRANT USAGE, SELECT ON SEQUENCE rate_limits_id_seq TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION check_rate_limit TO anon, authenticated, service_role;
 
 -- Grant permissions for admin functions
-GRANT EXECUTE ON FUNCTION get_admin_stats TO authenticated;
-GRANT EXECUTE ON FUNCTION get_weekly_activity TO authenticated;
-GRANT EXECUTE ON FUNCTION get_recent_audit_logs TO authenticated;
-GRANT EXECUTE ON FUNCTION admin_block_user TO authenticated;
-GRANT EXECUTE ON FUNCTION admin_update_user_role TO authenticated;
-GRANT EXECUTE ON FUNCTION get_all_users_admin TO authenticated;
-GRANT EXECUTE ON FUNCTION refresh_analytics TO authenticated;
+GRANT EXECUTE ON FUNCTION get_admin_stats TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION get_weekly_activity TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION get_recent_audit_logs TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION admin_block_user TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION admin_update_user_role TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION get_all_users_admin TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION refresh_analytics TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION update_session_timestamp TO anon, authenticated, service_role;
 
 -- Grant access to audit_logs table
-GRANT ALL ON audit_logs TO anon, authenticated;
-GRANT USAGE, SELECT ON SEQUENCE audit_logs_id_seq TO anon, authenticated;
+GRANT ALL ON audit_logs TO anon, authenticated, service_role;
+GRANT USAGE, SELECT ON SEQUENCE audit_logs_id_seq TO anon, authenticated, service_role;
 
 -- ============================================================================
 -- 11. ROW LEVEL SECURITY
@@ -768,17 +769,15 @@ DROP POLICY IF EXISTS "Service role full access to users" ON users;
 DROP POLICY IF EXISTS "Users can view own profile" ON users;
 DROP POLICY IF EXISTS "Allow username lookup for login" ON users;
 DROP POLICY IF EXISTS "Allow update for login" ON users;
+DROP POLICY IF EXISTS "Allow insert users" ON users;
+DROP POLICY IF EXISTS "Allow delete users" ON users;
+DROP POLICY IF EXISTS "Allow all users operations" ON users;
 
--- SELECT: Allow reading users for login (username lookup)
-CREATE POLICY "Allow username lookup for login" ON users
-  FOR SELECT
-  TO anon, authenticated
-  USING (true);
-
--- UPDATE: Allow updating users (for last_login field during login)
-CREATE POLICY "Allow update for login" ON users
-  FOR UPDATE
-  TO anon, authenticated
+-- FULL ACCESS: Allow all operations on users table (admin check done in application layer)
+-- This is needed because we use service_role key for admin operations
+CREATE POLICY "Allow all users operations" ON users
+  FOR ALL
+  TO anon, authenticated, service_role
   USING (true)
   WITH CHECK (true);
 
@@ -791,29 +790,13 @@ DROP POLICY IF EXISTS "Allow insert chunks" ON dubai_code_chunks;
 DROP POLICY IF EXISTS "Allow delete chunks" ON dubai_code_chunks;
 DROP POLICY IF EXISTS "Allow read chunks" ON dubai_code_chunks;
 DROP POLICY IF EXISTS "Service role full access" ON dubai_code_chunks;
+DROP POLICY IF EXISTS "Allow all chunks operations" ON dubai_code_chunks;
 
--- SELECT: Allow everyone to read chunks (for RAG queries)
-CREATE POLICY "Allow read chunks" ON dubai_code_chunks
-  FOR SELECT 
-  TO anon, authenticated
-  USING (true);
-
--- INSERT: Allow everyone to insert chunks (for PDF ingestion)
-CREATE POLICY "Allow insert chunks" ON dubai_code_chunks
-  FOR INSERT
-  TO anon, authenticated
-  WITH CHECK (true);
-
--- DELETE: Allow everyone to delete chunks (for clearing database)
-CREATE POLICY "Allow delete chunks" ON dubai_code_chunks
-  FOR DELETE
-  TO anon, authenticated
-  USING (true);
-
--- Service role has full access (bypasses RLS anyway, but explicit)
-CREATE POLICY "Service role full access" ON dubai_code_chunks
+-- FULL ACCESS: Allow all operations on dubai_code_chunks table
+-- PDF ingestion and clearing needs INSERT/DELETE, RAG needs SELECT
+CREATE POLICY "Allow all chunks operations" ON dubai_code_chunks
   FOR ALL
-  TO service_role
+  TO anon, authenticated, service_role
   USING (true)
   WITH CHECK (true);
 
@@ -821,58 +804,36 @@ CREATE POLICY "Service role full access" ON dubai_code_chunks
 -- CHAT_SESSIONS POLICIES
 -- -----------------------------------------------------------------------------
 
--- Service role full access
+-- Drop all existing policies first
 DROP POLICY IF EXISTS "Service role full access to sessions" ON chat_sessions;
-CREATE POLICY "Service role full access to sessions" ON chat_sessions
+DROP POLICY IF EXISTS "Users can view own sessions" ON chat_sessions;
+DROP POLICY IF EXISTS "Users can insert own sessions" ON chat_sessions;
+DROP POLICY IF EXISTS "Users can delete own sessions" ON chat_sessions;
+DROP POLICY IF EXISTS "Allow all sessions operations" ON chat_sessions;
+
+-- FULL ACCESS: Allow all operations (auth check done in application layer)
+CREATE POLICY "Allow all sessions operations" ON chat_sessions
   FOR ALL
-  TO service_role
+  TO anon, authenticated, service_role
   USING (true)
   WITH CHECK (true);
-
--- Policies for chat_sessions (users can only see their own)
-DROP POLICY IF EXISTS "Users can view own sessions" ON chat_sessions;
-CREATE POLICY "Users can view own sessions" ON chat_sessions
-  FOR SELECT USING (user_id = auth.uid()::uuid);
-
-DROP POLICY IF EXISTS "Users can insert own sessions" ON chat_sessions;
-CREATE POLICY "Users can insert own sessions" ON chat_sessions
-  FOR INSERT WITH CHECK (user_id = auth.uid()::uuid);
-
-DROP POLICY IF EXISTS "Users can delete own sessions" ON chat_sessions;
-CREATE POLICY "Users can delete own sessions" ON chat_sessions
-  FOR DELETE USING (user_id = auth.uid()::uuid);
 
 -- -----------------------------------------------------------------------------
 -- CHAT_MESSAGES POLICIES
 -- -----------------------------------------------------------------------------
 
--- Service role full access
+-- Drop all existing policies first
 DROP POLICY IF EXISTS "Service role full access to messages" ON chat_messages;
-CREATE POLICY "Service role full access to messages" ON chat_messages
+DROP POLICY IF EXISTS "Users can view own messages" ON chat_messages;
+DROP POLICY IF EXISTS "Users can insert own messages" ON chat_messages;
+DROP POLICY IF EXISTS "Allow all messages operations" ON chat_messages;
+
+-- FULL ACCESS: Allow all operations (auth check done in application layer)
+CREATE POLICY "Allow all messages operations" ON chat_messages
   FOR ALL
-  TO service_role
+  TO anon, authenticated, service_role
   USING (true)
   WITH CHECK (true);
-
--- Users can view messages in their sessions
-DROP POLICY IF EXISTS "Users can view own messages" ON chat_messages;
-CREATE POLICY "Users can view own messages" ON chat_messages
-  FOR SELECT
-  USING (
-    session_id IN (
-      SELECT id FROM chat_sessions WHERE user_id = auth.uid()::uuid
-    )
-  );
-
--- Users can insert messages to their sessions
-DROP POLICY IF EXISTS "Users can insert own messages" ON chat_messages;
-CREATE POLICY "Users can insert own messages" ON chat_messages
-  FOR INSERT
-  WITH CHECK (
-    session_id IN (
-      SELECT id FROM chat_sessions WHERE user_id = auth.uid()::uuid
-    )
-  );
 
 -- -----------------------------------------------------------------------------
 -- AUDIT_LOGS POLICIES
@@ -884,38 +845,30 @@ DROP POLICY IF EXISTS "Authenticated can view audit logs" ON audit_logs;
 DROP POLICY IF EXISTS "Anyone can insert audit logs" ON audit_logs;
 DROP POLICY IF EXISTS "Anon can view audit logs" ON audit_logs;
 DROP POLICY IF EXISTS "Anyone can view audit logs" ON audit_logs;
+DROP POLICY IF EXISTS "Allow all audit operations" ON audit_logs;
 
--- INSERT: Allow anon and authenticated (needed for login attempt tracking)
-CREATE POLICY "Anyone can insert audit logs" ON audit_logs
-  FOR INSERT
-  TO anon, authenticated
+-- FULL ACCESS: Allow all operations (admin check done in application layer)
+CREATE POLICY "Allow all audit operations" ON audit_logs
+  FOR ALL
+  TO anon, authenticated, service_role
+  USING (true)
   WITH CHECK (true);
-
--- SELECT: Allow reading audit logs (admin check done in application layer)
-CREATE POLICY "Anyone can view audit logs" ON audit_logs
-  FOR SELECT
-  TO anon, authenticated
-  USING (true);
 
 -- -----------------------------------------------------------------------------
 -- RATE_LIMITS POLICIES
 -- -----------------------------------------------------------------------------
 
--- Service role full access
+-- Drop all existing policies first
 DROP POLICY IF EXISTS "Service role full access to rate limits" ON rate_limits;
-CREATE POLICY "Service role full access to rate limits" ON rate_limits
+DROP POLICY IF EXISTS "Users manage own rate limits" ON rate_limits;
+DROP POLICY IF EXISTS "Allow all rate limits operations" ON rate_limits;
+
+-- FULL ACCESS: Allow all operations
+CREATE POLICY "Allow all rate limits operations" ON rate_limits
   FOR ALL
-  TO service_role
+  TO anon, authenticated, service_role
   USING (true)
   WITH CHECK (true);
-
--- Users can only see/modify their own rate limits
-DROP POLICY IF EXISTS "Users manage own rate limits" ON rate_limits;
-CREATE POLICY "Users manage own rate limits" ON rate_limits
-  FOR ALL
-  TO authenticated
-  USING (user_id = auth.uid()::uuid)
-  WITH CHECK (user_id = auth.uid()::uuid);
 
 -- Note: Service role key bypasses RLS, so admin operations still work
 

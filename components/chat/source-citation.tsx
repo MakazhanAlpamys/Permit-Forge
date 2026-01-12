@@ -5,7 +5,6 @@
 // ============================================================================
 
 import { useState } from 'react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { 
   ChevronDown, 
@@ -21,16 +20,6 @@ interface SourceCitationProps {
 
 function SourceCitation({ citation, index }: SourceCitationProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-
-  const similarityPercent = Math.round(citation.similarity * 100);
-  
-  // Determine similarity color based on score
-  const getSimilarityColor = (score: number) => {
-    if (score >= 0.85) return 'bg-green-500/20 text-green-400 border-green-500/30';
-    if (score >= 0.75) return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-    if (score >= 0.65) return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-    return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
-  };
 
   return (
     <div className="border border-border rounded-lg overflow-hidden bg-card/50">
@@ -49,12 +38,6 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <Badge 
-            variant="outline" 
-            className={`text-xs ${getSimilarityColor(citation.similarity)}`}
-          >
-            {similarityPercent}% match
-          </Badge>
           {isExpanded ? (
             <ChevronUp className="h-4 w-4 text-muted-foreground" />
           ) : (
@@ -101,7 +84,7 @@ export function CitationsList({ citations }: CitationsListProps) {
       <div className="space-y-1.5">
         {displayedCitations.map((citation, index) => (
           <SourceCitation 
-            key={citation.chunkId} 
+            key={`${citation.chunkId}-${index}`} 
             citation={citation} 
             index={index} 
           />

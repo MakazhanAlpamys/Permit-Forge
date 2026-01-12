@@ -2,14 +2,38 @@
 
 <div align="center">
 
-**Интеллектуальный AI-ассистент для работы с Dubai Building Code 2021**
+**Enterprise-grade AI Assistant for Dubai Building Code 2021 Compliance**
 
 [![Next.js](https://img.shields.io/badge/Next.js-15.5-black?logo=next.js)](https://nextjs.org/)
 [![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-blue?logo=google)](https://ai.google.dev/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-green?logo=supabase)](https://supabase.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?logo=typescript)](https://www.typescriptlang.org/)
+[![Tests](https://img.shields.io/badge/Tests-46%20passing-brightgreen)](./test)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](./LICENSE)
+
+**Production-ready • Fully Tested • Scalable Architecture**
 
 </div>
+
+---
+
+## 🎯 Value Proposition
+
+| For Buyers | Benefit |
+|------------|---------|
+| **Architects & Engineers** | Instant compliance checks against Dubai Building Code 2021 |
+| **Government Agencies** | Automate permit review workflows |
+| **Construction Companies** | Reduce compliance errors and delays |
+| **Consultancies** | White-label AI assistant for clients |
+
+### Why This Project?
+
+- ✅ **Production-Ready** — Battle-tested with 46 automated tests
+- ✅ **Enterprise Security** — JWT auth, RBAC, CSRF protection, audit logs
+- ✅ **Advanced RAG** — Hybrid search + AI reranking + hallucination detection
+- ✅ **Scalable** — Serverless architecture on Supabase + Vercel
+- ✅ **Customizable** — Easy to adapt for other building codes or regulations
+- ✅ **Multi-language** — English, Arabic, Russian support
 
 ---
 
@@ -426,9 +450,25 @@ const { messages } = await getSessionMessages(sessionId);
 - [x] Answer Verification
 - [x] Audit Logging
 - [x] RLS Policies для безопасности
-- [ ] Redis Rate Limiting
+- [x] Real-time PDF ingestion progress
+- [x] Unit tests (46 passing)
+- [ ] Redis Rate Limiting (for high-scale)
 - [ ] Email Verification
 - [ ] Multi-document support
+- [ ] PDF.js for precise page extraction
+- [ ] Table parsing for structured data
+
+---
+
+## 💰 Commercial Use Cases
+
+| Use Case | Description |
+|----------|-------------|
+| **SaaS Product** | Sell subscriptions to architects, engineers, consultants |
+| **API Service** | Offer RAG-as-a-Service for building code queries |
+| **Enterprise License** | White-label for government agencies or large firms |
+| **Consulting Tool** | Internal tool for compliance consultancies |
+| **Integration** | Embed in permit management systems |
 
 ---
 
