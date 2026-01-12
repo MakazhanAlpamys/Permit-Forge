@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { cookies, headers } from 'next/headers';
-import { createServerClient, createPublicClient } from './supabase';
+import { createPublicClient } from './supabase';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { SignJWT, jwtVerify } from 'jose';
