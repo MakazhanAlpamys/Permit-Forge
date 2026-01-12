@@ -756,27 +756,24 @@ ALTER TABLE dubai_code_chunks ENABLE ROW LEVEL SECURITY;
 -- -----------------------------------------------------------------------------
 -- Service role bypasses RLS automatically, but we need policies for app access
 
--- Allow service role full access (for scripts and server actions)
+-- Drop all existing policies first
 DROP POLICY IF EXISTS "Service role full access to users" ON users;
-CREATE POLICY "Service role full access to users" ON users
-  FOR ALL 
-  TO service_role
-  USING (true) 
-  WITH CHECK (true);
-
--- Allow authenticated users to read their own data
 DROP POLICY IF EXISTS "Users can view own profile" ON users;
-CREATE POLICY "Users can view own profile" ON users
-  FOR SELECT 
-  TO authenticated
-  USING (id = auth.uid()::uuid);
-
--- Allow anon/authenticated to read for login (username lookup)
 DROP POLICY IF EXISTS "Allow username lookup for login" ON users;
+DROP POLICY IF EXISTS "Allow update for login" ON users;
+
+-- SELECT: Allow reading users for login (username lookup)
 CREATE POLICY "Allow username lookup for login" ON users
   FOR SELECT
   TO anon, authenticated
   USING (true);
+
+-- UPDATE: Allow updating users (for last_login field during login)
+CREATE POLICY "Allow update for login" ON users
+  FOR UPDATE
+  TO anon, authenticated
+  USING (true)
+  WITH CHECK (true);
 
 -- -----------------------------------------------------------------------------
 -- DUBAI_CODE_CHUNKS POLICIES (Read-only for all)
@@ -856,27 +853,24 @@ CREATE POLICY "Users can insert own messages" ON chat_messages
 -- AUDIT_LOGS POLICIES
 -- -----------------------------------------------------------------------------
 
--- Service role full access (for logging)
+-- Drop all existing policies first
 DROP POLICY IF EXISTS "Service role full access to audit logs" ON audit_logs;
-CREATE POLICY "Service role full access to audit logs" ON audit_logs
-  FOR ALL
-  TO service_role
-  USING (true)
-  WITH CHECK (true);
-
--- Admins can view all audit logs (checked in application layer)
 DROP POLICY IF EXISTS "Authenticated can view audit logs" ON audit_logs;
-CREATE POLICY "Authenticated can view audit logs" ON audit_logs
-  FOR SELECT
-  TO authenticated
-  USING (true);
-
--- Anyone can insert audit logs (for login attempts)
 DROP POLICY IF EXISTS "Anyone can insert audit logs" ON audit_logs;
+DROP POLICY IF EXISTS "Anon can view audit logs" ON audit_logs;
+DROP POLICY IF EXISTS "Anyone can view audit logs" ON audit_logs;
+
+-- INSERT: Allow anon and authenticated (needed for login attempt tracking)
 CREATE POLICY "Anyone can insert audit logs" ON audit_logs
   FOR INSERT
   TO anon, authenticated
   WITH CHECK (true);
+
+-- SELECT: Allow reading audit logs (admin check done in application layer)
+CREATE POLICY "Anyone can view audit logs" ON audit_logs
+  FOR SELECT
+  TO anon, authenticated
+  USING (true);
 
 -- -----------------------------------------------------------------------------
 -- RATE_LIMITS POLICIES

@@ -280,6 +280,7 @@ JWT_SECRET=your_super_secret_jwt_key_minimum_32_chars
 - Row Level Security (RLS) политики
 - **Дефолтный админ**: `admin` / `Admin123!`
 
+
 ### 4. Запуск
 
 ```bash
@@ -334,10 +335,13 @@ permitai/
 │
 ├── types/index.ts           # TypeScript типы
 ├── middleware.ts            # Auth middleware
-└── supabase/migrations/     # SQL миграции
+├── supabase/migrations/     # SQL миграции
+└── scripts/                 # Утилиты
+    └── test-*.js            # Тестовые скрипты
 ```
 
 ---
+
 
 ## 🔒 Безопасность
 
@@ -421,6 +425,7 @@ const { messages } = await getSessionMessages(sessionId);
 - [x] Hybrid Search (Vector + FTS)
 - [x] Answer Verification
 - [x] Audit Logging
+- [x] RLS Policies для безопасности
 - [ ] Redis Rate Limiting
 - [ ] Email Verification
 - [ ] Multi-document support

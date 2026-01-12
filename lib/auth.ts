@@ -268,9 +268,10 @@ interface AuditLogEntry {
 
 export async function logAuditEvent(entry: AuditLogEntry): Promise<void> {
   try {
-    const supabase = createServerClient();
+    // Use public client for audit logging - RLS allows insert for anon/authenticated
+    const supabase = createPublicClient();
     
-    await supabase.from('audit_logs').insert({
+    const { error } = await supabase.from('audit_logs').insert({
       user_id: entry.userId,
       action: entry.action,
       target_user_id: entry.targetUserId,
@@ -278,6 +279,11 @@ export async function logAuditEvent(entry: AuditLogEntry): Promise<void> {
       ip_address: entry.ipAddress,
       user_agent: entry.userAgent,
     });
+    
+    if (error) {
+      // Log to console but don't fail the main operation
+      console.error('Audit log insert failed:', error.message);
+    }
   } catch (error) {
     // Log to console but don't fail the main operation
     console.error('Failed to log audit event:', error);
