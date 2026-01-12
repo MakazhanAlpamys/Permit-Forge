@@ -10,7 +10,7 @@ import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages
 const geminiApiKey = process.env.GEMINI_API_KEY;
 
 if (!geminiApiKey) {
-  throw new Error('Missing GEMINI_API_KEY environment variable');
+  throw new Error('Configuration error: GEMINI_API_KEY environment variable is missing. Please set it in your .env file with a valid Google AI API key.');
 }
 
 // -----------------------------------------------------------------------------

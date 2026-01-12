@@ -21,8 +21,11 @@ const BCRYPT_SALT_ROUNDS = 12;
 // Get JWT secret as Uint8Array for jose
 function getJWTSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET;
-  if (!secret || secret.length < 32) {
-    throw new Error('JWT_SECRET must be at least 32 characters');
+  if (!secret) {
+    throw new Error('Configuration error: JWT_SECRET environment variable is missing. Please set JWT_SECRET in your .env file.');
+  }
+  if (secret.length < 32) {
+    throw new Error('Configuration error: JWT_SECRET must be at least 32 characters long.');
   }
   return new TextEncoder().encode(secret);
 }
@@ -91,8 +94,9 @@ export async function verifyJWTToken(token: string): Promise<JWTPayload | null> 
     }
     
     return result.data;
-  } catch {
-    // Token is invalid or expired
+  } catch (error) {
+    // Log the actual error for debugging
+    console.error('JWT verification failed:', error instanceof Error ? error.message : 'Unknown error');
     return null;
   }
 }
@@ -138,7 +142,8 @@ export async function getSessionFromToken(): Promise<JWTPayload | null> {
     if (!token) return null;
     
     return verifyJWTToken(token);
-  } catch {
+  } catch (error) {
+    console.error('Session token retrieval failed:', error instanceof Error ? error.message : 'Unknown error');
     return null;
   }
 }
@@ -170,7 +175,8 @@ export async function getSession(): Promise<User | null> {
       full_name: user.full_name,
       role: user.role as 'admin' | 'user',
     };
-  } catch {
+  } catch (error) {
+    console.error('Session retrieval failed:', error instanceof Error ? error.message : 'Unknown error');
     return null;
   }
 }
@@ -233,7 +239,8 @@ export async function validateCSRFToken(token: string): Promise<boolean> {
       Buffer.from(storedToken),
       Buffer.from(token)
     );
-  } catch {
+  } catch (error) {
+    console.error('CSRF validation failed:', error instanceof Error ? error.message : 'Invalid token format');
     return false;
   }
 }

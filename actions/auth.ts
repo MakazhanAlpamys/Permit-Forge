@@ -105,8 +105,9 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
       ...metadata,
     });
 
-  } catch {
-    return { error: 'An error occurred during login' };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'An error occurred during login';
+    return { error: `Login failed: ${errorMessage}` };
   }
 
   redirect('/');
@@ -188,8 +189,9 @@ export async function createUserAction(data: {
     });
 
     return { success: true, userId: newUser.id };
-  } catch {
-    return { success: false, error: 'Failed to create user' };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: `Failed to create user: ${errorMessage}` };
   }
 }
 
@@ -265,8 +267,9 @@ export async function changeOwnPasswordAction(data: {
     });
 
     return { success: true };
-  } catch {
-    return { success: false, error: 'Failed to change password' };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, error: `Failed to change password: ${errorMessage}` };
   }
 }
 

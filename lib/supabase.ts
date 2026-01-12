@@ -10,7 +10,7 @@ const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
 if (!supabaseUrl) {
-  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable');
+  throw new Error('Configuration error: NEXT_PUBLIC_SUPABASE_URL environment variable is missing. Please set it in your .env file.');
 }
 
 // -----------------------------------------------------------------------------
@@ -21,7 +21,7 @@ let publicClient: SupabaseClient | null = null;
 
 export function createPublicClient(): SupabaseClient {
   if (!supabaseAnonKey) {
-    throw new Error('Missing SUPABASE_ANON_KEY environment variable');
+    throw new Error('Configuration error: SUPABASE_ANON_KEY environment variable is missing. Please set it in your .env file.');
   }
   
   if (!publicClient) {
@@ -45,7 +45,7 @@ let serverClient: SupabaseClient | null = null;
 
 export function createServerClient(): SupabaseClient {
   if (!supabaseServiceRoleKey) {
-    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable');
+    throw new Error('Configuration error: SUPABASE_SERVICE_ROLE_KEY environment variable is missing. Please set it in your .env file.');
   }
   
   if (!serverClient) {
@@ -86,7 +86,7 @@ export async function checkRateLimit(userId: string): Promise<RateLimitResult> {
     });
 
     if (error) {
-      console.error('Rate limit check error:', error);
+      console.error('Rate limit check error:', error.message || error);
       // IMPORTANT: On error, deny the request (fail-safe)
       return { allowed: false, retryAfterMs: 5000 };
     }
@@ -104,7 +104,7 @@ export async function checkRateLimit(userId: string): Promise<RateLimitResult> {
       currentCount: result.current_count,
     };
   } catch (error) {
-    console.error('Rate limit error:', error);
+    console.error('Rate limit error:', error instanceof Error ? error.message : error);
     // IMPORTANT: On error, deny the request (fail-safe)
     return { allowed: false, retryAfterMs: 5000 };
   }

@@ -42,7 +42,7 @@ export async function hybridSearch(
 
   if (error) {
     console.error('Hybrid search error:', error);
-    throw new Error(`Hybrid search failed: ${error.message}`);
+    throw new Error(`Hybrid search failed: ${error.message}. Check if the match_dubai_code_hybrid RPC function exists in your database.`);
   }
 
   // Transform to our type
@@ -82,7 +82,7 @@ async function exactSearch(
   });
 
   if (error) {
-    console.error('Exact search error:', error);
+    console.error('Exact search RPC error:', error.message || error);
     return [];
   }
 
@@ -200,7 +200,7 @@ export async function multiQuerySearch(
         }
       });
     } catch (error) {
-      console.error(`Search failed for query "${query}":`, error);
+      console.error(`Search failed for query "${query}":`, error instanceof Error ? error.message : error);
     }
   }
 

@@ -302,10 +302,12 @@ export async function ingestPDF(): Promise<IngestionResult> {
       chunksProcessed: processedCount,
     };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('PDF ingestion error:', errorMessage);
     return {
       success: false,
       chunksProcessed: 0,
-      error: error instanceof Error ? error.message : 'Unknown error occurred',
+      error: `PDF ingestion failed: ${errorMessage}`,
     };
   }
 }
@@ -329,9 +331,11 @@ export async function clearChunks(): Promise<{ success: boolean; error?: string 
 
     return { success: true };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Clear chunks error:', errorMessage);
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
+      error: `Failed to clear chunks: ${errorMessage}` 
     };
   }
 }
@@ -390,12 +394,14 @@ export async function getIngestionStatus(): Promise<{
       dbConnected: true,
       pageRange: { min: minPage, max: maxPage },
     };
-  } catch {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Ingestion status check failed:', errorMessage);
     return { 
       hasChunks: false, 
       chunkCount: 0, 
       dbConnected: false,
-      error: 'Connection failed'
+      error: `Database connection failed: ${errorMessage}`
     };
   }
 }
@@ -442,10 +448,12 @@ export async function testRAGQuery(): Promise<{
       } : undefined,
     };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'RPC test failed';
+    console.error('RAG test query error:', errorMessage);
     return {
       success: false,
       chunksFound: 0,
-      error: error instanceof Error ? error.message : 'RPC test failed',
+      error: `RAG test failed: ${errorMessage}`,
     };
   }
 }

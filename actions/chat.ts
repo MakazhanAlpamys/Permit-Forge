@@ -218,9 +218,10 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
       citations,
       complianceStatus,
     };
-  } catch {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return {
-      message: 'I apologize, but I encountered an error processing your request. Please try again.',
+      message: `Error processing request: ${errorMessage}. Please check your configuration and try again.`,
       citations: [],
       complianceStatus: 'pending',
     };
