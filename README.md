@@ -429,10 +429,12 @@ const { messages } = await getSessionMessages(sessionId);
 
 ## 📄 License
 
-Proprietary - Emirate Forge Team
+MIT License © 2026 Makazhan Alpamys
 
 ---
 
 <div align="center">
   <sub>Built with ❤️ using Next.js, Gemini AI, and Supabase</sub>
+  <br>
+  <sub>Author: <strong>Makazhan Alpamys</strong></sub>
 </div>
