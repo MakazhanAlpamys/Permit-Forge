@@ -37,13 +37,13 @@
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        FRONTEND                             │
-│  Next.js 15 (App Router) + React 18 + Tailwind CSS 4       │
+│  Next.js 15 (App Router) + React 18 + Tailwind CSS 4        │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      SERVER ACTIONS                         │
-│  auth.ts │ chat.ts │ chat-history.ts │ admin.ts │ ingest   │
+│  auth.ts │ chat.ts │ chat-history.ts │ admin.ts │ ingest    │
 └─────────────────────────────────────────────────────────────┘
                               │
           ┌───────────────────┼───────────────────┐
@@ -58,14 +58,14 @@
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                       SUPABASE                              │
-│  PostgreSQL + pgvector (768 dims) + Full-Text Search       │
-│  Tables: users, dubai_code_chunks, chat_sessions, etc.     │
+│  PostgreSQL + pgvector (768 dims) + Full-Text Search        │
+│  Tables: users, dubai_code_chunks, chat_sessions, etc.      │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      GOOGLE GEMINI                          │
-│  gemini-2.5-flash (Chat) + text-embedding-004 (Vectors)    │
+│  gemini-2.5-flash (Chat) + text-embedding-004 (Vectors)     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -224,7 +224,7 @@ const verified = await verifyAnswer(answer, chunks, question);
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  chat_sessions  │────▶│  chat_messages  │────▶│    citations    │
+│  chat_sessions  │────▶│  chat_messages  │───▶│    citations    │
 │                 │     │                 │     │   (JSONB)       │
 │  id, user_id    │     │  session_id     │     │                 │
 │  title          │     │  role (user/ai) │     │  page, section  │
@@ -248,8 +248,8 @@ const verified = await verifyAnswer(answer, chunks, question);
 ### 1. Клонирование и установка
 
 ```bash
-git clone https://github.com/your-repo/emirate-forge.git
-cd emirate-forge
+git clone https://github.com/MakazhanAlpamys/Emirate-Forge.git
+cd Emirate-Forge
 npm install
 ```
 
@@ -278,20 +278,9 @@ JWT_SECRET=your_super_secret_jwt_key_minimum_32_chars
 - pgvector extension для векторного поиска
 - RPC функции: `match_dubai_code_hybrid`, `search_dubai_code_exact`, и др.
 - Row Level Security (RLS) политики
+- **Дефолтный админ**: `admin` / `Admin123!`
 
-### 4. Создание пользователей
-
-```bash
-npm run create-user
-```
-
-Скрипт спросит:
-- **Username** (обязательно)
-- **Password** (обязательно, мин. 6 символов)
-- **Full Name** (опционально)
-- **Role**: `admin` или `user`
-
-### 5. Запуск
+### 4. Запуск
 
 ```bash
 # Development
@@ -302,12 +291,13 @@ npm run build
 npm start
 ```
 
-### 6. Первоначальная настройка
+### 5. Первоначальная настройка
 
-1. Войдите как **admin** → `/login`
-2. Перейдите в **Admin Panel** → `/admin`
-3. Выберите вкладку **PDF Management**
-4. Нажмите **Ingest Dubai Code** (PDF должен быть в `public/dubai-code.pdf`)
+1. Войдите как **admin** → `/login` (логин: `admin`, пароль: `Admin123!`)
+2. **⚠️ Смените пароль!** (в User Management)
+3. Перейдите в **Admin Panel** → `/admin`
+4. Выберите вкладку **PDF Management**
+5. Нажмите **Ingest Dubai Code** (PDF должен быть в `public/dubai-code.pdf`)
 5. Дождитесь завершения (~5-10 минут для большого PDF)
 
 ---
@@ -434,7 +424,6 @@ const { messages } = await getSessionMessages(sessionId);
 - [ ] Redis Rate Limiting
 - [ ] Email Verification
 - [ ] Multi-document support
-- [ ] Mobile App (React Native)
 
 ---
 

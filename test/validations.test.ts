@@ -5,7 +5,6 @@ import {
   chatMessageSchema, 
   uuidSchema,
   paginationSchema,
-  envSchema 
 } from '@/lib/validations';
 
 describe('Validation Schemas', () => {
@@ -198,34 +197,4 @@ describe('Validation Schemas', () => {
     });
   });
 
-  // ============================================================================
-  // Environment Schema Tests
-  // ============================================================================
-  describe('envSchema', () => {
-    it('should accept valid environment variables', () => {
-      const validEnv = {
-        NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
-        SUPABASE_SERVICE_ROLE_KEY: 'some-service-key',
-        SUPABASE_ANON_KEY: 'some-anon-key',
-        GEMINI_API_KEY: 'some-gemini-key',
-        JWT_SECRET: 'a'.repeat(32),
-      };
-      
-      const result = envSchema.safeParse(validEnv);
-      expect(result.success).toBe(true);
-    });
-
-    it('should reject JWT_SECRET under 32 characters', () => {
-      const invalidEnv = {
-        NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
-        SUPABASE_SERVICE_ROLE_KEY: 'some-service-key',
-        SUPABASE_ANON_KEY: 'some-anon-key',
-        GEMINI_API_KEY: 'some-gemini-key',
-        JWT_SECRET: 'short',
-      };
-      
-      const result = envSchema.safeParse(invalidEnv);
-      expect(result.success).toBe(false);
-    });
-  });
 });

@@ -246,10 +246,7 @@ async function splitTextWithPageTracking(pages: PDFPage[]): Promise<ChunkWithPag
 
 export async function ingestPDF(): Promise<IngestionResult> {
   try {
-    console.log('🚀 Starting Enhanced PDF ingestion...');
-
     // Step 1: Read and parse PDF with page tracking
-    console.log('📄 Step 1: Reading PDF file with page-by-page extraction...');
     const pdfPath = path.join(process.cwd(), PDF_PATH);
     
     if (!fs.existsSync(pdfPath)) {
@@ -258,26 +255,17 @@ export async function ingestPDF(): Promise<IngestionResult> {
 
     const pdfBuffer = fs.readFileSync(pdfPath);
     const pdfData = await parsePDFWithPages(pdfBuffer);
-    
-    console.log(`✅ PDF loaded: ${pdfData.totalPages} pages, ${pdfData.pages.length} pages with content`);
 
     // Step 2: Split text with page tracking
-    console.log('✂️ Step 2: Splitting text with page boundary preservation...');
     const chunksWithPages = await splitTextWithPageTracking(pdfData.pages);
-    console.log(`✅ Created ${chunksWithPages.length} chunks with precise page tracking`);
 
     // Step 3: Generate embeddings and upsert to database
-    console.log('🧠 Step 3: Generating embeddings and upserting to database...');
     const supabase = createServerClient();
     
     let processedCount = 0;
-    const totalBatches = Math.ceil(chunksWithPages.length / BATCH_SIZE);
 
     for (let i = 0; i < chunksWithPages.length; i += BATCH_SIZE) {
       const batch = chunksWithPages.slice(i, i + BATCH_SIZE);
-      const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
-      
-      console.log(`📦 Processing batch ${batchNumber}/${totalBatches}...`);
 
       // Generate embeddings for batch
       const embeddingsPromises = batch.map(chunk => 
@@ -298,31 +286,22 @@ export async function ingestPDF(): Promise<IngestionResult> {
         .insert(records);
 
       if (error) {
-        console.error(`❌ Error upserting batch ${batchNumber}:`, error);
-        throw new Error(`Failed to upsert batch ${batchNumber}: ${error.message}`);
+        throw new Error(`Failed to upsert batch: ${error.message}`);
       }
 
       processedCount += batch.length;
-      
-      // Log progress with metadata sample
-      const sampleMetadata = batch[0]?.metadata;
-      console.log(`✅ Processed ${processedCount}/${chunksWithPages.length} chunks (Page ${sampleMetadata?.page}, Section: ${sampleMetadata?.section || 'N/A'})`);
 
       // Small delay between batches to avoid rate limits
       if (i + BATCH_SIZE < chunksWithPages.length) {
         await new Promise(resolve => setTimeout(resolve, 300));
       }
     }
-
-    console.log('🎉 Enhanced PDF ingestion complete!');
-    console.log(`📊 Summary: ${processedCount} chunks with precise page numbers`);
     
     return {
       success: true,
       chunksProcessed: processedCount,
     };
   } catch (error) {
-    console.error('❌ PDF ingestion error:', error);
     return {
       success: false,
       chunksProcessed: 0,
@@ -348,7 +327,6 @@ export async function clearChunks(): Promise<{ success: boolean; error?: string 
       throw new Error(error.message);
     }
 
-    console.log('✅ All chunks cleared from database');
     return { success: true };
   } catch (error) {
     return { 
@@ -412,13 +390,12 @@ export async function getIngestionStatus(): Promise<{
       dbConnected: true,
       pageRange: { min: minPage, max: maxPage },
     };
-  } catch (error) {
-    console.error('Get ingestion status error:', error);
+  } catch {
     return { 
       hasChunks: false, 
       chunkCount: 0, 
       dbConnected: false,
-      error: error instanceof Error ? error.message : 'Connection failed'
+      error: 'Connection failed'
     };
   }
 }

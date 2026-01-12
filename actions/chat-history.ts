@@ -54,13 +54,11 @@ export async function createChatSession(title?: string): Promise<{ sessionId: st
       .single();
 
     if (error) {
-      console.error('Error creating chat session:', error);
       return { sessionId: null, error: error.message };
     }
 
     return { sessionId: data.id };
   } catch (error) {
-    console.error('Create chat session error:', error);
     return { 
       sessionId: null, 
       error: error instanceof Error ? error.message : 'Failed to create session' 
@@ -120,13 +118,11 @@ export async function saveMessageToSession(params: {
       });
 
     if (error) {
-      console.error('Error saving message:', error);
       return { success: false, error: error.message };
     }
 
     return { success: true };
   } catch (error) {
-    console.error('Save message error:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to save message' 
@@ -176,7 +172,6 @@ export async function getChatSessions(
     const { data, error } = await query;
 
     if (error) {
-      console.error('Error fetching chat sessions:', error);
       return { sessions: [], hasMore: false, error: error.message };
     }
 
@@ -198,7 +193,6 @@ export async function getChatSessions(
       hasMore 
     };
   } catch (error) {
-    console.error('Get chat sessions error:', error);
     return { 
       sessions: [], 
       hasMore: false,
@@ -238,7 +232,6 @@ export async function getSessionMessages(sessionId: string): Promise<{ messages:
       .order('created_at', { ascending: true });
 
     if (error) {
-      console.error('Error fetching session messages:', error);
       return { messages: [], error: error.message };
     }
 
@@ -254,7 +247,6 @@ export async function getSessionMessages(sessionId: string): Promise<{ messages:
 
     return { messages };
   } catch (error) {
-    console.error('Get session messages error:', error);
     return { 
       messages: [], 
       error: error instanceof Error ? error.message : 'Failed to fetch messages' 
@@ -293,7 +285,6 @@ export async function deleteChatSession(sessionId: string): Promise<{ success: b
       .eq('user_id', user.id); // Double-check ownership in query
 
     if (error) {
-      console.error('Error deleting chat session:', error);
       return { success: false, error: error.message };
     }
 
@@ -306,7 +297,6 @@ export async function deleteChatSession(sessionId: string): Promise<{ success: b
 
     return { success: true };
   } catch (error) {
-    console.error('Delete chat session error:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to delete session' 
@@ -348,13 +338,11 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
       .eq('user_id', user.id); // Double-check ownership
 
     if (error) {
-      console.error('Error updating session title:', error);
       return { success: false, error: error.message };
     }
 
     return { success: true };
   } catch (error) {
-    console.error('Update session title error:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to update title' 

@@ -105,8 +105,7 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
       ...metadata,
     });
 
-  } catch (error) {
-    console.error('Login error:', error);
+  } catch {
     return { error: 'An error occurred during login' };
   }
 
@@ -189,9 +188,85 @@ export async function createUserAction(data: {
     });
 
     return { success: true, userId: newUser.id };
-  } catch (error) {
-    console.error('Create user error:', error);
+  } catch {
     return { success: false, error: 'Failed to create user' };
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Change Own Password Action (for authenticated users)
+// -----------------------------------------------------------------------------
+
+export async function changeOwnPasswordAction(data: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Verify user is authenticated
+    const currentUser = await getQuickSession();
+    if (!currentUser) {
+      return { success: false, error: 'Unauthorized' };
+    }
+
+    // Import validation schema
+    const { changePasswordSchema, validatePassword } = await import('@/lib/validations');
+    
+    // Validate input
+    const validation = changePasswordSchema.safeParse(data);
+    if (!validation.success) {
+      return { success: false, error: validation.error.errors[0].message };
+    }
+
+    const { currentPassword, newPassword } = validation.data;
+
+    // Get user's current password hash
+    const supabase = createServerClient();
+    const { data: user, error: fetchError } = await supabase
+      .from('users')
+      .select('password_hash')
+      .eq('id', currentUser.id)
+      .single();
+
+    if (fetchError || !user) {
+      return { success: false, error: 'User not found' };
+    }
+
+    // Verify current password
+    const isValidPassword = await verifyPassword(currentPassword, user.password_hash);
+    if (!isValidPassword) {
+      return { success: false, error: 'Current password is incorrect' };
+    }
+
+    // Validate new password complexity
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.valid) {
+      return { success: false, error: passwordValidation.error };
+    }
+
+    // Hash new password
+    const newPasswordHash = await hashPassword(newPassword);
+
+    // Update password in database
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ password_hash: newPasswordHash })
+      .eq('id', currentUser.id);
+
+    if (updateError) {
+      return { success: false, error: 'Failed to update password' };
+    }
+
+    // Log the action
+    const metadata = await getRequestMetadata();
+    await logAuditEvent({
+      userId: currentUser.id,
+      action: 'password_changed',
+      ...metadata,
+    });
+
+    return { success: true };
+  } catch {
+    return { success: false, error: 'Failed to change password' };
   }
 }
 

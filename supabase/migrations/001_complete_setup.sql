@@ -44,6 +44,9 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Enable pg_trgm for fuzzy text matching (optional but useful)
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
+-- Enable pgcrypto for password hashing (bcrypt)
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- ============================================================================
 -- 2. RAG SYSTEM (Dubai Code Chunks) - Enhanced with FTS
 -- ============================================================================
@@ -452,13 +455,14 @@ $$;
 -- Daily stats view (refresh periodically)
 CREATE MATERIALIZED VIEW IF NOT EXISTS analytics_daily AS
 SELECT 
-  DATE(created_at) as date,
-  COUNT(DISTINCT user_id) as active_users,
+  DATE(cm.created_at) as date,
+  COUNT(DISTINCT cs.user_id) as active_users,
   COUNT(*) as total_messages,
-  COUNT(*) FILTER (WHERE role = 'user') as user_messages,
-  COUNT(*) FILTER (WHERE role = 'assistant') as assistant_messages
-FROM chat_messages
-GROUP BY DATE(created_at)
+  COUNT(*) FILTER (WHERE cm.role = 'user') as user_messages,
+  COUNT(*) FILTER (WHERE cm.role = 'assistant') as assistant_messages
+FROM chat_messages cm
+JOIN chat_sessions cs ON cm.session_id = cs.id
+GROUP BY DATE(cm.created_at)
 ORDER BY date DESC;
 
 -- Create index on materialized view
@@ -734,13 +738,74 @@ GRANT ALL ON audit_logs TO anon, authenticated;
 GRANT USAGE, SELECT ON SEQUENCE audit_logs_id_seq TO anon, authenticated;
 
 -- ============================================================================
--- 11. ROW LEVEL SECURITY (Optional - for extra security with anon key)
+-- 11. ROW LEVEL SECURITY
 -- ============================================================================
 
--- Enable RLS on tables
+-- Enable RLS on all sensitive tables
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE rate_limits ENABLE ROW LEVEL SECURITY;
+
+-- dubai_code_chunks is read-only for users, so RLS optional
+ALTER TABLE dubai_code_chunks ENABLE ROW LEVEL SECURITY;
+
+-- -----------------------------------------------------------------------------
+-- USERS TABLE POLICIES
+-- -----------------------------------------------------------------------------
+-- Service role bypasses RLS automatically, but we need policies for app access
+
+-- Allow service role full access (for scripts and server actions)
+DROP POLICY IF EXISTS "Service role full access to users" ON users;
+CREATE POLICY "Service role full access to users" ON users
+  FOR ALL 
+  TO service_role
+  USING (true) 
+  WITH CHECK (true);
+
+-- Allow authenticated users to read their own data
+DROP POLICY IF EXISTS "Users can view own profile" ON users;
+CREATE POLICY "Users can view own profile" ON users
+  FOR SELECT 
+  TO authenticated
+  USING (id = auth.uid()::uuid);
+
+-- Allow anon/authenticated to read for login (username lookup)
+DROP POLICY IF EXISTS "Allow username lookup for login" ON users;
+CREATE POLICY "Allow username lookup for login" ON users
+  FOR SELECT
+  TO anon, authenticated
+  USING (true);
+
+-- -----------------------------------------------------------------------------
+-- DUBAI_CODE_CHUNKS POLICIES (Read-only for all)
+-- -----------------------------------------------------------------------------
+DROP POLICY IF EXISTS "Anyone can read chunks" ON dubai_code_chunks;
+CREATE POLICY "Anyone can read chunks" ON dubai_code_chunks
+  FOR SELECT 
+  TO anon, authenticated
+  USING (true);
+
+-- Service role can insert/delete chunks (for ingestion)
+DROP POLICY IF EXISTS "Service role manages chunks" ON dubai_code_chunks;
+CREATE POLICY "Service role manages chunks" ON dubai_code_chunks
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
+-- -----------------------------------------------------------------------------
+-- CHAT_SESSIONS POLICIES
+-- -----------------------------------------------------------------------------
+
+-- Service role full access
+DROP POLICY IF EXISTS "Service role full access to sessions" ON chat_sessions;
+CREATE POLICY "Service role full access to sessions" ON chat_sessions
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
 
 -- Policies for chat_sessions (users can only see their own)
 DROP POLICY IF EXISTS "Users can view own sessions" ON chat_sessions;
@@ -755,25 +820,102 @@ DROP POLICY IF EXISTS "Users can delete own sessions" ON chat_sessions;
 CREATE POLICY "Users can delete own sessions" ON chat_sessions
   FOR DELETE USING (user_id = auth.uid()::uuid);
 
+-- -----------------------------------------------------------------------------
+-- CHAT_MESSAGES POLICIES
+-- -----------------------------------------------------------------------------
+
+-- Service role full access
+DROP POLICY IF EXISTS "Service role full access to messages" ON chat_messages;
+CREATE POLICY "Service role full access to messages" ON chat_messages
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
+-- Users can view messages in their sessions
+DROP POLICY IF EXISTS "Users can view own messages" ON chat_messages;
+CREATE POLICY "Users can view own messages" ON chat_messages
+  FOR SELECT
+  USING (
+    session_id IN (
+      SELECT id FROM chat_sessions WHERE user_id = auth.uid()::uuid
+    )
+  );
+
+-- Users can insert messages to their sessions
+DROP POLICY IF EXISTS "Users can insert own messages" ON chat_messages;
+CREATE POLICY "Users can insert own messages" ON chat_messages
+  FOR INSERT
+  WITH CHECK (
+    session_id IN (
+      SELECT id FROM chat_sessions WHERE user_id = auth.uid()::uuid
+    )
+  );
+
+-- -----------------------------------------------------------------------------
+-- AUDIT_LOGS POLICIES
+-- -----------------------------------------------------------------------------
+
+-- Service role full access (for logging)
+DROP POLICY IF EXISTS "Service role full access to audit logs" ON audit_logs;
+CREATE POLICY "Service role full access to audit logs" ON audit_logs
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
+-- Admins can view all audit logs (checked in application layer)
+DROP POLICY IF EXISTS "Authenticated can view audit logs" ON audit_logs;
+CREATE POLICY "Authenticated can view audit logs" ON audit_logs
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- Anyone can insert audit logs (for login attempts)
+DROP POLICY IF EXISTS "Anyone can insert audit logs" ON audit_logs;
+CREATE POLICY "Anyone can insert audit logs" ON audit_logs
+  FOR INSERT
+  TO anon, authenticated
+  WITH CHECK (true);
+
+-- -----------------------------------------------------------------------------
+-- RATE_LIMITS POLICIES
+-- -----------------------------------------------------------------------------
+
+-- Service role full access
+DROP POLICY IF EXISTS "Service role full access to rate limits" ON rate_limits;
+CREATE POLICY "Service role full access to rate limits" ON rate_limits
+  FOR ALL
+  TO service_role
+  USING (true)
+  WITH CHECK (true);
+
+-- Users can only see/modify their own rate limits
+DROP POLICY IF EXISTS "Users manage own rate limits" ON rate_limits;
+CREATE POLICY "Users manage own rate limits" ON rate_limits
+  FOR ALL
+  TO authenticated
+  USING (user_id = auth.uid()::uuid)
+  WITH CHECK (user_id = auth.uid()::uuid);
+
 -- Note: Service role key bypasses RLS, so admin operations still work
 
 -- ============================================================================
--- 12. DEFAULT USERS (Create via application script)
+-- 12. DEFAULT ADMIN USER
 -- ============================================================================
 -- 
--- IMPORTANT: bcrypt hashes cannot be generated in SQL.
--- After running this migration, create users via terminal:
+-- Creates default admin user with bcrypt hashed password
+-- Default credentials: admin / Admin123!
+-- IMPORTANT: Change password after first login!
 --
---   npx tsx scripts/create-user.ts
---
--- Or programmatically:
---   import { hashPassword } from '@/lib/auth';
---   const hash = await hashPassword('your-password');
---
--- Default credentials to create:
---   Admin: username=admin, password=admin123, role=admin
---   User:  username=user,  password=user123,  role=user
---
+
+INSERT INTO users (username, password_hash, full_name, role)
+VALUES (
+  'admin',
+  crypt('Admin123!', gen_salt('bf', 12)),  -- bcrypt hash with 12 rounds
+  'System Administrator',
+  'admin'
+) ON CONFLICT (username) DO NOTHING;
 
 -- ============================================================================
 -- VERIFICATION

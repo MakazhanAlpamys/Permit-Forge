@@ -94,7 +94,6 @@ export async function getDashboardStats(): Promise<{ data: DashboardStats | null
       }
     };
   } catch (error) {
-    console.error('Get dashboard stats error:', error);
     return { 
       data: null, 
       error: error instanceof Error ? error.message : 'Failed to fetch stats' 
@@ -129,7 +128,6 @@ export async function getWeeklyActivity(): Promise<{ data: WeeklyActivity[]; err
       }))
     };
   } catch (error) {
-    console.error('Get weekly activity error:', error);
     return { 
       data: [], 
       error: error instanceof Error ? error.message : 'Failed to fetch activity' 
@@ -182,7 +180,6 @@ export async function getAuditLogs(
       }))
     };
   } catch (error) {
-    console.error('Get audit logs error:', error);
     return { 
       data: [], 
       error: error instanceof Error ? error.message : 'Failed to fetch logs' 
@@ -240,7 +237,6 @@ export async function getAllUsers(
       }))
     };
   } catch (error) {
-    console.error('Get all users error:', error);
     return { 
       data: [], 
       error: error instanceof Error ? error.message : 'Failed to fetch users' 
@@ -288,7 +284,6 @@ export async function blockUser(
     
     return { success: true };
   } catch (error) {
-    console.error('Block user error:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to update user' 
@@ -334,7 +329,6 @@ export async function updateUserRole(
     
     return { success: true };
   } catch (error) {
-    console.error('Update user role error:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to update role' 
@@ -395,7 +389,6 @@ export async function adminCreateUser(data: {
     
     return { success: true, userId: newUser.id };
   } catch (error) {
-    console.error('Admin create user error:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to create user' 
@@ -450,7 +443,6 @@ export async function adminDeleteUser(userId: string): Promise<{ success: boolea
     
     return { success: true };
   } catch (error) {
-    console.error('Admin delete user error:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to delete user' 
@@ -475,9 +467,11 @@ export async function adminResetPassword(
       return { success: false, error: 'Invalid user ID' };
     }
     
-    // Validate password
-    if (!newPassword || newPassword.length < 8) {
-      return { success: false, error: 'Password must be at least 8 characters' };
+    // Validate password with complexity requirements
+    const { validatePassword } = await import('@/lib/validations');
+    const passwordValidation = validatePassword(newPassword);
+    if (!passwordValidation.valid) {
+      return { success: false, error: passwordValidation.error };
     }
     
     const supabase = createServerClient();
@@ -501,7 +495,6 @@ export async function adminResetPassword(
     
     return { success: true };
   } catch (error) {
-    console.error('Admin reset password error:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Failed to reset password' 

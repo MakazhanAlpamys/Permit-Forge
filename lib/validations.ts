@@ -5,6 +5,39 @@
 import { z } from 'zod';
 
 // -----------------------------------------------------------------------------
+// Password Validation (Unified - min 8 chars with complexity requirements)
+// -----------------------------------------------------------------------------
+
+const passwordSchema = z.string()
+  .min(8, 'Password must be at least 8 characters')
+  .max(100, 'Password must be 100 characters or less')
+  .refine(
+    (password) => /[A-Z]/.test(password),
+    'Password must contain at least one uppercase letter (A-Z)'
+  )
+  .refine(
+    (password) => /[a-z]/.test(password),
+    'Password must contain at least one lowercase letter (a-z)'
+  )
+  .refine(
+    (password) => /[0-9]/.test(password),
+    'Password must contain at least one digit (0-9)'
+  )
+  .refine(
+    (password) => /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password),
+    'Password must contain at least one special character (!@#$%^&*...)'
+  );
+
+// Helper function to validate password (for use in server actions)
+export function validatePassword(password: string): { valid: boolean; error?: string } {
+  const result = passwordSchema.safeParse(password);
+  if (!result.success) {
+    return { valid: false, error: result.error.errors[0].message };
+  }
+  return { valid: true };
+}
+
+// -----------------------------------------------------------------------------
 // UUID Validation
 // -----------------------------------------------------------------------------
 
@@ -34,7 +67,7 @@ export const loginSchema = z.object({
     .max(50, 'Username must be 50 characters or less')
     .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
   password: z.string()
-    .min(6, 'Password must be at least 6 characters')
+    .min(8, 'Password must be at least 8 characters')
     .max(100, 'Password must be 100 characters or less'),
 });
 
@@ -45,14 +78,21 @@ export const createUserSchema = z.object({
     .min(3, 'Username must be at least 3 characters')
     .max(50, 'Username must be 50 characters or less')
     .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
-  password: z.string()
-    .min(8, 'Password must be at least 8 characters')
-    .max(100, 'Password must be 100 characters or less'),
+  password: passwordSchema,
   full_name: z.string().max(100).optional(),
   role: z.enum(['admin', 'user']).default('user'),
 });
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;
+
+// -----------------------------------------------------------------------------
+// Change Password Schema
+// -----------------------------------------------------------------------------
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required'),
+  newPassword: passwordSchema,
+});
 
 // -----------------------------------------------------------------------------
 // Citation Schema

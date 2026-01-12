@@ -110,18 +110,13 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
     }
 
     const trimmedMessage = message.trim();
-    
-    console.log('🚀 Starting Advanced RAG Pipeline...');
-    console.log(`📝 Query: "${trimmedMessage}"`);
 
     // =========================================================================
     // STEP 0: Topic Classification (Skip RAG for off-topic/greetings)
     // =========================================================================
-    console.log('🎯 Classifying topic...');
     const topicClassification = await classifyTopic(trimmedMessage);
     
     if (!topicClassification.isOnTopic) {
-      console.log('❌ Off-topic query detected, responding without RAG');
       return {
         message: "I'm Emirate Forge, a Dubai Building Code 2021 assistant. I can help you with questions about building regulations, parking requirements, fire safety, structural requirements, and more. Feel free to ask me anything about the Dubai Building Code!",
         citations: [],
@@ -130,7 +125,6 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
     }
 
     if (!topicClassification.shouldUseRAG) {
-      console.log('👋 Greeting detected, responding without RAG');
       return {
         message: "Hello! I'm Emirate Forge, your Dubai Building Code 2021 assistant. I can help you with:\n\n- **Parking requirements** for different building types\n- **Fire safety** regulations and exit requirements\n- **Building heights** and setback rules\n- **Structural requirements** and load specifications\n- **Accessibility** standards\n- **MEP systems** requirements\n\nJust ask me any question about the Dubai Building Code!",
         citations: [],
@@ -138,13 +132,10 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
       };
     }
 
-    console.log('✅ On-topic query, proceeding with RAG pipeline');
-
     // =========================================================================
     // STEP 1: Query Type Detection
     // =========================================================================
     const queryType = detectQueryType(trimmedMessage);
-    console.log(`🔍 Query type detected: ${queryType}`);
 
     // =========================================================================
     // STEP 2: Query Expansion (Generate multiple search variations)
@@ -152,16 +143,13 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
     let searchQueries = [trimmedMessage];
     
     if (ENABLE_QUERY_EXPANSION && queryType !== 'exact') {
-      console.log('🔄 Expanding query...');
       const expandedQueries = await expandQuery(trimmedMessage);
       searchQueries = expandedQueries.slice(0, MAX_EXPANDED_QUERIES);
-      console.log(`✅ Generated ${searchQueries.length} query variations`);
     }
 
     // =========================================================================
     // STEP 3: Hybrid Search (Vector + Keyword with RRF)
     // =========================================================================
-    console.log('🔍 Performing hybrid search...');
     let chunks: MatchedChunk[];
     
     if (searchQueries.length > 1) {
@@ -176,22 +164,17 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
       });
       chunks = ragResult.chunks;
     }
-    
-    console.log(`✅ Found ${chunks.length} relevant chunks`);
 
     // =========================================================================
     // STEP 4: Re-ranking (AI-powered relevance scoring)
     // =========================================================================
     if (ENABLE_RERANKING && chunks.length > RERANK_TOP_K) {
-      console.log('📊 Re-ranking chunks by relevance...');
       chunks = await rerankChunks(trimmedMessage, chunks, RERANK_TOP_K);
-      console.log(`✅ Selected top ${chunks.length} most relevant chunks`);
     }
 
     // =========================================================================
     // STEP 5: Generate Answer with Citations
     // =========================================================================
-    console.log('💬 Generating answer with citations...');
     
     // Build context for answer generation
     const context = chunks.map((chunk, idx) => 
@@ -212,15 +195,12 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
     let verificationResult: VerifiedAnswer | null = null;
 
     if (ENABLE_VERIFICATION && chunks.length > 0) {
-      console.log('✔️ Verifying answer against sources...');
       verificationResult = await verifyAnswer(responseText, chunks, trimmedMessage);
       
       if (!verificationResult.isVerified && verificationResult.confidence < 50) {
         // Low confidence - add disclaimer
         finalResponse = responseText + '\n\n⚠️ Note: I could not fully verify all details in this response against the source documents. Please cross-reference with the official Dubai Building Code.';
       }
-      
-      console.log(`✅ Verification complete (confidence: ${verificationResult.confidence}%)`);
     }
 
     // =========================================================================
@@ -233,15 +213,12 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
     // =========================================================================
     const complianceStatus = determineComplianceStatus(finalResponse);
 
-    console.log('🎉 Advanced RAG Pipeline complete!');
-
     return {
       message: finalResponse,
       citations,
       complianceStatus,
     };
-  } catch (error) {
-    console.error('❌ Chat error:', error);
+  } catch {
     return {
       message: 'I apologize, but I encountered an error processing your request. Please try again.',
       citations: [],

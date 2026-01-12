@@ -252,6 +252,7 @@ export type AuditAction =
   | 'user_unblocked'
   | 'role_changed'
   | 'password_reset'
+  | 'password_changed'
   | 'pdf_ingested'
   | 'chunks_cleared'
   | 'session_deleted';
