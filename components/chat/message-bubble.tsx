@@ -10,7 +10,18 @@ import { CitationsList } from './source-citation';
 import { complianceStatusConfig } from '@/lib/constants';
 import { User, Bot } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import DOMPurify from 'isomorphic-dompurify';
+import { useMemo } from 'react';
 import type { ChatMessage } from '@/types';
+
+// XSS Protection: Sanitize content before rendering
+function sanitizeContent(content: string): string {
+  return DOMPurify.sanitize(content, {
+    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'p', 'br', 'ul', 'ol', 'li', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'a', 'blockquote'],
+    ALLOWED_ATTR: ['href', 'title', 'target', 'rel'],
+    ALLOW_DATA_ATTR: false,
+  });
+}
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -21,6 +32,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const compliance = message.complianceStatus 
     ? complianceStatusConfig[message.complianceStatus] 
     : null;
+
+  // Sanitize content to prevent XSS attacks
+  const sanitizedContent = useMemo(() => sanitizeContent(message.content), [message.content]);
 
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -53,7 +67,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           {/* Message Text */}
           <div className={`text-sm leading-relaxed ${isUser ? '' : 'prose prose-sm dark:prose-invert max-w-none'}`}>
             {isUser ? (
-              <span className="whitespace-pre-wrap">{message.content}</span>
+              <span className="whitespace-pre-wrap">{sanitizedContent}</span>
             ) : (
               <ReactMarkdown
                 components={{
@@ -68,9 +82,23 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                   h1: ({ children }) => <h1 className="text-lg font-bold mb-2">{children}</h1>,
                   h2: ({ children }) => <h2 className="text-base font-semibold mb-2">{children}</h2>,
                   h3: ({ children }) => <h3 className="text-sm font-semibold mb-1">{children}</h3>,
+                  // Sanitize links to prevent javascript: URLs
+                  a: ({ href, children }) => {
+                    const safeHref = href && !href.startsWith('javascript:') ? href : '#';
+                    return (
+                      <a 
+                        href={safeHref} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-primary hover:underline"
+                      >
+                        {children}
+                      </a>
+                    );
+                  },
                 }}
               >
-                {message.content}
+                {sanitizedContent}
               </ReactMarkdown>
             )}
           </div>

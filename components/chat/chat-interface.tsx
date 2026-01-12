@@ -65,14 +65,21 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     setMessages(loadedMessages);
   };
 
-  // Cleanup on unmount
+  // Cleanup on unmount - properly abort any pending requests
   useEffect(() => {
     isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
+    
+    // Store a reference to clean up on unmount
+    const cleanupAbortController = () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
+    };
+    
+    return () => {
+      isMountedRef.current = false;
+      cleanupAbortController();
     };
   }, []);
 
@@ -106,11 +113,15 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     }
     lastRequestRef.current = now;
 
-    // Cancel any pending request
+    // Cancel any pending request and clean up previous controller
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
-    abortControllerRef.current = new AbortController();
+    
+    // Create new AbortController for this request
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     setIsCancelled(false);
 
     // Create or use existing session
@@ -149,7 +160,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     }
 
     try {
-      // Use streaming API
+      // Use streaming API with the current controller's signal
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -157,7 +168,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
           message: text,
           sessionId: activeSessionId,
         }),
-        signal: abortControllerRef.current.signal,
+        signal: controller.signal,
       });
 
       if (!response.ok) {

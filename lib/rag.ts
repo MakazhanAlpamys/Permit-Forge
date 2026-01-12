@@ -70,7 +70,7 @@ export async function hybridSearch(
 /**
  * Search for exact matches (section numbers, table references, etc.)
  */
-export async function exactSearch(
+async function exactSearch(
   pattern: string,
   matchCount: number = 10
 ): Promise<MatchedChunk[]> {

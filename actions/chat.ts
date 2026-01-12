@@ -13,7 +13,7 @@ import {
   detectQueryType,
   classifyTopic
 } from '@/lib/agents';
-import { createServerClient } from '@/lib/supabase';
+import { checkRateLimit } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import type { 
   ChatRequest, 
@@ -34,53 +34,6 @@ const ENABLE_RERANKING = true;          // AI-powered relevance scoring
 const ENABLE_VERIFICATION = true;       // Self-check for hallucinations
 const MAX_EXPANDED_QUERIES = 4;         // Max queries after expansion
 const RERANK_TOP_K = 7;                 // Keep top 7 after reranking
-
-// -----------------------------------------------------------------------------
-// Rate Limiting Configuration (Supabase-based)
-// -----------------------------------------------------------------------------
-
-const RATE_LIMIT_WINDOW_SECONDS = 60;
-const MAX_REQUESTS_PER_WINDOW = 10;
-const MIN_REQUEST_INTERVAL_MS = 2000;
-
-interface RateLimitResult {
-  allowed: boolean;
-  retry_after_ms: number;
-  current_count: number;
-}
-
-async function checkRateLimitDB(userId: string): Promise<{ allowed: boolean; retryAfter?: number }> {
-  try {
-    const supabase = createServerClient();
-    
-    const { data, error } = await supabase.rpc('check_rate_limit', {
-      p_user_id: userId,
-      p_window_seconds: RATE_LIMIT_WINDOW_SECONDS,
-      p_max_requests: MAX_REQUESTS_PER_WINDOW,
-      p_min_interval_ms: MIN_REQUEST_INTERVAL_MS,
-    });
-
-    if (error) {
-      console.error('Rate limit check error:', error);
-      // Allow on error to not block users
-      return { allowed: true };
-    }
-
-    const result = data?.[0] as RateLimitResult | undefined;
-    
-    if (!result) {
-      return { allowed: true };
-    }
-
-    return {
-      allowed: result.allowed,
-      retryAfter: result.allowed ? undefined : result.retry_after_ms,
-    };
-  } catch (error) {
-    console.error('Rate limit error:', error);
-    return { allowed: true };
-  }
-}
 
 // -----------------------------------------------------------------------------
 // Input Validation
@@ -146,9 +99,9 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
     }
 
     // Rate limiting (Supabase-based)
-    const rateCheck = await checkRateLimitDB(user.id);
+    const rateCheck = await checkRateLimit(user.id);
     if (!rateCheck.allowed) {
-      const seconds = Math.ceil((rateCheck.retryAfter || 0) / 1000);
+      const seconds = Math.ceil((rateCheck.retryAfterMs || 0) / 1000);
       return {
         message: `Too many requests. Please wait ${seconds} seconds before trying again.`,
         citations: [],

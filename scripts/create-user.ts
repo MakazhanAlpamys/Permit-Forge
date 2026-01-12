@@ -42,30 +42,22 @@ async function main() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  // Debug: show which key is being used (first 20 chars only for security)
-  console.log('DEBUG - URL:', supabaseUrl ? supabaseUrl.slice(0, 30) + '...' : 'NOT SET');
-  console.log('DEBUG - Key type:', supabaseKey ? `${supabaseKey.slice(0, 20)}... (length: ${supabaseKey.length})` : 'NOT SET');
-  
-  // Service Role Key is typically longer than anon key and contains different payload
-  if (supabaseKey) {
-    // Decode JWT to check if it's service_role
-    try {
-      const payload = JSON.parse(Buffer.from(supabaseKey.split('.')[1], 'base64').toString());
-      console.log('DEBUG - Key role:', payload.role || 'unknown');
-      if (payload.role !== 'service_role') {
-        console.error('\n⚠️  WARNING: This appears to be an ANON key, not SERVICE_ROLE key!');
-        console.error('   Service Role Key is required to bypass RLS.');
-        console.error('   Find it in: Supabase Dashboard → Settings → API → service_role (secret)\n');
-      }
-    } catch {
-      console.log('DEBUG - Could not decode key');
-    }
-  }
-
   if (!supabaseUrl || !supabaseKey) {
     console.error('Error: Missing environment variables');
-    console.error('Make sure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set');
+    console.error('Make sure NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set in .env.local');
     process.exit(1);
+  }
+
+  // Validate that we have the service role key (not anon key)
+  try {
+    const payload = JSON.parse(Buffer.from(supabaseKey.split('.')[1], 'base64').toString());
+    if (payload.role !== 'service_role') {
+      console.error('\n⚠️  WARNING: This appears to be an ANON key, not SERVICE_ROLE key!');
+      console.error('   Service Role Key is required to bypass RLS.');
+      console.error('   Find it in: Supabase Dashboard → Settings → API → service_role (secret)\n');
+    }
+  } catch {
+    // Could not decode key, continue anyway
   }
 
   // Service Role Key bypasses RLS with auth.admin option

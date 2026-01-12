@@ -10,8 +10,7 @@ import { Button } from '@/components/ui/button';
 import { 
   ChevronDown, 
   ChevronUp, 
-  FileText, 
-  ExternalLink 
+  FileText 
 } from 'lucide-react';
 import type { Citation } from '@/types';
 
@@ -20,7 +19,7 @@ interface SourceCitationProps {
   index: number;
 }
 
-export function SourceCitation({ citation, index }: SourceCitationProps) {
+function SourceCitation({ citation, index }: SourceCitationProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const similarityPercent = Math.round(citation.similarity * 100);
@@ -69,12 +68,6 @@ export function SourceCitation({ citation, index }: SourceCitationProps) {
           <p className="text-sm text-muted-foreground leading-relaxed">
             {citation.excerpt}
           </p>
-          <div className="mt-2 flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="h-7 text-xs">
-              <ExternalLink className="h-3 w-3 mr-1" />
-              View in Document
-            </Button>
-          </div>
         </div>
       )}
     </div>

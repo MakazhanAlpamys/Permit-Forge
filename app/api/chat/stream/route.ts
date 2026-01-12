@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
-import { cookies } from 'next/headers';
-import { createServerClient } from '@/lib/supabase';
+import { createServerClient, checkRateLimit } from '@/lib/supabase';
+import { getQuickSession } from '@/lib/auth';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
 import { COMPLIANCE_SYSTEM_PROMPT } from '@/lib/gemini';
@@ -21,51 +21,17 @@ const streamingModel = new ChatGoogleGenerativeAI({
   streaming: true,
 });
 
-// Rate limit check
-async function checkRateLimit(userId: string): Promise<boolean> {
-  try {
-    const supabase = createServerClient();
-    const { data } = await supabase.rpc('check_rate_limit', {
-      p_user_id: userId,
-      p_window_seconds: 60,
-      p_max_requests: 10,
-      p_min_interval_ms: 2000,
-    });
-    return data?.[0]?.allowed ?? true;
-  } catch {
-    return true;
-  }
-}
-
-// Get user from cookies
-async function getUser() {
-  const cookieStore = await cookies();
-  const userId = cookieStore.get('ef_user_id')?.value;
-  const session = cookieStore.get('ef_session')?.value;
-  
-  if (!userId || !session) return null;
-  
-  const supabase = createServerClient();
-  const { data: user } = await supabase
-    .from('users')
-    .select('id, username, role')
-    .eq('id', userId)
-    .single();
-    
-  return user;
-}
-
 export async function POST(request: NextRequest) {
   try {
-    // Auth check
-    const user = await getUser();
+    // Auth check using proper JWT verification
+    const user = await getQuickSession();
     if (!user) {
       return new Response('Unauthorized', { status: 401 });
     }
 
-    // Rate limit
-    const allowed = await checkRateLimit(user.id);
-    if (!allowed) {
+    // Rate limit using consolidated function
+    const rateLimitResult = await checkRateLimit(user.id);
+    if (!rateLimitResult.allowed) {
       return new Response('Rate limited', { status: 429 });
     }
 

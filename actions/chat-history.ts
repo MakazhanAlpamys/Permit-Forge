@@ -1,12 +1,32 @@
 'use server';
 
 // ============================================================================
-// Chat History Server Actions
+// Chat History Server Actions (with Access Control)
 // ============================================================================
 
-import { createServerClient } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
-import type { ChatSession, ChatMessage } from '@/types';
+import { createPublicClient, createServerClient } from '@/lib/supabase';
+import { getSession, getQuickSession, logAuditEvent } from '@/lib/auth';
+import { uuidSchema, paginationSchema, citationsArraySchema } from '@/lib/validations';
+import type { ChatSession, ChatMessage, Citation } from '@/types';
+
+// -----------------------------------------------------------------------------
+// Helper: Verify Session Ownership
+// -----------------------------------------------------------------------------
+
+async function verifySessionOwnership(sessionId: string, userId: string): Promise<boolean> {
+  const validation = uuidSchema.safeParse(sessionId);
+  if (!validation.success) return false;
+  
+  const supabase = createPublicClient();
+  const { data, error } = await supabase
+    .from('chat_sessions')
+    .select('user_id')
+    .eq('id', sessionId)
+    .single();
+  
+  if (error || !data) return false;
+  return data.user_id === userId;
+}
 
 // -----------------------------------------------------------------------------
 // Create New Chat Session
@@ -14,17 +34,20 @@ import type { ChatSession, ChatMessage } from '@/types';
 
 export async function createChatSession(title?: string): Promise<{ sessionId: string | null; error?: string }> {
   try {
-    const user = await getSession();
+    const user = await getQuickSession();
     if (!user) {
       return { sessionId: null, error: 'Not authenticated' };
     }
 
-    const supabase = createServerClient();
+    const supabase = createPublicClient();
+    
+    // Sanitize title
+    const sanitizedTitle = (title || 'New Chat').slice(0, 100).trim();
     
     const { data, error } = await supabase
       .from('chat_sessions')
       .insert({
-        title: title || 'New Chat',
+        title: sanitizedTitle,
         user_id: user.id,
       })
       .select('id')
@@ -46,27 +69,53 @@ export async function createChatSession(title?: string): Promise<{ sessionId: st
 }
 
 // -----------------------------------------------------------------------------
-// Save Message to Session
+// Save Message to Session (with Ownership Check)
 // -----------------------------------------------------------------------------
 
 export async function saveMessageToSession(params: {
   sessionId: string;
   role: 'user' | 'assistant';
   content: string;
-  citations?: any[];
+  citations?: Citation[];
   complianceStatus?: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = createServerClient();
-    const { sessionId, role, content, citations, complianceStatus } = params;
+    const user = await getQuickSession();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
 
+    const { sessionId, role, content, citations, complianceStatus } = params;
+    
+    // Validate sessionId
+    const sessionValidation = uuidSchema.safeParse(sessionId);
+    if (!sessionValidation.success) {
+      return { success: false, error: 'Invalid session ID' };
+    }
+    
+    // Verify ownership
+    const isOwner = await verifySessionOwnership(sessionId, user.id);
+    if (!isOwner) {
+      return { success: false, error: 'Access denied' };
+    }
+    
+    // Validate citations if provided
+    let validatedCitations: unknown[] = [];
+    if (citations && Array.isArray(citations)) {
+      const citationValidation = citationsArraySchema.safeParse(citations);
+      if (citationValidation.success) {
+        validatedCitations = citationValidation.data;
+      }
+    }
+
+    const supabase = createPublicClient();
     const { error } = await supabase
       .from('chat_messages')
       .insert({
         session_id: sessionId,
         role,
-        content,
-        citations: citations || [],
+        content: content.slice(0, 50000), // Limit content size
+        citations: validatedCitations,
         compliance_status: complianceStatus,
       });
 
@@ -86,48 +135,102 @@ export async function saveMessageToSession(params: {
 }
 
 // -----------------------------------------------------------------------------
-// Get All Chat Sessions
+// Get All Chat Sessions (with Pagination)
 // -----------------------------------------------------------------------------
 
-export async function getChatSessions(): Promise<{ sessions: ChatSession[]; error?: string }> {
+interface PaginatedSessionsResult {
+  sessions: ChatSession[];
+  nextCursor?: string;
+  hasMore: boolean;
+  error?: string;
+}
+
+export async function getChatSessions(
+  cursor?: string,
+  limit: number = 20
+): Promise<PaginatedSessionsResult> {
   try {
-    const user = await getSession();
+    const user = await getQuickSession();
     if (!user) {
-      return { sessions: [], error: 'Not authenticated' };
+      return { sessions: [], hasMore: false, error: 'Not authenticated' };
     }
 
-    const supabase = createServerClient();
+    // Validate pagination params
+    const paginationValidation = paginationSchema.safeParse({ cursor, limit });
+    const validLimit = paginationValidation.success ? paginationValidation.data.limit : 20;
+
+    const supabase = createPublicClient();
     
-    const { data, error } = await supabase
+    let query = supabase
       .from('chat_sessions')
       .select('id, title, created_at, updated_at')
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false })
-      .limit(50);
+      .limit(validLimit + 1); // Fetch one extra to check if there are more
+    
+    // Apply cursor if provided
+    if (cursor) {
+      query = query.lt('updated_at', cursor);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error('Error fetching chat sessions:', error);
-      return { sessions: [], error: error.message };
+      return { sessions: [], hasMore: false, error: error.message };
     }
 
-    return { sessions: data || [] };
+    const sessions = data || [];
+    const hasMore = sessions.length > validLimit;
+    
+    // Remove the extra item we fetched for pagination check
+    if (hasMore) {
+      sessions.pop();
+    }
+
+    const nextCursor = hasMore && sessions.length > 0 
+      ? sessions[sessions.length - 1].updated_at 
+      : undefined;
+
+    return { 
+      sessions: sessions as ChatSession[], 
+      nextCursor,
+      hasMore 
+    };
   } catch (error) {
     console.error('Get chat sessions error:', error);
     return { 
       sessions: [], 
+      hasMore: false,
       error: error instanceof Error ? error.message : 'Failed to fetch sessions' 
     };
   }
 }
 
 // -----------------------------------------------------------------------------
-// Get Messages for a Session
+// Get Messages for a Session (with Ownership Check)
 // -----------------------------------------------------------------------------
 
 export async function getSessionMessages(sessionId: string): Promise<{ messages: ChatMessage[]; error?: string }> {
   try {
-    const supabase = createServerClient();
+    const user = await getQuickSession();
+    if (!user) {
+      return { messages: [], error: 'Not authenticated' };
+    }
     
+    // Validate sessionId
+    const validation = uuidSchema.safeParse(sessionId);
+    if (!validation.success) {
+      return { messages: [], error: 'Invalid session ID' };
+    }
+    
+    // Verify ownership
+    const isOwner = await verifySessionOwnership(sessionId, user.id);
+    if (!isOwner) {
+      return { messages: [], error: 'Access denied' };
+    }
+    
+    const supabase = createPublicClient();
     const { data, error } = await supabase
       .from('chat_messages')
       .select('*')
@@ -160,22 +263,46 @@ export async function getSessionMessages(sessionId: string): Promise<{ messages:
 }
 
 // -----------------------------------------------------------------------------
-// Delete Chat Session
+// Delete Chat Session (with Ownership Check)
 // -----------------------------------------------------------------------------
 
 export async function deleteChatSession(sessionId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = createServerClient();
+    const user = await getQuickSession();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
     
+    // Validate sessionId
+    const validation = uuidSchema.safeParse(sessionId);
+    if (!validation.success) {
+      return { success: false, error: 'Invalid session ID' };
+    }
+    
+    // Verify ownership
+    const isOwner = await verifySessionOwnership(sessionId, user.id);
+    if (!isOwner) {
+      return { success: false, error: 'Access denied' };
+    }
+    
+    const supabase = createPublicClient();
     const { error } = await supabase
       .from('chat_sessions')
       .delete()
-      .eq('id', sessionId);
+      .eq('id', sessionId)
+      .eq('user_id', user.id); // Double-check ownership in query
 
     if (error) {
       console.error('Error deleting chat session:', error);
       return { success: false, error: error.message };
     }
+
+    // Log the deletion
+    await logAuditEvent({
+      userId: user.id,
+      action: 'session_deleted',
+      metadata: { sessionId },
+    });
 
     return { success: true };
   } catch (error) {
@@ -188,17 +315,37 @@ export async function deleteChatSession(sessionId: string): Promise<{ success: b
 }
 
 // -----------------------------------------------------------------------------
-// Update Session Title
+// Update Session Title (with Ownership Check)
 // -----------------------------------------------------------------------------
 
 export async function updateSessionTitle(sessionId: string, title: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = createServerClient();
+    const user = await getQuickSession();
+    if (!user) {
+      return { success: false, error: 'Not authenticated' };
+    }
     
+    // Validate sessionId
+    const validation = uuidSchema.safeParse(sessionId);
+    if (!validation.success) {
+      return { success: false, error: 'Invalid session ID' };
+    }
+    
+    // Verify ownership
+    const isOwner = await verifySessionOwnership(sessionId, user.id);
+    if (!isOwner) {
+      return { success: false, error: 'Access denied' };
+    }
+    
+    // Sanitize title
+    const sanitizedTitle = title.slice(0, 100).trim();
+    
+    const supabase = createPublicClient();
     const { error } = await supabase
       .from('chat_sessions')
-      .update({ title, updated_at: new Date().toISOString() })
-      .eq('id', sessionId);
+      .update({ title: sanitizedTitle, updated_at: new Date().toISOString() })
+      .eq('id', sessionId)
+      .eq('user_id', user.id); // Double-check ownership
 
     if (error) {
       console.error('Error updating session title:', error);

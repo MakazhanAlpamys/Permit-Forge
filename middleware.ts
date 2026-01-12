@@ -1,76 +1,99 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createServerClient } from '@/lib/supabase';
-import { cookies } from 'next/headers';
+import { jwtVerify } from 'jose';
+import { jwtPayloadSchema } from '@/lib/validations';
 
-// Helper to clear session cookies and redirect to login
+const SESSION_COOKIE_NAME = 'ef_token';
+
+// Get JWT secret as Uint8Array
+function getJWTSecret(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error('JWT_SECRET must be at least 32 characters');
+  }
+  return new TextEncoder().encode(secret);
+}
+
+// Clear session and redirect to login
 function clearSessionAndRedirect(request: NextRequest): NextResponse {
   const response = NextResponse.redirect(new URL('/login', request.url));
-  response.cookies.delete('ef_session');
-  response.cookies.delete('ef_user_id');
+  response.cookies.delete(SESSION_COOKIE_NAME);
+  response.cookies.delete('ef_csrf');
   return response;
 }
 
+// Verify JWT token without database call
+async function verifyToken(token: string): Promise<{ valid: true; payload: { sub: string; role: string } } | { valid: false }> {
+  try {
+    const secret = getJWTSecret();
+    const { payload } = await jwtVerify(token, secret);
+    
+    const result = jwtPayloadSchema.safeParse(payload);
+    if (!result.success) {
+      return { valid: false };
+    }
+    
+    return { 
+      valid: true, 
+      payload: { sub: result.data.sub, role: result.data.role } 
+    };
+  } catch {
+    return { valid: false };
+  }
+}
+
 export async function middleware(request: NextRequest) {
-  const session = request.cookies.get('ef_session');
-  const userId = request.cookies.get('ef_user_id');
+  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const { pathname } = request.nextUrl;
 
   // Public paths that don't require authentication
   const publicPaths = ['/login'];
   const isPublicPath = publicPaths.some(path => pathname.startsWith(path));
 
-  // If trying to access protected route without session, redirect to login
-  if (!session || !userId) {
+  // If no token
+  if (!token) {
     if (!isPublicPath) {
       return NextResponse.redirect(new URL('/login', request.url));
     }
-  } else {
-    // Validate that user exists in database
-    const cookieStore = await cookies();
-    const userIdValue = cookieStore.get('ef_user_id')?.value;
-    
-    if (!userIdValue) {
-      if (!isPublicPath) {
-        return clearSessionAndRedirect(request);
-      }
-    } else {
-      const supabase = createServerClient();
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('id, role')
-        .eq('id', userIdValue)
-        .single();
+    return NextResponse.next();
+  }
 
-      // If user not found in DB (deleted or DB reset), clear session
-      if (error || !user) {
-        return clearSessionAndRedirect(request);
-      }
+  // Verify JWT token (NO DATABASE CALL!)
+  const verification = await verifyToken(token);
+  
+  if (!verification.valid) {
+    // Invalid token - clear and redirect
+    return clearSessionAndRedirect(request);
+  }
 
-      // If logged in and trying to access login page, redirect based on role
-      if (pathname === '/login') {
-        if (user.role === 'admin') {
-          return NextResponse.redirect(new URL('/admin', request.url));
-        } else {
-          return NextResponse.redirect(new URL('/', request.url));
-        }
-      }
+  const { sub: userId, role } = verification.payload;
 
-      // Check if user is trying to access admin page
-      if (pathname.startsWith('/admin')) {
-        if (user.role !== 'admin') {
-          return NextResponse.redirect(new URL('/', request.url));
-        }
-      }
+  // If logged in and trying to access login page
+  if (pathname === '/login') {
+    if (role === 'admin') {
+      return NextResponse.redirect(new URL('/admin', request.url));
+    }
+    return NextResponse.redirect(new URL('/', request.url));
+  }
 
-      // If admin trying to access root, redirect to admin
-      if (pathname === '/' && user.role === 'admin') {
-        return NextResponse.redirect(new URL('/admin', request.url));
-      }
+  // Check admin access
+  if (pathname.startsWith('/admin')) {
+    if (role !== 'admin') {
+      return NextResponse.redirect(new URL('/', request.url));
     }
   }
 
-  return NextResponse.next();
+  // If admin trying to access root, redirect to admin
+  if (pathname === '/' && role === 'admin') {
+    return NextResponse.redirect(new URL('/admin', request.url));
+  }
+
+  // Add user info to headers for downstream use
+  const response = NextResponse.next();
+  response.headers.set('x-user-id', userId);
+  response.headers.set('x-user-role', role);
+  
+  return response;
 }
 
 export const config = {

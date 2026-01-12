@@ -1,5 +1,6 @@
 -- ============================================================================
--- Emirate Forge - Complete Database Setup (Advanced RAG with Hybrid Search)
+-- Emirate Forge - Complete Database Setup
+-- Combined Migration: Base Setup + Security & Admin Features
 -- Run this SQL in Supabase SQL Editor (https://supabase.com/dashboard)
 -- ============================================================================
 
@@ -8,6 +9,7 @@
 -- ============================================================================
 
 -- Drop tables in correct order (respecting foreign keys)
+DROP TABLE IF EXISTS audit_logs CASCADE;
 DROP TABLE IF EXISTS rate_limits CASCADE;
 DROP TABLE IF EXISTS chat_messages CASCADE;
 DROP TABLE IF EXISTS chat_sessions CASCADE;
@@ -21,6 +23,16 @@ DROP FUNCTION IF EXISTS match_dubai_code_hybrid CASCADE;
 DROP FUNCTION IF EXISTS search_dubai_code_exact CASCADE;
 DROP FUNCTION IF EXISTS update_session_timestamp CASCADE;
 DROP FUNCTION IF EXISTS check_rate_limit CASCADE;
+DROP FUNCTION IF EXISTS refresh_analytics CASCADE;
+DROP FUNCTION IF EXISTS get_admin_stats CASCADE;
+DROP FUNCTION IF EXISTS get_weekly_activity CASCADE;
+DROP FUNCTION IF EXISTS get_recent_audit_logs CASCADE;
+DROP FUNCTION IF EXISTS admin_block_user CASCADE;
+DROP FUNCTION IF EXISTS admin_update_user_role CASCADE;
+DROP FUNCTION IF EXISTS get_all_users_admin CASCADE;
+
+-- Drop materialized views
+DROP MATERIALIZED VIEW IF EXISTS analytics_daily CASCADE;
 
 -- ============================================================================
 -- 1. EXTENSIONS
@@ -94,7 +106,7 @@ END;
 $$;
 
 -- ============================================================================
--- 2.2 KEYWORD SEARCH FUNCTION (Full-Text Search)
+-- 2.2 KEYWORD SEARCH FUNCTION (Full-Text Search with SQL Injection Protection)
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION search_dubai_code_keywords(
@@ -108,13 +120,19 @@ RETURNS TABLE (
   rank FLOAT
 )
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   tsquery_val tsquery;
+  sanitized_query TEXT;
 BEGIN
+  -- Sanitize input: remove special characters that could cause issues
+  sanitized_query := regexp_replace(search_query, '[^\w\s]', ' ', 'g');
+  sanitized_query := trim(regexp_replace(sanitized_query, '\s+', ' ', 'g'));
+  
   -- Convert search query to tsquery with prefix matching
-  -- Handle special characters and create a flexible query
-  tsquery_val := plainto_tsquery('english', search_query);
+  tsquery_val := plainto_tsquery('english', sanitized_query);
   
   RETURN QUERY
   SELECT
@@ -125,7 +143,7 @@ BEGIN
   FROM dubai_code_chunks
   WHERE dubai_code_chunks.fts @@ tsquery_val
   ORDER BY rank DESC
-  LIMIT match_count;
+  LIMIT LEAST(match_count, 100);
 END;
 $$;
 
@@ -210,7 +228,7 @@ END;
 $$;
 
 -- ============================================================================
--- 2.4 EXACT SECTION SEARCH (For precise lookups like "Section 4.2.1")
+-- 2.4 EXACT SECTION SEARCH (For precise lookups with SQL Injection Protection)
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION search_dubai_code_exact(
@@ -224,18 +242,25 @@ RETURNS TABLE (
   match_position INT
 )
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
 AS $$
+DECLARE
+  safe_pattern TEXT;
 BEGIN
+  -- Sanitize: escape special characters for LIKE pattern
+  safe_pattern := regexp_replace(search_pattern, '([%_\\])', '\\\1', 'g');
+  
   RETURN QUERY
   SELECT
     d.id,
     d.content,
     d.metadata,
-    POSITION(LOWER(search_pattern) IN LOWER(d.content))::INT AS match_position
+    POSITION(LOWER(safe_pattern) IN LOWER(d.content))::INT AS match_position
   FROM dubai_code_chunks d
-  WHERE LOWER(d.content) LIKE '%' || LOWER(search_pattern) || '%'
+  WHERE LOWER(d.content) LIKE '%' || LOWER(safe_pattern) || '%'
   ORDER BY match_position
-  LIMIT match_count;
+  LIMIT LEAST(match_count, 100); -- Cap results
 END;
 $$;
 
@@ -243,19 +268,30 @@ $$;
 -- 3. AUTHENTICATION SYSTEM
 -- ============================================================================
 
--- Create users table
+-- Create users table with blocked fields
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   username TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   full_name TEXT,
   role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
+  blocked BOOLEAN DEFAULT FALSE,
+  blocked_reason TEXT,
+  blocked_at TIMESTAMP WITH TIME ZONE,
+  blocked_by UUID,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   last_login TIMESTAMP WITH TIME ZONE
 );
 
 -- Create index for faster username lookup
 CREATE INDEX IF NOT EXISTS users_username_idx ON users(username);
+
+-- Create index for blocked users
+CREATE INDEX IF NOT EXISTS users_blocked_idx ON users(blocked) WHERE blocked = TRUE;
+
+-- Add foreign key for blocked_by (self-referencing)
+ALTER TABLE users ADD CONSTRAINT users_blocked_by_fkey 
+  FOREIGN KEY (blocked_by) REFERENCES users(id) ON DELETE SET NULL;
 
 -- ============================================================================
 -- 4. CHAT HISTORY SYSTEM
@@ -305,20 +341,25 @@ FOR EACH ROW
 EXECUTE FUNCTION update_session_timestamp();
 
 -- ============================================================================
--- 5. PERMISSIONS
+-- 5. AUDIT LOGS TABLE
 -- ============================================================================
 
--- Grant permissions for RAG system (including new functions)
-GRANT SELECT ON dubai_code_chunks TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION match_dubai_code TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION search_dubai_code_keywords TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION match_dubai_code_hybrid TO anon, authenticated;
-GRANT EXECUTE ON FUNCTION search_dubai_code_exact TO anon, authenticated;
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id BIGSERIAL PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  target_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  metadata JSONB DEFAULT '{}',
+  ip_address TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 
--- Grant permissions for auth and chat systems
-GRANT ALL ON users TO anon, authenticated;
-GRANT ALL ON chat_sessions TO anon, authenticated;
-GRANT ALL ON chat_messages TO anon, authenticated;
+-- Indexes for efficient querying
+CREATE INDEX IF NOT EXISTS audit_logs_user_id_idx ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS audit_logs_target_user_idx ON audit_logs(target_user_id);
 
 -- ============================================================================
 -- 6. RATE LIMITING SYSTEM
@@ -404,12 +445,320 @@ BEGIN
 END;
 $$;
 
+-- ============================================================================
+-- 7. ANALYTICS MATERIALIZED VIEWS
+-- ============================================================================
+
+-- Daily stats view (refresh periodically)
+CREATE MATERIALIZED VIEW IF NOT EXISTS analytics_daily AS
+SELECT 
+  DATE(created_at) as date,
+  COUNT(DISTINCT user_id) as active_users,
+  COUNT(*) as total_messages,
+  COUNT(*) FILTER (WHERE role = 'user') as user_messages,
+  COUNT(*) FILTER (WHERE role = 'assistant') as assistant_messages
+FROM chat_messages
+GROUP BY DATE(created_at)
+ORDER BY date DESC;
+
+-- Create index on materialized view
+CREATE UNIQUE INDEX IF NOT EXISTS analytics_daily_date_idx ON analytics_daily(date);
+
+-- Function to refresh analytics
+CREATE OR REPLACE FUNCTION refresh_analytics()
+RETURNS void AS $$
+BEGIN
+  REFRESH MATERIALIZED VIEW CONCURRENTLY analytics_daily;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
+-- 8. ADMIN ANALYTICS FUNCTIONS
+-- ============================================================================
+
+-- Get dashboard stats
+CREATE OR REPLACE FUNCTION get_admin_stats()
+RETURNS TABLE (
+  total_users BIGINT,
+  active_users_today BIGINT,
+  total_sessions BIGINT,
+  total_messages BIGINT,
+  messages_today BIGINT,
+  blocked_users BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    (SELECT COUNT(*) FROM users)::BIGINT as total_users,
+    (SELECT COUNT(DISTINCT user_id) FROM chat_messages WHERE created_at > NOW() - INTERVAL '24 hours')::BIGINT as active_users_today,
+    (SELECT COUNT(*) FROM chat_sessions)::BIGINT as total_sessions,
+    (SELECT COUNT(*) FROM chat_messages)::BIGINT as total_messages,
+    (SELECT COUNT(*) FROM chat_messages WHERE created_at > NOW() - INTERVAL '24 hours')::BIGINT as messages_today,
+    (SELECT COUNT(*) FROM users WHERE blocked = TRUE)::BIGINT as blocked_users;
+END;
+$$;
+
+-- Get weekly activity chart data
+CREATE OR REPLACE FUNCTION get_weekly_activity()
+RETURNS TABLE (
+  day DATE,
+  messages BIGINT,
+  users BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    DATE(d.day) as day,
+    COALESCE(COUNT(m.id), 0)::BIGINT as messages,
+    COALESCE(COUNT(DISTINCT m.session_id), 0)::BIGINT as users
+  FROM generate_series(
+    NOW() - INTERVAL '7 days',
+    NOW(),
+    INTERVAL '1 day'
+  ) as d(day)
+  LEFT JOIN chat_messages m ON DATE(m.created_at) = DATE(d.day)
+  GROUP BY DATE(d.day)
+  ORDER BY day;
+END;
+$$;
+
+-- Get recent audit logs for admin
+CREATE OR REPLACE FUNCTION get_recent_audit_logs(
+  p_limit INT DEFAULT 50,
+  p_action_filter TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+  id BIGINT,
+  user_id UUID,
+  username TEXT,
+  action TEXT,
+  target_user_id UUID,
+  target_username TEXT,
+  metadata JSONB,
+  ip_address TEXT,
+  created_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    al.id,
+    al.user_id,
+    u.username,
+    al.action,
+    al.target_user_id,
+    tu.username as target_username,
+    al.metadata,
+    al.ip_address,
+    al.created_at
+  FROM audit_logs al
+  LEFT JOIN users u ON al.user_id = u.id
+  LEFT JOIN users tu ON al.target_user_id = tu.id
+  WHERE (p_action_filter IS NULL OR al.action = p_action_filter)
+  ORDER BY al.created_at DESC
+  LIMIT LEAST(p_limit, 500);
+END;
+$$;
+
+-- ============================================================================
+-- 9. USER MANAGEMENT FUNCTIONS
+-- ============================================================================
+
+-- Block/Unblock user
+CREATE OR REPLACE FUNCTION admin_block_user(
+  p_admin_id UUID,
+  p_target_user_id UUID,
+  p_blocked BOOLEAN,
+  p_reason TEXT DEFAULT NULL
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_admin_role TEXT;
+BEGIN
+  -- Verify admin role
+  SELECT role INTO v_admin_role FROM users WHERE id = p_admin_id;
+  IF v_admin_role != 'admin' THEN
+    RAISE EXCEPTION 'Unauthorized: Admin role required';
+  END IF;
+  
+  -- Prevent self-blocking
+  IF p_admin_id = p_target_user_id THEN
+    RAISE EXCEPTION 'Cannot block yourself';
+  END IF;
+  
+  -- Update user
+  UPDATE users
+  SET 
+    blocked = p_blocked,
+    blocked_reason = CASE WHEN p_blocked THEN p_reason ELSE NULL END,
+    blocked_at = CASE WHEN p_blocked THEN NOW() ELSE NULL END,
+    blocked_by = CASE WHEN p_blocked THEN p_admin_id ELSE NULL END
+  WHERE id = p_target_user_id;
+  
+  RETURN TRUE;
+END;
+$$;
+
+-- Update user role
+CREATE OR REPLACE FUNCTION admin_update_user_role(
+  p_admin_id UUID,
+  p_target_user_id UUID,
+  p_new_role TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_admin_role TEXT;
+BEGIN
+  -- Validate role
+  IF p_new_role NOT IN ('admin', 'user') THEN
+    RAISE EXCEPTION 'Invalid role';
+  END IF;
+  
+  -- Verify admin role
+  SELECT role INTO v_admin_role FROM users WHERE id = p_admin_id;
+  IF v_admin_role != 'admin' THEN
+    RAISE EXCEPTION 'Unauthorized: Admin role required';
+  END IF;
+  
+  -- Update user role
+  UPDATE users SET role = p_new_role WHERE id = p_target_user_id;
+  
+  RETURN TRUE;
+END;
+$$;
+
+-- Get all users for admin management
+CREATE OR REPLACE FUNCTION get_all_users_admin(
+  p_admin_id UUID,
+  p_limit INT DEFAULT 50,
+  p_offset INT DEFAULT 0,
+  p_search TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+  id UUID,
+  username TEXT,
+  full_name TEXT,
+  role TEXT,
+  blocked BOOLEAN,
+  blocked_reason TEXT,
+  created_at TIMESTAMPTZ,
+  last_login TIMESTAMPTZ,
+  session_count BIGINT,
+  message_count BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_admin_role TEXT;
+BEGIN
+  -- Verify admin role
+  SELECT users.role INTO v_admin_role FROM users WHERE users.id = p_admin_id;
+  IF v_admin_role != 'admin' THEN
+    RAISE EXCEPTION 'Unauthorized: Admin role required';
+  END IF;
+  
+  RETURN QUERY
+  SELECT 
+    u.id,
+    u.username,
+    u.full_name,
+    u.role,
+    u.blocked,
+    u.blocked_reason,
+    u.created_at,
+    u.last_login,
+    (SELECT COUNT(*) FROM chat_sessions cs WHERE cs.user_id = u.id)::BIGINT as session_count,
+    (SELECT COUNT(*) FROM chat_messages cm 
+     JOIN chat_sessions cs ON cm.session_id = cs.id 
+     WHERE cs.user_id = u.id)::BIGINT as message_count
+  FROM users u
+  WHERE (p_search IS NULL OR u.username ILIKE '%' || p_search || '%' OR u.full_name ILIKE '%' || p_search || '%')
+  ORDER BY u.created_at DESC
+  LIMIT LEAST(p_limit, 100)
+  OFFSET p_offset;
+END;
+$$;
+
+-- ============================================================================
+-- 10. PERMISSIONS
+-- ============================================================================
+
+-- Grant permissions for RAG system
+GRANT SELECT ON dubai_code_chunks TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION match_dubai_code TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION search_dubai_code_keywords TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION match_dubai_code_hybrid TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION search_dubai_code_exact TO anon, authenticated;
+
+-- Grant permissions for auth and chat systems
+GRANT ALL ON users TO anon, authenticated;
+GRANT ALL ON chat_sessions TO anon, authenticated;
+GRANT ALL ON chat_messages TO anon, authenticated;
+
 -- Grant permissions for rate limiting
 GRANT ALL ON rate_limits TO anon, authenticated;
 GRANT EXECUTE ON FUNCTION check_rate_limit TO anon, authenticated;
 
+-- Grant permissions for admin functions
+GRANT EXECUTE ON FUNCTION get_admin_stats TO authenticated;
+GRANT EXECUTE ON FUNCTION get_weekly_activity TO authenticated;
+GRANT EXECUTE ON FUNCTION get_recent_audit_logs TO authenticated;
+GRANT EXECUTE ON FUNCTION admin_block_user TO authenticated;
+GRANT EXECUTE ON FUNCTION admin_update_user_role TO authenticated;
+GRANT EXECUTE ON FUNCTION get_all_users_admin TO authenticated;
+GRANT EXECUTE ON FUNCTION refresh_analytics TO authenticated;
+
+-- Grant access to audit_logs table
+GRANT ALL ON audit_logs TO anon, authenticated;
+GRANT USAGE, SELECT ON SEQUENCE audit_logs_id_seq TO anon, authenticated;
+
 -- ============================================================================
--- 7. DEFAULT USERS (Create via application script)
+-- 11. ROW LEVEL SECURITY (Optional - for extra security with anon key)
+-- ============================================================================
+
+-- Enable RLS on tables
+ALTER TABLE chat_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+
+-- Policies for chat_sessions (users can only see their own)
+DROP POLICY IF EXISTS "Users can view own sessions" ON chat_sessions;
+CREATE POLICY "Users can view own sessions" ON chat_sessions
+  FOR SELECT USING (user_id = auth.uid()::uuid);
+
+DROP POLICY IF EXISTS "Users can insert own sessions" ON chat_sessions;
+CREATE POLICY "Users can insert own sessions" ON chat_sessions
+  FOR INSERT WITH CHECK (user_id = auth.uid()::uuid);
+
+DROP POLICY IF EXISTS "Users can delete own sessions" ON chat_sessions;
+CREATE POLICY "Users can delete own sessions" ON chat_sessions
+  FOR DELETE USING (user_id = auth.uid()::uuid);
+
+-- Note: Service role key bypasses RLS, so admin operations still work
+
+-- ============================================================================
+-- 12. DEFAULT USERS (Create via application script)
 -- ============================================================================
 -- 
 -- IMPORTANT: bcrypt hashes cannot be generated in SQL.
@@ -427,7 +776,7 @@ GRANT EXECUTE ON FUNCTION check_rate_limit TO anon, authenticated;
 --
 
 -- ============================================================================
--- 8. VERIFICATION
+-- VERIFICATION
 -- ============================================================================
 
 SELECT 
@@ -436,4 +785,6 @@ SELECT
   (SELECT COUNT(*) FROM users) AS users_count,
   (SELECT COUNT(*) FROM chat_sessions) AS sessions_count,
   (SELECT COUNT(*) FROM chat_messages) AS messages_count,
-  (SELECT COUNT(*) FROM rate_limits) AS rate_limits_count;
+  (SELECT COUNT(*) FROM rate_limits) AS rate_limits_count,
+  (SELECT COUNT(*) FROM audit_logs) AS audit_logs_count,
+  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'blocked') AS blocked_column_exists;
