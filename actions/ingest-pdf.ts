@@ -1,199 +1,49 @@
 'use server';
 
 // ============================================================================
-// PDF Ingestion Server Action (Enhanced with Precise Page Tracking)
+// PDF Ingestion Server Action (Enhanced with PDF.js & TOC Extraction)
 // ============================================================================
 
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { createServerClient } from '@/lib/supabase';
 import { generateEmbedding } from '@/lib/gemini';
-import type { IngestionResult, ChunkMetadata, EnhancedChunkMetadata } from '@/types';
-import fs from 'fs';
+import { createPDFParser, PDFParser } from '@/lib/pdf-parser';
+import type { 
+  IngestionResult, 
+  ChunkMetadata,
+  PDFPageContent,
+  DocumentStructure,
+  ChunkWithPageRange
+} from '@/types';
 import path from 'path';
-
-// -----------------------------------------------------------------------------
-// PDF Parsing with Page-by-Page Extraction
-// -----------------------------------------------------------------------------
-
-interface PDFPage {
-  pageNumber: number;
-  text: string;
-}
-
-interface PDFData {
-  pages: PDFPage[];
-  totalPages: number;
-}
-
-/**
- * Parse PDF with page-by-page text extraction for accurate page tracking
- */
-async function parsePDFWithPages(buffer: Buffer): Promise<PDFData> {
-  // Dynamic import to avoid the test file issue
-  const pdfParse = await import('pdf-parse/lib/pdf-parse.js');
-  
-  // Custom page renderer to track page boundaries
-  const pages: PDFPage[] = [];
-  let currentPage = 0;
-
-  // First pass: get total pages and full text
-  const pdfData = await pdfParse.default(buffer, {
-    // Custom page renderer that tracks page content
-    pagerender: async function(pageData: { pageIndex: number; getTextContent: () => Promise<{ items: Array<{ str: string }> }> }) {
-      currentPage = pageData.pageIndex + 1;
-      
-      const textContent = await pageData.getTextContent();
-      const pageText = textContent.items
-        .map((item: { str: string }) => item.str)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      
-      if (pageText.length > 0) {
-        pages.push({
-          pageNumber: currentPage,
-          text: pageText,
-        });
-      }
-      
-      return pageText;
-    }
-  });
-
-  // If page-by-page extraction failed, fall back to splitting by heuristics
-  if (pages.length === 0 && pdfData.text) {
-    // Estimate ~3000 chars per page as fallback
-    const CHARS_PER_PAGE = 3000;
-    const fullText = pdfData.text;
-    const estimatedPages = Math.ceil(fullText.length / CHARS_PER_PAGE);
-    
-    for (let i = 0; i < estimatedPages; i++) {
-      const start = i * CHARS_PER_PAGE;
-      const end = Math.min(start + CHARS_PER_PAGE, fullText.length);
-      const pageText = fullText.slice(start, end).trim();
-      
-      if (pageText.length > 0) {
-        pages.push({
-          pageNumber: i + 1,
-          text: pageText,
-        });
-      }
-    }
-  }
-
-  return {
-    pages: pages.length > 0 ? pages : [{ pageNumber: 1, text: pdfData.text }],
-    totalPages: pdfData.numpages || pages.length,
-  };
-}
+import fs from 'fs';
 
 // -----------------------------------------------------------------------------
 // Configuration
 // -----------------------------------------------------------------------------
 
-const CHUNK_SIZE = 800;      // Smaller chunks for more precision
-const CHUNK_OVERLAP = 150;   // Overlap to preserve context
-const BATCH_SIZE = 10;
+const CHUNK_SIZE = 800;      // Characters per chunk
+const CHUNK_OVERLAP = 150;   // Overlap between chunks
+const BATCH_SIZE = 10;       // Chunks per database batch
 const PDF_PATH = 'public/dubai-code.pdf';
 
 // -----------------------------------------------------------------------------
-// Enhanced Metadata Extraction
+// Enhanced Text Splitter with Page Tracking
 // -----------------------------------------------------------------------------
 
-/**
- * Extract rich metadata from chunk content with page info
- */
-function extractEnhancedMetadata(
-  content: string, 
-  pageNumber: number,
-  chunkIndex: number
-): EnhancedChunkMetadata {
-  // Extract chapter
-  const chapterPatterns = [
-    /Chapter\s+(\d+)[:\s]+([^\n]+)/i,
-    /CHAPTER\s+(\d+)[:\s]*([^\n]*)/i,
-  ];
-  let chapter: string | undefined;
-  for (const pattern of chapterPatterns) {
-    const match = content.match(pattern);
-    if (match) {
-      chapter = `Chapter ${match[1]}${match[2] ? ': ' + match[2].trim() : ''}`;
-      break;
-    }
-  }
-
-  // Extract section number (like 4.2.1)
-  const sectionPatterns = [
-    /\b(\d+\.\d+(?:\.\d+)?(?:\.\d+)?)\s+/,
-    /Section\s+(\d+\.\d+(?:\.\d+)?)/i,
-  ];
-  let section: string | undefined;
-  for (const pattern of sectionPatterns) {
-    const match = content.match(pattern);
-    if (match) {
-      section = match[1];
-      break;
-    }
-  }
-
-  // Extract table information
-  const tablePatterns = [
-    /Table\s+(\d+[-.]?\d*)[:\s]*([^\n]*)/i,
-    /TABLE\s+(\d+[-.]?\d*)/i,
-  ];
-  let tableId: string | undefined;
-  let tableName: string | undefined;
-  for (const pattern of tablePatterns) {
-    const match = content.match(pattern);
-    if (match) {
-      tableId = `Table ${match[1]}`;
-      tableName = match[2]?.trim() || undefined;
-      break;
-    }
-  }
-
-  // Detect if content is primarily a table
-  const isTable = /\|.*\|/m.test(content) || 
-                  tableId !== undefined ||
-                  (content.match(/\t/g) || []).length > 5;
-
-  // Extract headings (lines that look like headers)
-  const headings: string[] = [];
-  const headingPattern = /^([A-Z][A-Z\s]{5,})/gm;
-  let headingMatch;
-  while ((headingMatch = headingPattern.exec(content)) !== null) {
-    const heading = headingMatch[1].trim();
-    if (heading.length > 5 && heading.length < 100) {
-      headings.push(heading);
-    }
-  }
-
-  return {
-    page: pageNumber,
-    chapter,
-    section,
-    tableId,
-    tableName,
-    isTable,
-    headings: headings.slice(0, 3), // Max 3 headings
-    paragraph: chunkIndex,
-  };
-}
-
-// -----------------------------------------------------------------------------
-// Smart Text Splitting (Preserves Structure)
-// -----------------------------------------------------------------------------
-
-interface ChunkWithPageInfo {
-  content: string;
+interface PageTextSegment {
+  text: string;
   pageNumber: number;
-  metadata: EnhancedChunkMetadata;
 }
 
 /**
- * Split text while preserving page boundaries and structure
+ * Split text while tracking which pages each chunk spans
+ * This ensures accurate page range attribution
  */
-async function splitTextWithPageTracking(pages: PDFPage[]): Promise<ChunkWithPageInfo[]> {
+async function splitWithPageTracking(
+  pages: PDFPageContent[],
+  parser: PDFParser
+): Promise<ChunkWithPageRange[]> {
   const textSplitter = new RecursiveCharacterTextSplitter({
     chunkSize: CHUNK_SIZE,
     chunkOverlap: CHUNK_OVERLAP,
@@ -209,35 +59,119 @@ async function splitTextWithPageTracking(pages: PDFPage[]): Promise<ChunkWithPag
     ],
   });
 
-  const chunksWithPages: ChunkWithPageInfo[] = [];
-  let globalChunkIndex = 0;
-
+  // Build a map of character positions to page numbers
+  const segments: PageTextSegment[] = [];
+  let fullText = '';
+  
   for (const page of pages) {
-    if (!page.text || page.text.trim().length === 0) continue;
+    if (page.text.trim().length === 0) continue;
+    
+    const startPos = fullText.length;
+    fullText += page.text + '\n\n'; // Add separator between pages
+    
+    segments.push({
+      text: page.text,
+      pageNumber: page.pageNumber,
+    });
+  }
 
-    // Split this page's content
-    const pageChunks = await textSplitter.splitText(page.text);
+  // Split the full text
+  const rawChunks = await textSplitter.splitText(fullText);
+  
+  // For each chunk, determine which pages it spans
+  const chunksWithPages: ChunkWithPageRange[] = [];
+  let currentPosition = 0;
 
-    for (const chunkContent of pageChunks) {
-      if (chunkContent.trim().length < 50) continue; // Skip tiny chunks
+  for (const chunkContent of rawChunks) {
+    if (chunkContent.trim().length < 50) continue; // Skip tiny chunks
+
+    // Find the chunk position in full text
+    const chunkStart = fullText.indexOf(chunkContent, currentPosition);
+    const chunkEnd = chunkStart + chunkContent.length;
+    
+    // Determine which pages this chunk spans
+    let position = 0;
+    let startPage = 1;
+    let endPage = 1;
+    let foundStart = false;
+
+    for (const segment of segments) {
+      const segmentEnd = position + segment.text.length + 2; // +2 for '\n\n'
       
-      const metadata = extractEnhancedMetadata(
-        chunkContent, 
-        page.pageNumber, 
-        globalChunkIndex
-      );
-
-      chunksWithPages.push({
-        content: chunkContent.trim(),
-        pageNumber: page.pageNumber,
-        metadata,
-      });
-
-      globalChunkIndex++;
+      if (!foundStart && chunkStart < segmentEnd) {
+        startPage = segment.pageNumber;
+        foundStart = true;
+      }
+      
+      if (chunkEnd <= segmentEnd) {
+        endPage = segment.pageNumber;
+        break;
+      }
+      
+      if (foundStart) {
+        endPage = segment.pageNumber;
+      }
+      
+      position = segmentEnd;
     }
+
+    // Get section info from TOC
+    const sectionInfo = parser.findSectionForPage(startPage);
+    
+    // Detect content type
+    const contentType = parser.detectContentType(chunkContent);
+    const isTable = contentType === 'table';
+
+    chunksWithPages.push({
+      content: chunkContent.trim(),
+      startPage,
+      endPage,
+      section: sectionInfo.section,
+      sectionTitle: sectionInfo.sectionTitle,
+      sectionPath: sectionInfo.sectionPath,
+      isTable,
+      contentType,
+    });
+
+    currentPosition = chunkStart + 1;
   }
 
   return chunksWithPages;
+}
+
+// -----------------------------------------------------------------------------
+// Build Enhanced Metadata
+// -----------------------------------------------------------------------------
+
+function buildChunkMetadata(chunk: ChunkWithPageRange, index: number): ChunkMetadata {
+  // Extract chapter from section path
+  const chapter = chunk.sectionPath?.find(p => /chapter/i.test(p));
+  
+  // Try to extract table ID from content
+  let tableId: string | undefined;
+  let tableName: string | undefined;
+  
+  if (chunk.isTable) {
+    const tableMatch = chunk.content.match(/Table\s+(\d+[-.]?\d*)[:\s]*([^\n]*)/i);
+    if (tableMatch) {
+      tableId = `Table ${tableMatch[1]}`;
+      tableName = tableMatch[2]?.trim() || undefined;
+    }
+  }
+
+  return {
+    page: chunk.startPage,          // Primary page (backwards compatibility)
+    startPage: chunk.startPage,     // NEW: Start of page range
+    endPage: chunk.endPage,         // NEW: End of page range
+    chapter,
+    section: chunk.section,
+    sectionTitle: chunk.sectionTitle,
+    sectionPath: chunk.sectionPath,
+    tableId,
+    tableName,
+    isTable: chunk.isTable,
+    contentType: chunk.contentType,
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -245,24 +179,56 @@ async function splitTextWithPageTracking(pages: PDFPage[]): Promise<ChunkWithPag
 // -----------------------------------------------------------------------------
 
 export async function ingestPDF(): Promise<IngestionResult> {
+  let parser: PDFParser | null = null;
+  
   try {
-    // Step 1: Read and parse PDF with page tracking
     const pdfPath = path.join(process.cwd(), PDF_PATH);
     
     if (!fs.existsSync(pdfPath)) {
       throw new Error(`PDF file not found at ${pdfPath}`);
     }
 
-    const pdfBuffer = fs.readFileSync(pdfPath);
-    const pdfData = await parsePDFWithPages(pdfBuffer);
+    console.log('📄 Starting PDF ingestion with PDF.js...');
 
-    // Step 2: Split text with page tracking
-    const chunksWithPages = await splitTextWithPageTracking(pdfData.pages);
+    // Step 1: Load PDF with PDF.js
+    parser = await createPDFParser(pdfPath);
+    console.log(`✅ Loaded PDF with ${parser.totalPages} pages`);
 
-    // Step 3: Generate embeddings and upsert to database
-    const supabase = createServerClient();
+    // Step 2: Extract Table of Contents
+    console.log('📑 Extracting Table of Contents...');
+    const structure = await parser.extractTOC();
+    console.log(`✅ Found ${structure.flatTOC.length} TOC entries`);
     
+    // Log some TOC entries for verification
+    if (structure.flatTOC.length > 0) {
+      console.log('📋 Sample TOC entries:');
+      structure.flatTOC.slice(0, 5).forEach(entry => {
+        console.log(`   - ${entry.section || '?'}: ${entry.title} (Page ${entry.pageNumber})`);
+      });
+    }
+
+    // Step 3: Extract text from all pages
+    console.log('📝 Extracting text from pages...');
+    const pages = await parser.getAllPagesText();
+    console.log(`✅ Extracted text from ${pages.length} pages`);
+
+    // Step 4: Split into chunks with page tracking
+    console.log('✂️ Splitting into chunks with page tracking...');
+    const chunksWithPages = await splitWithPageTracking(pages, parser);
+    console.log(`✅ Created ${chunksWithPages.length} chunks`);
+
+    // Log chunk statistics
+    const multiPageChunks = chunksWithPages.filter(c => c.startPage !== c.endPage);
+    console.log(`📊 Chunks spanning multiple pages: ${multiPageChunks.length}`);
+    
+    const tableChunks = chunksWithPages.filter(c => c.isTable);
+    console.log(`📊 Table chunks: ${tableChunks.length}`);
+
+    // Step 5: Generate embeddings and store in database
+    const supabase = createServerClient();
     let processedCount = 0;
+
+    console.log('🔄 Generating embeddings and storing...');
 
     for (let i = 0; i < chunksWithPages.length; i += BATCH_SIZE) {
       const batch = chunksWithPages.slice(i, i + BATCH_SIZE);
@@ -273,42 +239,56 @@ export async function ingestPDF(): Promise<IngestionResult> {
       );
       const embeddings = await Promise.all(embeddingsPromises);
 
-      // Prepare records for upsert with enhanced metadata
+      // Build records with enhanced metadata
       const records = batch.map((chunk, idx) => ({
         content: chunk.content,
-        metadata: chunk.metadata,
+        metadata: buildChunkMetadata(chunk, i + idx),
         embedding: embeddings[idx],
       }));
 
-      // Upsert to Supabase
+      // Insert to Supabase
       const { error } = await supabase
         .from('dubai_code_chunks')
         .insert(records);
 
       if (error) {
-        throw new Error(`Failed to upsert batch: ${error.message}`);
+        throw new Error(`Failed to insert batch: ${error.message}`);
       }
 
       processedCount += batch.length;
+      
+      // Progress logging
+      if (processedCount % 50 === 0) {
+        console.log(`   Processed ${processedCount}/${chunksWithPages.length} chunks...`);
+      }
 
       // Small delay between batches to avoid rate limits
       if (i + BATCH_SIZE < chunksWithPages.length) {
         await new Promise(resolve => setTimeout(resolve, 300));
       }
     }
+
+    console.log('✅ PDF ingestion complete!');
     
     return {
       success: true,
       chunksProcessed: processedCount,
+      pagesProcessed: parser.totalPages,
+      tocExtracted: structure.flatTOC.length > 0,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error('PDF ingestion error:', errorMessage);
+    console.error('❌ PDF ingestion error:', errorMessage);
     return {
       success: false,
       chunksProcessed: 0,
       error: `PDF ingestion failed: ${errorMessage}`,
     };
+  } finally {
+    // Clean up
+    if (parser) {
+      await parser.close();
+    }
   }
 }
 
@@ -320,7 +300,7 @@ export async function clearChunks(): Promise<{ success: boolean; error?: string 
   try {
     const supabase = createServerClient();
     
-    // First, check if table exists and we have access
+    // Check if table exists and has data
     const { count, error: countError } = await supabase
       .from('dubai_code_chunks')
       .select('*', { count: 'exact', head: true });
@@ -333,7 +313,6 @@ export async function clearChunks(): Promise<{ success: boolean; error?: string 
       };
     }
     
-    // If no chunks, return success
     if (count === 0) {
       return { success: true };
     }
@@ -342,7 +321,7 @@ export async function clearChunks(): Promise<{ success: boolean; error?: string 
     const { error } = await supabase
       .from('dubai_code_chunks')
       .delete()
-      .gte('id', 0); // Delete all rows (gte 0 matches all positive IDs)
+      .gte('id', 0);
 
     if (error) {
       console.error('Clear chunks - delete error:', error);
@@ -352,6 +331,7 @@ export async function clearChunks(): Promise<{ success: boolean; error?: string 
       };
     }
 
+    console.log(`✅ Cleared ${count} chunks from database`);
     return { success: true };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -364,7 +344,7 @@ export async function clearChunks(): Promise<{ success: boolean; error?: string 
 }
 
 // -----------------------------------------------------------------------------
-// Get Ingestion Status
+// Get Ingestion Status (Enhanced)
 // -----------------------------------------------------------------------------
 
 export async function getIngestionStatus(): Promise<{
@@ -373,12 +353,13 @@ export async function getIngestionStatus(): Promise<{
   lastUpdated?: string;
   dbConnected: boolean;
   pageRange?: { min: number; max: number };
+  hasTOC?: boolean;
+  hasPageRanges?: boolean;
   error?: string;
 }> {
   try {
     const supabase = createServerClient();
     
-    // Test connection with a simple query
     const { count, error } = await supabase
       .from('dubai_code_chunks')
       .select('*', { count: 'exact', head: true });
@@ -393,20 +374,37 @@ export async function getIngestionStatus(): Promise<{
       };
     }
 
-    // Get page range from metadata if there are chunks
+    // Get page range and check for new metadata fields
     let minPage = 1;
     let maxPage = 1;
+    let hasTOC = false;
+    let hasPageRanges = false;
     
     if (count && count > 0) {
-      const { data: pageData, error: pageError } = await supabase
+      const { data: sampleData, error: sampleError } = await supabase
         .from('dubai_code_chunks')
         .select('metadata')
-        .limit(1000);
+        .limit(100);
 
-      if (!pageError && pageData && pageData.length > 0) {
-        const pages = pageData
-          .map(d => (d.metadata as { page?: number })?.page)
-          .filter((p): p is number => typeof p === 'number');
+      if (!sampleError && sampleData && sampleData.length > 0) {
+        const pages: number[] = [];
+        
+        for (const d of sampleData) {
+          const metadata = d.metadata as ChunkMetadata;
+          
+          // Check for startPage/endPage
+          if (metadata?.startPage && metadata?.endPage) {
+            hasPageRanges = true;
+            pages.push(metadata.startPage, metadata.endPage);
+          } else if (metadata?.page) {
+            pages.push(metadata.page);
+          }
+          
+          // Check for sectionPath (indicates TOC was extracted)
+          if (metadata?.sectionPath && metadata.sectionPath.length > 0) {
+            hasTOC = true;
+          }
+        }
         
         if (pages.length > 0) {
           minPage = Math.min(...pages);
@@ -420,6 +418,8 @@ export async function getIngestionStatus(): Promise<{
       chunkCount: count || 0,
       dbConnected: true,
       pageRange: { min: minPage, max: maxPage },
+      hasTOC,
+      hasPageRanges,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -434,19 +434,25 @@ export async function getIngestionStatus(): Promise<{
 }
 
 // -----------------------------------------------------------------------------
-// Test RAG Function
+// Test RAG Function (Enhanced)
 // -----------------------------------------------------------------------------
 
 export async function testRAGQuery(): Promise<{
   success: boolean;
   chunksFound: number;
-  sampleChunk?: { page: number; section?: string; preview: string };
+  sampleChunk?: { 
+    page: number;
+    startPage?: number;
+    endPage?: number;
+    section?: string;
+    sectionTitle?: string;
+    preview: string;
+  };
   error?: string;
 }> {
   try {
     const supabase = createServerClient();
     
-    // First check if table has data
     const { count, error: countError } = await supabase
       .from('dubai_code_chunks')
       .select('*', { count: 'exact', head: true });
@@ -460,7 +466,6 @@ export async function testRAGQuery(): Promise<{
       };
     }
     
-    // If no chunks, the RPC will work but return nothing
     if (!count || count === 0) {
       return {
         success: true,
@@ -469,37 +474,37 @@ export async function testRAGQuery(): Promise<{
       };
     }
     
-    // Create a simple test embedding (768 zeros - just for connectivity test)
-    const testEmbedding = new Array(768).fill(0);
-    
-    const { data, error } = await supabase.rpc('match_dubai_code', {
-      query_embedding: testEmbedding,
-      match_count: 1,
-      filter: {},
-    });
+    // Get a sample chunk to verify metadata structure
+    const { data: sampleData, error: sampleError } = await supabase
+      .from('dubai_code_chunks')
+      .select('content, metadata')
+      .limit(1)
+      .single();
 
-    if (error) {
-      console.error('RAG test - RPC error:', error);
+    if (sampleError) {
       return {
         success: false,
         chunksFound: 0,
-        error: `RPC Error: ${error.message}. Make sure to run the SQL migration first.`,
+        error: `Sample query error: ${sampleError.message}`,
       };
     }
 
-    const sampleChunk = data?.[0];
+    const metadata = sampleData?.metadata as ChunkMetadata;
     
     return {
       success: true,
-      chunksFound: data?.length || 0,
-      sampleChunk: sampleChunk ? {
-        page: (sampleChunk.metadata as { page?: number })?.page || 0,
-        section: (sampleChunk.metadata as { section?: string })?.section,
-        preview: (sampleChunk.content as string).slice(0, 100) + '...',
+      chunksFound: count,
+      sampleChunk: sampleData ? {
+        page: metadata?.page || 0,
+        startPage: metadata?.startPage,
+        endPage: metadata?.endPage,
+        section: metadata?.section,
+        sectionTitle: metadata?.sectionTitle,
+        preview: (sampleData.content as string).slice(0, 100) + '...',
       } : undefined,
     };
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'RPC test failed';
+    const errorMessage = error instanceof Error ? error.message : 'RAG test failed';
     console.error('RAG test query error:', errorMessage);
     return {
       success: false,

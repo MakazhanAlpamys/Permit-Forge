@@ -1,5 +1,5 @@
 // ============================================================================
-// PDF Ingestion API Route with Progress Streaming
+// PDF Ingestion API Route with Progress Streaming (Enhanced with PDF.js)
 // ============================================================================
 
 import { NextRequest } from 'next/server';
@@ -7,7 +7,8 @@ import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { createServerClient } from '@/lib/supabase';
 import { generateEmbedding } from '@/lib/gemini';
 import { getQuickSession } from '@/lib/auth';
-import type { EnhancedChunkMetadata } from '@/types';
+import { createPDFParser, PDFParser } from '@/lib/pdf-parser';
+import type { ChunkMetadata, PDFPageContent, ChunkWithPageRange } from '@/types';
 import fs from 'fs';
 import path from 'path';
 
@@ -21,188 +22,128 @@ const BATCH_SIZE = 10;
 const PDF_PATH = 'public/dubai-code.pdf';
 
 // -----------------------------------------------------------------------------
-// PDF Parsing
+// Enhanced Text Splitting with Page Tracking
 // -----------------------------------------------------------------------------
 
-interface PDFPage {
-  pageNumber: number;
+interface PageTextSegment {
   text: string;
-}
-
-async function parsePDFWithPages(buffer: Buffer): Promise<{ pages: PDFPage[]; totalPages: number }> {
-  const pdfParse = await import('pdf-parse/lib/pdf-parse.js');
-  
-  const pages: PDFPage[] = [];
-  let currentPage = 0;
-
-  const pdfData = await pdfParse.default(buffer, {
-    pagerender: async function(pageData: { pageIndex: number; getTextContent: () => Promise<{ items: Array<{ str: string }> }> }) {
-      currentPage = pageData.pageIndex + 1;
-      
-      const textContent = await pageData.getTextContent();
-      const pageText = textContent.items
-        .map((item: { str: string }) => item.str)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      
-      if (pageText.length > 0) {
-        pages.push({
-          pageNumber: currentPage,
-          text: pageText,
-        });
-      }
-      
-      return pageText;
-    }
-  });
-
-  if (pages.length === 0 && pdfData.text) {
-    const CHARS_PER_PAGE = 3000;
-    const fullText = pdfData.text;
-    const estimatedPages = Math.ceil(fullText.length / CHARS_PER_PAGE);
-    
-    for (let i = 0; i < estimatedPages; i++) {
-      const start = i * CHARS_PER_PAGE;
-      const end = Math.min(start + CHARS_PER_PAGE, fullText.length);
-      const pageText = fullText.slice(start, end).trim();
-      
-      if (pageText.length > 0) {
-        pages.push({
-          pageNumber: i + 1,
-          text: pageText,
-        });
-      }
-    }
-  }
-
-  return {
-    pages: pages.length > 0 ? pages : [{ pageNumber: 1, text: pdfData.text }],
-    totalPages: pdfData.numpages || pages.length,
-  };
-}
-
-// -----------------------------------------------------------------------------
-// Metadata Extraction
-// -----------------------------------------------------------------------------
-
-function extractEnhancedMetadata(
-  content: string, 
-  pageNumber: number,
-  chunkIndex: number
-): EnhancedChunkMetadata {
-  const chapterPatterns = [
-    /Chapter\s+(\d+)[:\s]+([^\n]+)/i,
-    /CHAPTER\s+(\d+)[:\s]*([^\n]*)/i,
-  ];
-  let chapter: string | undefined;
-  for (const pattern of chapterPatterns) {
-    const match = content.match(pattern);
-    if (match) {
-      chapter = `Chapter ${match[1]}${match[2] ? ': ' + match[2].trim() : ''}`;
-      break;
-    }
-  }
-
-  const sectionPatterns = [
-    /\b(\d+\.\d+(?:\.\d+)?(?:\.\d+)?)\s+/,
-    /Section\s+(\d+\.\d+(?:\.\d+)?)/i,
-  ];
-  let section: string | undefined;
-  for (const pattern of sectionPatterns) {
-    const match = content.match(pattern);
-    if (match) {
-      section = match[1];
-      break;
-    }
-  }
-
-  const tablePatterns = [
-    /Table\s+(\d+[-.]?\d*)[:\s]*([^\n]*)/i,
-    /TABLE\s+(\d+[-.]?\d*)/i,
-  ];
-  let tableId: string | undefined;
-  let tableName: string | undefined;
-  for (const pattern of tablePatterns) {
-    const match = content.match(pattern);
-    if (match) {
-      tableId = `Table ${match[1]}`;
-      tableName = match[2]?.trim() || undefined;
-      break;
-    }
-  }
-
-  const isTable = /\|.*\|/m.test(content) || 
-                  tableId !== undefined ||
-                  (content.match(/\t/g) || []).length > 5;
-
-  const headings: string[] = [];
-  const headingPattern = /^([A-Z][A-Z\s]{5,})/gm;
-  let headingMatch;
-  while ((headingMatch = headingPattern.exec(content)) !== null) {
-    const heading = headingMatch[1].trim();
-    if (heading.length > 5 && heading.length < 100) {
-      headings.push(heading);
-    }
-  }
-
-  return {
-    page: pageNumber,
-    chapter,
-    section,
-    tableId,
-    tableName,
-    isTable,
-    headings: headings.slice(0, 3),
-    paragraph: chunkIndex,
-  };
-}
-
-// -----------------------------------------------------------------------------
-// Text Splitting
-// -----------------------------------------------------------------------------
-
-interface ChunkWithPageInfo {
-  content: string;
   pageNumber: number;
-  metadata: EnhancedChunkMetadata;
 }
 
-async function splitTextWithPageTracking(pages: PDFPage[]): Promise<ChunkWithPageInfo[]> {
+async function splitWithPageTracking(
+  pages: PDFPageContent[],
+  parser: PDFParser
+): Promise<ChunkWithPageRange[]> {
   const textSplitter = new RecursiveCharacterTextSplitter({
     chunkSize: CHUNK_SIZE,
     chunkOverlap: CHUNK_OVERLAP,
     separators: ['\n\n\n', '\n\n', '\n', '. ', '; ', ', ', ' ', ''],
   });
 
-  const chunksWithPages: ChunkWithPageInfo[] = [];
-  let globalChunkIndex = 0;
-
+  // Build a map of character positions to page numbers
+  const segments: PageTextSegment[] = [];
+  let fullText = '';
+  
   for (const page of pages) {
-    if (!page.text || page.text.trim().length === 0) continue;
+    if (page.text.trim().length === 0) continue;
+    
+    fullText += page.text + '\n\n';
+    segments.push({
+      text: page.text,
+      pageNumber: page.pageNumber,
+    });
+  }
 
-    const pageChunks = await textSplitter.splitText(page.text);
+  // Split the full text
+  const rawChunks = await textSplitter.splitText(fullText);
+  
+  // For each chunk, determine which pages it spans
+  const chunksWithPages: ChunkWithPageRange[] = [];
+  let currentPosition = 0;
 
-    for (const chunkContent of pageChunks) {
-      if (chunkContent.trim().length < 50) continue;
+  for (const chunkContent of rawChunks) {
+    if (chunkContent.trim().length < 50) continue;
+
+    const chunkStart = fullText.indexOf(chunkContent, currentPosition);
+    const chunkEnd = chunkStart + chunkContent.length;
+    
+    let position = 0;
+    let startPage = 1;
+    let endPage = 1;
+    let foundStart = false;
+
+    for (const segment of segments) {
+      const segmentEnd = position + segment.text.length + 2;
       
-      const metadata = extractEnhancedMetadata(
-        chunkContent, 
-        page.pageNumber, 
-        globalChunkIndex
-      );
-
-      chunksWithPages.push({
-        content: chunkContent.trim(),
-        pageNumber: page.pageNumber,
-        metadata,
-      });
-
-      globalChunkIndex++;
+      if (!foundStart && chunkStart < segmentEnd) {
+        startPage = segment.pageNumber;
+        foundStart = true;
+      }
+      
+      if (chunkEnd <= segmentEnd) {
+        endPage = segment.pageNumber;
+        break;
+      }
+      
+      if (foundStart) {
+        endPage = segment.pageNumber;
+      }
+      
+      position = segmentEnd;
     }
+
+    const sectionInfo = parser.findSectionForPage(startPage);
+    const contentType = parser.detectContentType(chunkContent);
+    const isTable = contentType === 'table';
+
+    chunksWithPages.push({
+      content: chunkContent.trim(),
+      startPage,
+      endPage,
+      section: sectionInfo.section,
+      sectionTitle: sectionInfo.sectionTitle,
+      sectionPath: sectionInfo.sectionPath,
+      isTable,
+      contentType,
+    });
+
+    currentPosition = chunkStart + 1;
   }
 
   return chunksWithPages;
+}
+
+// -----------------------------------------------------------------------------
+// Build Chunk Metadata
+// -----------------------------------------------------------------------------
+
+function buildChunkMetadata(chunk: ChunkWithPageRange): ChunkMetadata {
+  const chapter = chunk.sectionPath?.find(p => /chapter/i.test(p));
+  
+  let tableId: string | undefined;
+  let tableName: string | undefined;
+  
+  if (chunk.isTable) {
+    const tableMatch = chunk.content.match(/Table\s+(\d+[-.]?\d*)[:\s]*([^\n]*)/i);
+    if (tableMatch) {
+      tableId = `Table ${tableMatch[1]}`;
+      tableName = tableMatch[2]?.trim() || undefined;
+    }
+  }
+
+  return {
+    page: chunk.startPage,
+    startPage: chunk.startPage,
+    endPage: chunk.endPage,
+    chapter,
+    section: chunk.section,
+    sectionTitle: chunk.sectionTitle,
+    sectionPath: chunk.sectionPath,
+    tableId,
+    tableName,
+    isTable: chunk.isTable,
+    contentType: chunk.contentType,
+  };
 }
 
 // -----------------------------------------------------------------------------
@@ -239,6 +180,8 @@ export async function POST(_request: NextRequest) {
 
   // Start processing in background
   (async () => {
+    let parser: PDFParser | null = null;
+    
     try {
       // Stage 1: Reading PDF
       await sendProgress({
@@ -263,37 +206,55 @@ export async function POST(_request: NextRequest) {
         return;
       }
 
-      const pdfBuffer = fs.readFileSync(pdfPath);
-      
+      // Stage 2: Loading with PDF.js
       await sendProgress({
         stage: 'parsing',
         progress: 5,
         total: 100,
-        message: 'Parsing PDF pages...',
+        message: 'Loading PDF with PDF.js...',
       });
 
-      // Stage 2: Parsing PDF
-      const pdfData = await parsePDFWithPages(pdfBuffer);
+      parser = await createPDFParser(pdfPath);
+      
+      await sendProgress({
+        stage: 'toc',
+        progress: 8,
+        total: 100,
+        message: 'Extracting Table of Contents...',
+      });
+
+      // Stage 3: Extract TOC
+      const structure = await parser.extractTOC();
+      
+      await sendProgress({
+        stage: 'extracting',
+        progress: 10,
+        total: 100,
+        message: `Extracting text from ${parser.totalPages} pages...`,
+      });
+
+      // Stage 4: Extract all pages
+      const pages = await parser.getAllPagesText();
       
       await sendProgress({
         stage: 'splitting',
-        progress: 10,
+        progress: 15,
         total: 100,
-        message: `Splitting ${pdfData.totalPages} pages into chunks...`,
+        message: `Splitting into chunks with page tracking...`,
       });
 
-      // Stage 3: Splitting into chunks
-      const chunksWithPages = await splitTextWithPageTracking(pdfData.pages);
+      // Stage 5: Split with page tracking
+      const chunksWithPages = await splitWithPageTracking(pages, parser);
       const totalChunks = chunksWithPages.length;
       
       await sendProgress({
         stage: 'embedding',
-        progress: 15,
+        progress: 20,
         total: 100,
-        message: `Processing ${totalChunks} chunks...`,
+        message: `Processing ${totalChunks} chunks (TOC: ${structure.flatTOC.length} entries)...`,
       });
 
-      // Stage 4: Generate embeddings and insert
+      // Stage 6: Generate embeddings and insert
       const supabase = createServerClient();
       let processedCount = 0;
       const totalBatches = Math.ceil(totalChunks / BATCH_SIZE);
@@ -302,8 +263,8 @@ export async function POST(_request: NextRequest) {
         const batch = chunksWithPages.slice(i, i + BATCH_SIZE);
         const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
 
-        // Calculate progress (15% for reading/parsing, 85% for embedding/inserting)
-        const progressPercent = 15 + Math.round((batchNumber / totalBatches) * 85);
+        // Calculate progress (20% for reading/parsing, 80% for embedding/inserting)
+        const progressPercent = 20 + Math.round((batchNumber / totalBatches) * 80);
 
         await sendProgress({
           stage: 'embedding',
@@ -317,10 +278,10 @@ export async function POST(_request: NextRequest) {
         const embeddingsPromises = batch.map(chunk => generateEmbedding(chunk.content));
         const embeddings = await Promise.all(embeddingsPromises);
 
-        // Prepare records
+        // Prepare records with enhanced metadata
         const records = batch.map((chunk, idx) => ({
           content: chunk.content,
-          metadata: chunk.metadata,
+          metadata: buildChunkMetadata(chunk),
           embedding: embeddings[idx],
         }));
 
@@ -356,7 +317,7 @@ export async function POST(_request: NextRequest) {
         stage: 'complete',
         progress: 100,
         total: 100,
-        message: `Successfully ingested ${processedCount} chunks!`,
+        message: `Successfully ingested ${processedCount} chunks with page ranges!`,
         done: true,
         chunksProcessed: processedCount,
       });
@@ -371,6 +332,9 @@ export async function POST(_request: NextRequest) {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     } finally {
+      if (parser) {
+        await parser.close();
+      }
       await writer.close();
     }
   })();

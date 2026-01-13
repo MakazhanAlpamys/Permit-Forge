@@ -7,11 +7,17 @@
 // -----------------------------------------------------------------------------
 
 export interface ChunkMetadata {
-  page: number;
+  page: number;              // Primary page (for backwards compatibility)
+  startPage: number;         // First page of chunk
+  endPage: number;           // Last page of chunk (same as startPage if single page)
   chapter?: string;
-  section?: string;
+  section?: string;          // Section number like "3.2.1"
+  sectionTitle?: string;     // Full section title
+  sectionPath?: string[];    // Hierarchy: ["Chapter 3", "3.2 Fire Safety", "3.2.1 Requirements"]
   tableId?: string;
   tableName?: string;
+  isTable?: boolean;
+  contentType?: 'text' | 'table' | 'list' | 'heading';
 }
 
 export interface MatchedChunk {
@@ -52,9 +58,13 @@ export interface ChatMessage {
 export interface Citation {
   chunkId: number;
   page: number;
+  startPage?: number;       // For page range display
+  endPage?: number;         // For page range display
   section?: string;
+  sectionTitle?: string;
   excerpt: string;
   similarity: number;
+  isVerified?: boolean;     // Was this citation actually used in the answer?
 }
 
 export type ComplianceStatus = 'compliant' | 'non-compliant' | 'pending';
@@ -77,12 +87,16 @@ export interface ChatResponse {
 export interface EnhancedCitation {
   chunkId: number;
   page: number;
+  startPage?: number;
+  endPage?: number;
   section?: string;
+  sectionTitle?: string;
   chapter?: string;
   exactQuote: string;      // Direct quote from the document
   context: string;         // Surrounding context
   similarity: number;      // Vector similarity score
   confidence: number;      // Verification confidence (0-100)
+  isVerified?: boolean;    // Was this citation actually used?
 }
 
 export interface VerifiedAnswer {
@@ -121,12 +135,70 @@ export interface ChatSession {
 export interface IngestionResult {
   success: boolean;
   chunksProcessed: number;
+  pagesProcessed?: number;
+  tocExtracted?: boolean;
   error?: string;
 }
 
 // -----------------------------------------------------------------------------
-// PDF Ingestion Types (Enhanced)
+// PDF Ingestion Types (Enhanced with PDF.js)
 // -----------------------------------------------------------------------------
+
+/**
+ * Table of Contents entry extracted from PDF bookmarks/outlines
+ */
+export interface TOCEntry {
+  title: string;           // "3.2.1 Fire Safety Requirements"
+  pageNumber: number;      // Destination page
+  level: number;           // Nesting level (0 = chapter, 1 = section, etc.)
+  section?: string;        // Extracted section number "3.2.1"
+  children?: TOCEntry[];   // Nested entries
+}
+
+/**
+ * Document structure with TOC for section mapping
+ */
+export interface DocumentStructure {
+  totalPages: number;
+  toc: TOCEntry[];
+  flatTOC: TOCEntry[];     // Flattened for easy lookup
+}
+
+/**
+ * Page content with precise tracking
+ */
+export interface PDFPageContent {
+  pageNumber: number;
+  text: string;
+  textItems: TextItem[];   // Individual text items with positions
+}
+
+/**
+ * Text item with position info from PDF.js
+ */
+export interface TextItem {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fontName?: string;
+  fontSize?: number;
+}
+
+/**
+ * Chunk with full page tracking
+ */
+export interface ChunkWithPageRange {
+  content: string;
+  startPage: number;
+  endPage: number;
+  section?: string;
+  sectionTitle?: string;
+  sectionPath?: string[];
+  isTable: boolean;
+  contentType: 'text' | 'table' | 'list' | 'heading';
+}
 
 export interface PageContent {
   pageNumber: number;
@@ -140,6 +212,5 @@ export interface EnhancedChunkMetadata extends ChunkMetadata {
   startOffset?: number;
   endOffset?: number;
   headings?: string[];
-  isTable?: boolean;
 }
 
