@@ -30,7 +30,7 @@
     "lucide-react": "^0.562.0",
     "next": "^15.5.9",
     "pdf-parse": "^1.1.1",
-    "pdfjs-dist": "^5.4.530",
+    "pdfjs-dist": "^4.4.168",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
