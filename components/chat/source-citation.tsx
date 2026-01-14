@@ -1,18 +1,23 @@
 'use client';
 
 // ============================================================================
-// Source Citation Component (Enhanced with Page Ranges)
+// Source Citation Component (Enhanced with Page Ranges, Confidence & Rich Excerpt)
 // ============================================================================
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
-  ChevronDown, 
-  ChevronUp, 
+import {
+  ChevronDown,
+  ChevronUp,
   FileText,
   CheckCircle2,
-  BookOpen
+  BookOpen,
+  AlertCircle,
+  ShieldCheck,
+  Table2,
+  List,
+  ExternalLink
 } from 'lucide-react';
 import type { Citation } from '@/types';
 
@@ -28,7 +33,7 @@ import type { Citation } from '@/types';
 function formatPageDisplay(citation: Citation): string {
   const startPage = citation.startPage ?? citation.page;
   const endPage = citation.endPage ?? citation.page;
-  
+
   if (startPage === endPage) {
     return `Page ${startPage}`;
   }
@@ -40,16 +45,178 @@ function formatPageDisplay(citation: Citation): string {
  */
 function formatSectionDisplay(citation: Citation): string | null {
   if (!citation.section) return null;
-  
+
   if (citation.sectionTitle) {
     // Truncate long titles
-    const title = citation.sectionTitle.length > 40 
+    const title = citation.sectionTitle.length > 40
       ? citation.sectionTitle.slice(0, 37) + '...'
       : citation.sectionTitle;
     return `§${citation.section}: ${title}`;
   }
-  
+
   return `§${citation.section}`;
+}
+
+/**
+ * Get confidence level and color
+ */
+function getConfidenceLevel(confidence: number | undefined): {
+  level: 'high' | 'medium' | 'low';
+  label: string;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+} {
+  const conf = confidence ?? 0;
+
+  if (conf >= 70) {
+    return {
+      level: 'high',
+      label: 'High',
+      color: 'text-green-600',
+      bgColor: 'bg-green-500/10',
+      borderColor: 'border-green-500/20',
+    };
+  } else if (conf >= 40) {
+    return {
+      level: 'medium',
+      label: 'Medium',
+      color: 'text-yellow-600',
+      bgColor: 'bg-yellow-500/10',
+      borderColor: 'border-yellow-500/20',
+    };
+  } else {
+    return {
+      level: 'low',
+      label: 'Low',
+      color: 'text-orange-600',
+      bgColor: 'bg-orange-500/10',
+      borderColor: 'border-orange-500/20',
+    };
+  }
+}
+
+/**
+ * Get content type icon and label
+ */
+function getContentTypeInfo(contentType: Citation['contentType']): {
+  icon: React.ReactNode;
+  label: string;
+  color: string;
+} | null {
+  switch (contentType) {
+    case 'table':
+      return {
+        icon: <Table2 className="h-2.5 w-2.5" />,
+        label: 'Table',
+        color: 'text-purple-600 bg-purple-500/10 border-purple-500/20',
+      };
+    case 'list':
+      return {
+        icon: <List className="h-2.5 w-2.5" />,
+        label: 'List',
+        color: 'text-cyan-600 bg-cyan-500/10 border-cyan-500/20',
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * Render excerpt with basic formatting
+ * - Detects table-like content and renders as simple table
+ * - Handles lists
+ */
+function RichExcerpt({ excerpt, contentType }: { excerpt: string; contentType?: Citation['contentType'] }) {
+  // Try to detect and render table content
+  if (contentType === 'table' || detectTableContent(excerpt)) {
+    const tableRows = parseTableContent(excerpt);
+    if (tableRows.length > 0) {
+      return (
+        <div className="overflow-x-auto">
+          <table className="text-xs w-full border-collapse">
+            <tbody>
+              {tableRows.map((row, i) => (
+                <tr key={i} className={i === 0 ? 'font-medium bg-muted/50' : ''}>
+                  {row.map((cell, j) => (
+                    <td key={j} className="px-2 py-1 border border-border/50 text-muted-foreground">
+                      {cell}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+  }
+
+  // Handle lists
+  if (contentType === 'list' || /^[\s]*(?:\d+\.|[•\-\*])\s+/m.test(excerpt)) {
+    const lines = excerpt.split('\n').filter(l => l.trim());
+    return (
+      <ul className="text-sm text-muted-foreground leading-relaxed space-y-1 list-disc list-inside">
+        {lines.map((line, i) => {
+          // Remove bullet/number prefix
+          const cleanLine = line.replace(/^[\s]*(?:\d+\.|[•\-\*])\s+/, '');
+          return <li key={i}>{cleanLine || line}</li>;
+        })}
+      </ul>
+    );
+  }
+
+  // Default text rendering
+  return (
+    <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+      {excerpt}
+    </p>
+  );
+}
+
+/**
+ * Detect if text looks like a table
+ */
+function detectTableContent(text: string): boolean {
+  // Check for multiple columns with consistent spacing or tabs
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return false;
+
+  // Check for tab-separated or multiple-space-separated values
+  const hasTabular = lines.filter(line =>
+    /\t/.test(line) || /\s{3,}/.test(line)
+  ).length >= 2;
+
+  return hasTabular;
+}
+
+/**
+ * Parse text as table rows/columns
+ */
+function parseTableContent(text: string): string[][] {
+  const lines = text.split('\n').filter(l => l.trim());
+  const rows: string[][] = [];
+
+  for (const line of lines) {
+    // Split by tabs or multiple spaces
+    const cells = line.split(/\t|\s{3,}/).map(c => c.trim()).filter(c => c);
+    if (cells.length >= 2) {
+      rows.push(cells);
+    } else if (line.trim()) {
+      // Single cell - might be a header or continuation
+      rows.push([line.trim()]);
+    }
+  }
+
+  return rows.slice(0, 10); // Limit to 10 rows for display
+}
+
+/**
+ * Get PDF URL for "View in PDF" button
+ */
+function getPdfUrl(page: number): string {
+  // Assuming the PDF is served from /dubai-code.pdf
+  return `/dubai-code.pdf#page=${page}`;
 }
 
 // -----------------------------------------------------------------------------
@@ -63,10 +230,12 @@ interface SourceCitationProps {
 
 function SourceCitation({ citation, index }: SourceCitationProps) {
   const [isExpanded, setIsExpanded] = useState(false);
-  
+
   const pageDisplay = formatPageDisplay(citation);
   const sectionDisplay = formatSectionDisplay(citation);
   const isPageRange = (citation.startPage ?? citation.page) !== (citation.endPage ?? citation.page);
+  const confidenceInfo = getConfidenceLevel(citation.confidence);
+  const contentTypeInfo = getContentTypeInfo(citation.contentType);
 
   return (
     <div className="border border-border rounded-lg overflow-hidden bg-card/50">
@@ -79,15 +248,15 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
           <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/20 text-primary text-xs font-medium shrink-0">
             {index + 1}
           </span>
-          
+
           {/* Icon */}
           <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          
+
           {/* Page info */}
           <span className="text-sm text-foreground font-medium">
             {pageDisplay}
           </span>
-          
+
           {/* Page range indicator */}
           {isPageRange && (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-blue-500/10 text-blue-600 border-blue-500/20">
@@ -95,14 +264,22 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
               range
             </Badge>
           )}
-          
+
+          {/* Content type badge (table/list) */}
+          {contentTypeInfo && (
+            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${contentTypeInfo.color}`}>
+              {contentTypeInfo.icon}
+              <span className="ml-0.5">{contentTypeInfo.label}</span>
+            </Badge>
+          )}
+
           {/* Section info */}
           {sectionDisplay && (
             <span className="text-xs text-muted-foreground truncate">
               • {sectionDisplay}
             </span>
           )}
-          
+
           {/* Verified badge */}
           {citation.isVerified && (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-green-500/10 text-green-600 border-green-500/20 shrink-0">
@@ -110,8 +287,23 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
               verified
             </Badge>
           )}
+
+          {/* Confidence badge (show only if not verified) */}
+          {!citation.isVerified && citation.confidence !== undefined && (
+            <Badge
+              variant="outline"
+              className={`text-[10px] px-1.5 py-0 h-4 shrink-0 ${confidenceInfo.bgColor} ${confidenceInfo.color} ${confidenceInfo.borderColor}`}
+            >
+              {confidenceInfo.level === 'high' ? (
+                <ShieldCheck className="h-2.5 w-2.5 mr-0.5" />
+              ) : confidenceInfo.level === 'low' ? (
+                <AlertCircle className="h-2.5 w-2.5 mr-0.5" />
+              ) : null}
+              {citation.confidence}%
+            </Badge>
+          )}
         </div>
-        
+
         {/* Expand/Collapse icon */}
         <div className="flex items-center gap-2 shrink-0 ml-2">
           {isExpanded ? (
@@ -121,30 +313,63 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
           )}
         </div>
       </button>
-      
+
       {/* Expanded content */}
       {isExpanded && (
-        <div className="px-3 py-3 border-t border-border bg-muted/30 space-y-2">
+        <div className="px-3 py-3 border-t border-border bg-muted/30 space-y-3">
           {/* Section title if present */}
           {citation.sectionTitle && (
             <div className="text-xs text-muted-foreground">
               <span className="font-medium">Section:</span> {citation.sectionTitle}
             </div>
           )}
-          
-          {/* Excerpt */}
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            {citation.excerpt}
-          </p>
-          
-          {/* Similarity score (for debugging/transparency) */}
-          {citation.similarity !== undefined && citation.similarity > 0 && (
-            <div className="flex items-center gap-2 pt-1 border-t border-border/50">
-              <span className="text-[10px] text-muted-foreground/70">
-                Relevance: {Math.round(citation.similarity * 100)}%
-              </span>
+
+          {/* Rich Excerpt - renders tables/lists with formatting */}
+          <RichExcerpt excerpt={citation.excerpt} contentType={citation.contentType} />
+
+          {/* Footer with confidence, relevance and View in PDF */}
+          <div className="flex items-center justify-between gap-4 pt-2 border-t border-border/50">
+            <div className="flex items-center gap-4 flex-1">
+              {/* Confidence bar */}
+              {citation.confidence !== undefined && (
+                <div className="flex items-center gap-2 flex-1">
+                  <span className="text-[10px] text-muted-foreground/70 shrink-0">
+                    Confidence:
+                  </span>
+                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden max-w-[100px]">
+                    <div
+                      className={`h-full rounded-full transition-all ${citation.confidence >= 70 ? 'bg-green-500' :
+                          citation.confidence >= 40 ? 'bg-yellow-500' : 'bg-orange-500'
+                        }`}
+                      style={{ width: `${citation.confidence}%` }}
+                    />
+                  </div>
+                  <span className={`text-[10px] font-medium ${confidenceInfo.color}`}>
+                    {citation.confidence}%
+                  </span>
+                </div>
+              )}
+
+              {/* Relevance score */}
+              {citation.similarity !== undefined && citation.similarity > 0 && (
+                <span className="text-[10px] text-muted-foreground/70">
+                  Relevance: {Math.round(citation.similarity * 100)}%
+                </span>
+              )}
             </div>
-          )}
+
+            {/* View in PDF button */}
+            <a
+              href={getPdfUrl(citation.startPage ?? citation.page)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ExternalLink className="h-3 w-3" />
+              View in PDF
+            </a>
+          </div>
         </div>
       )}
     </div>
@@ -161,15 +386,21 @@ interface CitationsListProps {
 
 export function CitationsList({ citations }: CitationsListProps) {
   const [showAll, setShowAll] = useState(false);
-  
+
   if (!citations || citations.length === 0) {
     return null;
   }
 
-  // Sort by verified first, then by page number
+  // Sort by verified first, then by confidence, then by page number
   const sortedCitations = [...citations].sort((a, b) => {
+    // Verified first
     if (a.isVerified && !b.isVerified) return -1;
     if (!a.isVerified && b.isVerified) return 1;
+    // Then by confidence
+    const confA = a.confidence ?? 0;
+    const confB = b.confidence ?? 0;
+    if (confA !== confB) return confB - confA;
+    // Then by page
     return (a.startPage ?? a.page) - (b.startPage ?? b.page);
   });
 
@@ -177,10 +408,13 @@ export function CitationsList({ citations }: CitationsListProps) {
   const hasMore = sortedCitations.length > 2;
   const verifiedCount = sortedCitations.filter(c => c.isVerified).length;
 
+
+  const highConfidenceCount = sortedCitations.filter(c => (c.confidence ?? 0) >= 70).length;
+
   return (
     <div className="mt-3 space-y-2">
       {/* Header */}
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
         <FileText className="h-3 w-3" />
         <span>Sources ({citations.length})</span>
         {verifiedCount > 0 && (
@@ -189,19 +423,25 @@ export function CitationsList({ citations }: CitationsListProps) {
             {verifiedCount} verified
           </Badge>
         )}
+        {highConfidenceCount > 0 && !verifiedCount && (
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-blue-500/10 text-blue-600 border-blue-500/20">
+            <ShieldCheck className="h-2.5 w-2.5 mr-0.5" />
+            {highConfidenceCount} high confidence
+          </Badge>
+        )}
       </div>
-      
+
       {/* Citations list */}
       <div className="space-y-1.5">
         {displayedCitations.map((citation, index) => (
-          <SourceCitation 
-            key={`${citation.chunkId}-${index}`} 
-            citation={citation} 
-            index={index} 
+          <SourceCitation
+            key={`${citation.chunkId}-${index}`}
+            citation={citation}
+            index={index}
           />
         ))}
       </div>
-      
+
       {/* Show more/less button */}
       {hasMore && (
         <Button

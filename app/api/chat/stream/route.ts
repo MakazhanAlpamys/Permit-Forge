@@ -9,8 +9,10 @@ import {
   expandQuery, 
   rerankChunks, 
   detectQueryType,
-  classifyTopic
+  classifyTopic,
+  verifyAnswer
 } from '@/lib/agents';
+import { createSmartCitations, getCitationStats } from '@/lib/citation-parser';
 
 // Streaming chat model
 const streamingModel = new ChatGoogleGenerativeAI({
@@ -134,22 +136,40 @@ export async function POST(request: NextRequest) {
       async start(controller) {
         try {
           const streamResponse = await streamingModel.stream(langchainMessages);
+          let fullContent = '';
           
           for await (const chunk of streamResponse) {
             const text = chunk.content as string;
             if (text) {
+              fullContent += text;
               controller.enqueue(encoder.encode(text));
             }
           }
           
-          // Send citations at the end
+          // Send smart citations at the end (parsed from AI response)
           if (chunks.length > 0) {
-            const citations = chunks.slice(0, 5).map(chunk => ({
-              page: chunk.metadata.page || 0,
-              section: chunk.metadata.section,
-              excerpt: chunk.content.slice(0, 200),
-              similarity: chunk.similarity,
-            }));
+            // Quick verification to get confidence score
+            let verificationConfidence = 50; // Default
+            try {
+              const verification = await verifyAnswer(fullContent, chunks, trimmedMessage);
+              verificationConfidence = verification.confidence;
+              console.log(`🔍 Verification: ${verification.isVerified ? '✓' : '✗'} (${verificationConfidence}%)`);
+            } catch (e) {
+              console.error('Verification error:', e);
+            }
+            
+            // Use smart citations with verification confidence
+            const citations = await createSmartCitations(
+              fullContent, 
+              chunks, 
+              verificationConfidence,
+              30 // Min confidence threshold
+            );
+            
+            // Log stats for debugging
+            const stats = getCitationStats(citations);
+            console.log(`📊 Stream citations: ${stats.verified}/${stats.total} verified, confidence: ${verificationConfidence}`);
+            
             controller.enqueue(encoder.encode(`\n\n__CITATIONS__${JSON.stringify(citations)}`));
           }
           

@@ -30,6 +30,9 @@ DROP FUNCTION IF EXISTS get_recent_audit_logs CASCADE;
 DROP FUNCTION IF EXISTS admin_block_user CASCADE;
 DROP FUNCTION IF EXISTS admin_update_user_role CASCADE;
 DROP FUNCTION IF EXISTS get_all_users_admin CASCADE;
+DROP FUNCTION IF EXISTS find_chunks_by_page CASCADE;
+DROP FUNCTION IF EXISTS find_chunks_by_section CASCADE;
+DROP FUNCTION IF EXISTS match_citation CASCADE;
 
 -- Drop materialized views
 DROP MATERIALIZED VIEW IF EXISTS analytics_daily CASCADE;
@@ -76,6 +79,22 @@ USING gin(fts);
 CREATE INDEX IF NOT EXISTS dubai_code_chunks_metadata_idx 
 ON dubai_code_chunks 
 USING gin(metadata jsonb_path_ops);
+
+-- Index for querying by startPage (useful for citation matching)
+CREATE INDEX IF NOT EXISTS idx_chunks_start_page 
+ON dubai_code_chunks ((metadata->>'startPage'));
+
+-- Index for querying by endPage
+CREATE INDEX IF NOT EXISTS idx_chunks_end_page 
+ON dubai_code_chunks ((metadata->>'endPage'));
+
+-- Index for section lookups
+CREATE INDEX IF NOT EXISTS idx_chunks_section 
+ON dubai_code_chunks ((metadata->>'section'));
+
+-- Index for content type filtering
+CREATE INDEX IF NOT EXISTS idx_chunks_content_type 
+ON dubai_code_chunks ((metadata->>'contentType'));
 
 -- ============================================================================
 -- 2.1 VECTOR SEARCH FUNCTION (Original - LangChain compatible)
@@ -264,6 +283,166 @@ BEGIN
   WHERE LOWER(d.content) LIKE '%' || LOWER(safe_pattern) || '%'
   ORDER BY match_position
   LIMIT LEAST(match_count, 100); -- Cap results
+END;
+$$;
+
+-- ============================================================================
+-- 2.5 HELPER FUNCTION: Find chunks by page range
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION find_chunks_by_page(
+  target_page INT,
+  match_count INT DEFAULT 10
+)
+RETURNS TABLE (
+  id BIGINT,
+  content TEXT,
+  metadata JSONB,
+  page_match_type TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    d.id,
+    d.content,
+    d.metadata,
+    CASE 
+      WHEN (d.metadata->>'startPage')::INT = target_page 
+           AND (d.metadata->>'endPage')::INT = target_page THEN 'exact'
+      WHEN (d.metadata->>'startPage')::INT <= target_page 
+           AND (d.metadata->>'endPage')::INT >= target_page THEN 'range'
+      WHEN (d.metadata->>'page')::INT = target_page THEN 'legacy'
+      ELSE 'none'
+    END as page_match_type
+  FROM dubai_code_chunks d
+  WHERE 
+    -- New format: check page range
+    (
+      (d.metadata->>'startPage')::INT <= target_page 
+      AND (d.metadata->>'endPage')::INT >= target_page
+    )
+    -- Legacy format: check single page
+    OR (d.metadata->>'page')::INT = target_page
+  ORDER BY 
+    -- Prioritize exact matches, then ranges
+    CASE 
+      WHEN (d.metadata->>'startPage')::INT = target_page THEN 0
+      ELSE 1
+    END,
+    d.id
+  LIMIT match_count;
+END;
+$$;
+
+-- ============================================================================
+-- 2.6 HELPER FUNCTION: Find chunks by section
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION find_chunks_by_section(
+  section_number TEXT,
+  match_count INT DEFAULT 10
+)
+RETURNS TABLE (
+  id BIGINT,
+  content TEXT,
+  metadata JSONB,
+  section_match_type TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    d.id,
+    d.content,
+    d.metadata,
+    CASE 
+      WHEN d.metadata->>'section' = section_number THEN 'exact'
+      WHEN d.metadata->>'section' LIKE section_number || '.%' THEN 'child'
+      WHEN section_number LIKE (d.metadata->>'section') || '.%' THEN 'parent'
+      ELSE 'none'
+    END as section_match_type
+  FROM dubai_code_chunks d
+  WHERE 
+    d.metadata->>'section' = section_number
+    OR d.metadata->>'section' LIKE section_number || '.%'
+    OR section_number LIKE (d.metadata->>'section') || '.%'
+  ORDER BY 
+    -- Prioritize exact matches
+    CASE 
+      WHEN d.metadata->>'section' = section_number THEN 0
+      WHEN d.metadata->>'section' LIKE section_number || '.%' THEN 1
+      ELSE 2
+    END,
+    (d.metadata->>'startPage')::INT
+  LIMIT match_count;
+END;
+$$;
+
+-- ============================================================================
+-- 2.7 HELPER FUNCTION: Match citations from AI response
+-- ============================================================================
+
+-- This function helps match [Page X, Section Y] citations from AI responses
+-- to actual chunks in the database
+
+CREATE OR REPLACE FUNCTION match_citation(
+  citation_page INT,
+  citation_section TEXT DEFAULT NULL,
+  match_count INT DEFAULT 5
+)
+RETURNS TABLE (
+  id BIGINT,
+  content TEXT,
+  metadata JSONB,
+  match_score INT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    d.id,
+    d.content,
+    d.metadata,
+    -- Calculate match score (higher is better)
+    (
+      -- Page match: 50 points for exact, 30 for range
+      CASE 
+        WHEN (d.metadata->>'startPage')::INT = citation_page 
+             AND (d.metadata->>'endPage')::INT = citation_page THEN 50
+        WHEN (d.metadata->>'startPage')::INT <= citation_page 
+             AND (d.metadata->>'endPage')::INT >= citation_page THEN 30
+        WHEN (d.metadata->>'page')::INT = citation_page THEN 40
+        ELSE 0
+      END
+      +
+      -- Section match: 50 points for exact, 20 for partial
+      CASE 
+        WHEN citation_section IS NOT NULL AND d.metadata->>'section' = citation_section THEN 50
+        WHEN citation_section IS NOT NULL AND d.metadata->>'section' LIKE citation_section || '%' THEN 20
+        WHEN citation_section IS NULL THEN 10 -- Small bonus if no section specified
+        ELSE 0
+      END
+    )::INT as match_score
+  FROM dubai_code_chunks d
+  WHERE 
+    -- Must match the page (required)
+    (
+      (d.metadata->>'startPage')::INT <= citation_page 
+      AND (d.metadata->>'endPage')::INT >= citation_page
+    )
+    OR (d.metadata->>'page')::INT = citation_page
+  ORDER BY match_score DESC
+  LIMIT match_count;
 END;
 $$;
 
@@ -720,6 +899,9 @@ GRANT EXECUTE ON FUNCTION match_dubai_code TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION search_dubai_code_keywords TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION match_dubai_code_hybrid TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION search_dubai_code_exact TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION find_chunks_by_page TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION find_chunks_by_section TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION match_citation TO anon, authenticated, service_role;
 
 -- Grant permissions for auth and chat systems
 GRANT ALL ON users TO anon, authenticated, service_role;

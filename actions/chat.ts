@@ -13,6 +13,7 @@ import {
   detectQueryType,
   classifyTopic
 } from '@/lib/agents';
+import { createSmartCitations, getCitationStats } from '@/lib/citation-parser';
 import { checkRateLimit } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import type { 
@@ -204,9 +205,20 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
     }
 
     // =========================================================================
-    // STEP 7: Extract Enhanced Citations
+    // STEP 7: Extract Smart Citations (Parse from AI response)
     // =========================================================================
-    const citations = extractEnhancedCitations(chunks, verificationResult);
+    // Use verification confidence to score citations
+    const verificationConfidence = verificationResult?.confidence ?? 50;
+    const citations = await createSmartCitations(
+      finalResponse, 
+      chunks,
+      verificationConfidence,
+      30 // Min confidence threshold
+    );
+    
+    // Log citation statistics
+    const stats = getCitationStats(citations);
+    console.log(`📊 Citation stats: ${stats.verified} verified / ${stats.total} total, ${stats.uniquePages} pages, ${stats.uniqueSections} sections, verification confidence: ${verificationConfidence}`);
 
     // =========================================================================
     // STEP 8: Determine Compliance Status

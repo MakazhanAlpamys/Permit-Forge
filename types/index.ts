@@ -65,6 +65,8 @@ export interface Citation {
   excerpt: string;
   similarity: number;
   isVerified?: boolean;     // Was this citation actually used in the answer?
+  confidence?: number;      // Verification confidence (0-100)
+  contentType?: 'text' | 'table' | 'list' | 'heading';  // Type of content
 }
 
 export type ComplianceStatus = 'compliant' | 'non-compliant' | 'pending';
