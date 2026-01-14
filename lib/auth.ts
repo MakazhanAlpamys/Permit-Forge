@@ -22,9 +22,11 @@ const BCRYPT_SALT_ROUNDS = 12;
 function getJWTSecret(): Uint8Array {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    throw new Error('Configuration error: JWT_SECRET environment variable is missing. Please set JWT_SECRET in your .env file.');
+    console.error('JWT_SECRET is not set');
+    throw new Error('Configuration error: JWT_SECRET environment variable is missing.');
   }
   if (secret.length < 32) {
+    console.error('JWT_SECRET is too short');
     throw new Error('Configuration error: JWT_SECRET must be at least 32 characters long.');
   }
   return new TextEncoder().encode(secret);
@@ -139,9 +141,12 @@ export async function getSessionFromToken(): Promise<JWTPayload | null> {
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
     
-    if (!token) return null;
+    if (!token) {
+      return null;
+    }
     
-    return verifyJWTToken(token);
+    const payload = await verifyJWTToken(token);
+    return payload;
   } catch (error) {
     console.error('Session token retrieval failed:', error instanceof Error ? error.message : 'Unknown error');
     return null;

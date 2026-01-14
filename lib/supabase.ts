@@ -4,60 +4,61 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Environment variables validation
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+// -----------------------------------------------------------------------------
+// Environment Variables Validation (lazy - don't throw at module load)
+// -----------------------------------------------------------------------------
 
-if (!supabaseUrl) {
-  throw new Error('Configuration error: NEXT_PUBLIC_SUPABASE_URL environment variable is missing. Please set it in your .env file.');
+function getSupabaseUrl(): string {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) {
+    throw new Error('Configuration error: NEXT_PUBLIC_SUPABASE_URL environment variable is missing. Please set it in your .env file.');
+  }
+  return url;
+}
+
+function getAnonKey(): string {
+  const key = process.env.SUPABASE_ANON_KEY;
+  if (!key) {
+    throw new Error('Configuration error: SUPABASE_ANON_KEY environment variable is missing. Please set it in your .env file.');
+  }
+  return key;
+}
+
+function getServiceRoleKey(): string {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) {
+    throw new Error('Configuration error: SUPABASE_SERVICE_ROLE_KEY environment variable is missing. Please set it in your .env file.');
+  }
+  return key;
 }
 
 // -----------------------------------------------------------------------------
 // Public Client (respects RLS - use for user-facing operations)
+// Creates a new client each time to avoid issues in serverless environment
 // -----------------------------------------------------------------------------
 
-let publicClient: SupabaseClient | null = null;
-
 export function createPublicClient(): SupabaseClient {
-  if (!supabaseAnonKey) {
-    throw new Error('Configuration error: SUPABASE_ANON_KEY environment variable is missing. Please set it in your .env file.');
-  }
-  
-  if (!publicClient) {
-    publicClient = createClient(supabaseUrl!, supabaseAnonKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    });
-  }
-  
-  return publicClient;
+  return createClient(getSupabaseUrl(), getAnonKey(), {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
 }
 
 // -----------------------------------------------------------------------------
 // Server Client (bypasses RLS - use ONLY for admin operations)
 // Uses service role key - be careful with this!
+// Creates a new client each time to avoid issues in serverless environment
 // -----------------------------------------------------------------------------
 
-let serverClient: SupabaseClient | null = null;
-
 export function createServerClient(): SupabaseClient {
-  if (!supabaseServiceRoleKey) {
-    throw new Error('Configuration error: SUPABASE_SERVICE_ROLE_KEY environment variable is missing. Please set it in your .env file.');
-  }
-  
-  if (!serverClient) {
-    serverClient = createClient(supabaseUrl!, supabaseServiceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    });
-  }
-  
-  return serverClient;
+  return createClient(getSupabaseUrl(), getServiceRoleKey(), {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
 }
 
 // -----------------------------------------------------------------------------

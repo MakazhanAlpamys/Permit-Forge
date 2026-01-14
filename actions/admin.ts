@@ -49,11 +49,16 @@ interface AdminUserRow {
 // -----------------------------------------------------------------------------
 
 async function requireAdmin() {
-  const user = await getQuickSession();
-  if (!user || user.role !== 'admin') {
+  try {
+    const user = await getQuickSession();
+    if (!user || user.role !== 'admin') {
+      throw new Error('Unauthorized: Admin access required');
+    }
+    return user;
+  } catch (error) {
+    console.error('requireAdmin error:', error);
     throw new Error('Unauthorized: Admin access required');
   }
-  return user;
 }
 
 // -----------------------------------------------------------------------------
@@ -76,7 +81,10 @@ export async function getDashboardStats(): Promise<{ data: DashboardStats | null
     const supabase = createServerClient();
     const { data, error } = await supabase.rpc('get_admin_stats');
     
-    if (error) throw error;
+    if (error) {
+      console.error('getDashboardStats RPC error:', error);
+      throw error;
+    }
     
     const stats = data?.[0];
     if (!stats) {
@@ -85,15 +93,16 @@ export async function getDashboardStats(): Promise<{ data: DashboardStats | null
     
     return {
       data: {
-        totalUsers: Number(stats.total_users),
-        activeUsersToday: Number(stats.active_users_today),
-        totalSessions: Number(stats.total_sessions),
-        totalMessages: Number(stats.total_messages),
-        messagesToday: Number(stats.messages_today),
-        blockedUsers: Number(stats.blocked_users),
+        totalUsers: Number(stats.total_users) || 0,
+        activeUsersToday: Number(stats.active_users_today) || 0,
+        totalSessions: Number(stats.total_sessions) || 0,
+        totalMessages: Number(stats.total_messages) || 0,
+        messagesToday: Number(stats.messages_today) || 0,
+        blockedUsers: Number(stats.blocked_users) || 0,
       }
     };
   } catch (error) {
+    console.error('getDashboardStats error:', error);
     return { 
       data: null, 
       error: error instanceof Error ? error.message : 'Failed to fetch stats' 
@@ -118,16 +127,20 @@ export async function getWeeklyActivity(): Promise<{ data: WeeklyActivity[]; err
     const supabase = createServerClient();
     const { data, error } = await supabase.rpc('get_weekly_activity');
     
-    if (error) throw error;
+    if (error) {
+      console.error('getWeeklyActivity RPC error:', error);
+      throw error;
+    }
     
     return {
       data: (data || []).map((item: WeeklyActivityRow) => ({
         day: item.day,
-        messages: Number(item.messages),
-        users: Number(item.users),
+        messages: Number(item.messages) || 0,
+        users: Number(item.users) || 0,
       }))
     };
   } catch (error) {
+    console.error('getWeeklyActivity error:', error);
     return { 
       data: [], 
       error: error instanceof Error ? error.message : 'Failed to fetch activity' 
@@ -164,7 +177,10 @@ export async function getAuditLogs(
       p_action_filter: actionFilter || null,
     });
     
-    if (error) throw error;
+    if (error) {
+      console.error('getAuditLogs RPC error:', error);
+      throw error;
+    }
     
     return {
       data: (data || []).map((item: AuditLogRow) => ({
@@ -180,6 +196,7 @@ export async function getAuditLogs(
       }))
     };
   } catch (error) {
+    console.error('getAuditLogs error:', error);
     return { 
       data: [], 
       error: error instanceof Error ? error.message : 'Failed to fetch logs' 
@@ -220,7 +237,10 @@ export async function getAllUsers(
       p_search: search || null,
     });
     
-    if (error) throw error;
+    if (error) {
+      console.error('getAllUsers RPC error:', error);
+      throw error;
+    }
     
     return {
       data: (data || []).map((item: AdminUserRow) => ({
@@ -232,11 +252,12 @@ export async function getAllUsers(
         blockedReason: item.blocked_reason,
         createdAt: item.created_at,
         lastLogin: item.last_login,
-        sessionCount: Number(item.session_count),
-        messageCount: Number(item.message_count),
+        sessionCount: Number(item.session_count) || 0,
+        messageCount: Number(item.message_count) || 0,
       }))
     };
   } catch (error) {
+    console.error('getAllUsers error:', error);
     return { 
       data: [], 
       error: error instanceof Error ? error.message : 'Failed to fetch users' 
