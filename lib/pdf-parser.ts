@@ -3,7 +3,6 @@
 // ============================================================================
 
 // Use legacy build for Node.js environment (no DOM required)
-// @ts-expect-error - pdfjs-dist types don't match the legacy build exactly
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type { 
   TOCEntry, 
