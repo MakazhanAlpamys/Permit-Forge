@@ -21,10 +21,10 @@ import fs from 'fs';
 export const PDF_INGESTION_CONFIG = {
   CHUNK_SIZE: 800,         // Characters per chunk
   CHUNK_OVERLAP: 150,      // Overlap between chunks
-  BATCH_SIZE: 10,          // Chunks per database batch
+  BATCH_SIZE: 5,           // Chunks per database batch (reduced to avoid rate limits)
   PDF_PATH: 'public/dubai-code.pdf',
   MIN_CHUNK_LENGTH: 50,    // Minimum chunk length to include
-  BATCH_DELAY_MS: 300,     // Delay between batches for rate limiting
+  BATCH_DELAY_MS: 1000,    // Delay between batches (increased for rate limiting)
 } as const;
 
 // -----------------------------------------------------------------------------

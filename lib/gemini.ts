@@ -33,15 +33,44 @@ export const embeddingsModel = new GoogleGenerativeAIEmbeddings({
 });
 
 // -----------------------------------------------------------------------------
-// Embedding Generation (LangChain wrapper)
+// Embedding Generation (LangChain wrapper with retry logic)
 // -----------------------------------------------------------------------------
 
 /**
  * Generate embeddings for a single text using Gemini text-embedding-004
  * Returns a 768-dimensional vector
+ * Includes retry logic for transient network errors
  */
-export async function generateEmbedding(text: string): Promise<number[]> {
-  return embeddingsModel.embedQuery(text);
+export async function generateEmbedding(text: string, maxRetries = 3): Promise<number[]> {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await embeddingsModel.embedQuery(text);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      
+      // Check if it's a network/fetch error (retryable)
+      const errorMessage = lastError.message.toLowerCase();
+      const isRetryable = errorMessage.includes('fetch failed') || 
+                          errorMessage.includes('network') ||
+                          errorMessage.includes('timeout') ||
+                          errorMessage.includes('econnreset') ||
+                          errorMessage.includes('socket');
+      
+      if (!isRetryable || attempt === maxRetries) {
+        console.error(`Embedding error (attempt ${attempt}/${maxRetries}):`, lastError.message);
+        throw lastError;
+      }
+      
+      // Exponential backoff: 1s, 2s, 4s
+      const delay = Math.pow(2, attempt - 1) * 1000;
+      console.warn(`Embedding fetch failed, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError || new Error('Failed to generate embedding');
 }
 
 // -----------------------------------------------------------------------------

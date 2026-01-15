@@ -4,16 +4,13 @@
 
 // Use legacy build for Node.js environment (no DOM required)
 // @ts-expect-error - pdfjs-dist types don't match the legacy build exactly
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type { 
   TOCEntry, 
   DocumentStructure, 
   PDFPageContent, 
   TextItem
 } from '@/types';
-
-// Disable worker for Node.js environment
-pdfjsLib.GlobalWorkerOptions.workerSrc = '';
 
 // -----------------------------------------------------------------------------
 // Types for PDF.js internal structures
@@ -51,7 +48,13 @@ export class PDFParser {
    */
   async load(): Promise<void> {
     const data = await this.loadPDFData();
-    this.document = await pdfjsLib.getDocument({ data }).promise;
+    // Disable worker for Node.js environment to avoid "GlobalWorkerOptions.workerSrc" error
+    this.document = await pdfjsLib.getDocument({ 
+      data,
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true,
+    }).promise;
   }
 
   /**
