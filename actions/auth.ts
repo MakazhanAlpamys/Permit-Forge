@@ -37,7 +37,7 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
         metadata: { reason: 'validation_failed', username },
         ...metadata,
       });
-      return { error: validation.error.errors[0].message };
+      return { error: validation.error.issues[0].message };
     }
 
     const supabase = createServerClient();
@@ -156,7 +156,7 @@ export async function changeOwnPasswordAction(data: {
     // Validate input
     const validation = changePasswordSchema.safeParse(data);
     if (!validation.success) {
-      return { success: false, error: validation.error.errors[0].message };
+      return { success: false, error: validation.error.issues[0].message };
     }
 
     const { currentPassword, newPassword } = validation.data;

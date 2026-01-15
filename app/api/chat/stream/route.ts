@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
     if (!validation.success) {
       return new Response(JSON.stringify({ 
         error: 'Invalid input',
-        details: validation.error.errors[0].message 
+        details: validation.error.issues[0].message 
       }), { 
         status: 400,
         headers: { 'Content-Type': 'application/json' }

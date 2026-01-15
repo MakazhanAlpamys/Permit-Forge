@@ -43,7 +43,7 @@ const passwordSchema = z.string()
 export function validatePassword(password: string): { valid: boolean; error?: string } {
   const result = passwordSchema.safeParse(password);
   if (!result.success) {
-    return { valid: false, error: result.error.errors[0].message };
+    return { valid: false, error: result.error.issues[0].message };
   }
   return { valid: true };
 }
