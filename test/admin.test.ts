@@ -43,7 +43,7 @@ describe('Admin Create User Validation', () => {
       
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('at least 3 characters');
+        expect(result.error.issues[0].message).toContain('at least 3 characters');
       }
     });
 
@@ -55,7 +55,7 @@ describe('Admin Create User Validation', () => {
       
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('letters, numbers, and underscores');
+        expect(result.error.issues[0].message).toContain('letters, numbers, and underscores');
       }
     });
 
@@ -67,7 +67,7 @@ describe('Admin Create User Validation', () => {
       
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('at least 8 characters');
+        expect(result.error.issues[0].message).toContain('at least 8 characters');
       }
     });
 
@@ -79,7 +79,7 @@ describe('Admin Create User Validation', () => {
       
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('uppercase letter');
+        expect(result.error.issues[0].message).toContain('uppercase letter');
       }
     });
 
@@ -91,7 +91,7 @@ describe('Admin Create User Validation', () => {
       
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('lowercase letter');
+        expect(result.error.issues[0].message).toContain('lowercase letter');
       }
     });
 
@@ -103,7 +103,7 @@ describe('Admin Create User Validation', () => {
       
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('digit');
+        expect(result.error.issues[0].message).toContain('digit');
       }
     });
 
@@ -115,7 +115,7 @@ describe('Admin Create User Validation', () => {
       
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('special character');
+        expect(result.error.issues[0].message).toContain('special character');
       }
     });
 
@@ -213,7 +213,7 @@ describe('Admin Create User Validation', () => {
       
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0].message).toContain('Current password is required');
+        expect(result.error.issues[0].message).toContain('Current password is required');
       }
     });
 

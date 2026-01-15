@@ -2,6 +2,11 @@
   "name": "emirate-forge",
   "version": "0.1.0",
   "private": true,
+  "overrides": {
+    "@browserbasehq/stagehand": {
+      "zod": "$zod"
+    }
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
