@@ -8,7 +8,7 @@
 [![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-blue?logo=google)](https://ai.google.dev/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-green?logo=supabase)](https://supabase.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?logo=typescript)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/Tests-46%20passing-brightgreen)](./test)
+[![Tests](https://img.shields.io/badge/Tests-96%20passing-brightgreen)](./test)
 [![RAG Accuracy](https://img.shields.io/badge/RAG%20Accuracy-93%25-success)](./plan.md)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](./LICENSE)
 
@@ -179,7 +179,7 @@ npm run test:ui
 npm run test:coverage
 ```
 
-Current Status: **46 passing tests** covering Auth, RAG Logic, and Parsers.
+Current Status: **96 passing tests** covering Auth, RAG Logic, and Parsers.
 
 ---
 
