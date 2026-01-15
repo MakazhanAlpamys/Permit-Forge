@@ -15,7 +15,7 @@ import {
   GREETING_RESPONSE,
   CHAT_PIPELINE_CONFIG,
 } from '@/lib/chat-pipeline';
-import { checkRateLimit } from '@/lib/supabase';
+import { checkRateLimit } from '@/lib/supabase-server';
 import { getSession } from '@/lib/auth';
 import type { 
   ChatRequest, 

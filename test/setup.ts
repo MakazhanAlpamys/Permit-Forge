@@ -7,7 +7,6 @@ process.env.SUPABASE_URL = 'https://test.supabase.co';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
 process.env.SUPABASE_ANON_KEY = 'test-anon-key';
 process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-purposes-only-32chars';
-process.env.CSRF_SECRET = 'test-csrf-secret-key-for-testing-purposes-only';
 process.env.GEMINI_API_KEY = 'test-gemini-api-key';
 
 // Mock Next.js cookies
@@ -20,21 +19,28 @@ vi.mock('next/headers', () => ({
   headers: vi.fn(() => new Headers()),
 }));
 
-// Mock Supabase client
-vi.mock('@/lib/supabase', () => ({
-  createServerClient: vi.fn(() => ({
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({ data: [], error: null })),
-      insert: vi.fn(() => ({ data: null, error: null })),
-      update: vi.fn(() => ({ data: null, error: null })),
-      delete: vi.fn(() => ({ data: null, error: null })),
+// Mock Supabase server client - MUST mock @/lib/supabase-server (the actual import path used in code)
+vi.mock('@/lib/supabase-server', () => {
+  const mockRpc = vi.fn().mockResolvedValue({ data: [], error: null });
+  const mockFrom = vi.fn(() => ({
+    select: vi.fn().mockReturnThis(),
+    insert: vi.fn().mockReturnThis(),
+    update: vi.fn().mockReturnThis(),
+    delete: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    single: vi.fn().mockResolvedValue({ data: null, error: null }),
+  }));
+  
+  return {
+    createServerClient: vi.fn(() => ({
+      from: mockFrom,
+      rpc: mockRpc,
     })),
-    rpc: vi.fn(() => ({ data: null, error: null })),
-  })),
-  createPublicClient: vi.fn(() => ({
-    from: vi.fn(() => ({
-      select: vi.fn(() => ({ data: [], error: null })),
+    createAdminClient: vi.fn(() => ({
+      from: mockFrom,
+      rpc: mockRpc,
     })),
-  })),
-  checkRateLimit: vi.fn(() => ({ allowed: true })),
-}));
+    checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+    assertServerSide: vi.fn(),
+  };
+});

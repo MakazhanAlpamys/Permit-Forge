@@ -4,10 +4,10 @@
 // Admin Dashboard Server Actions
 // ============================================================================
 
-import { createServerClient } from '@/lib/supabase';
-import { getQuickSession, logAuditEvent, hashPassword } from '@/lib/auth';
+import { createAdminClient } from '@/lib/supabase-server';
+import { logAuditEvent, hashPassword, getRequestMetadata } from '@/lib/auth';
 import { uuidSchema, createUserSchema } from '@/lib/validations';
-import { getRequestMetadata } from '@/lib/auth';
+import { requireAdmin } from '@/lib/security';
 
 // -----------------------------------------------------------------------------
 // RPC Response Types (matching Supabase functions)
@@ -45,23 +45,6 @@ interface AdminUserRow {
 }
 
 // -----------------------------------------------------------------------------
-// Helper: Verify Admin Access
-// -----------------------------------------------------------------------------
-
-async function requireAdmin() {
-  try {
-    const user = await getQuickSession();
-    if (!user || user.role !== 'admin') {
-      throw new Error('Unauthorized: Admin access required');
-    }
-    return user;
-  } catch (error) {
-    console.error('requireAdmin error:', error);
-    throw new Error('Unauthorized: Admin access required');
-  }
-}
-
-// -----------------------------------------------------------------------------
 // Dashboard Statistics
 // -----------------------------------------------------------------------------
 
@@ -76,9 +59,12 @@ export interface DashboardStats {
 
 export async function getDashboardStats(): Promise<{ data: DashboardStats | null; error?: string }> {
   try {
-    await requireAdmin();
+    const authCheck = await requireAdmin();
+    if (!authCheck.success) {
+      return { data: null, error: authCheck.error };
+    }
     
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data, error } = await supabase.rpc('get_admin_stats');
     
     if (error) {
@@ -122,9 +108,12 @@ export interface WeeklyActivity {
 
 export async function getWeeklyActivity(): Promise<{ data: WeeklyActivity[]; error?: string }> {
   try {
-    await requireAdmin();
+    const authCheck = await requireAdmin();
+    if (!authCheck.success) {
+      return { data: [], error: authCheck.error };
+    }
     
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data, error } = await supabase.rpc('get_weekly_activity');
     
     if (error) {
@@ -169,9 +158,12 @@ export async function getAuditLogs(
   actionFilter?: string
 ): Promise<{ data: AuditLogEntry[]; error?: string }> {
   try {
-    await requireAdmin();
+    const authCheck = await requireAdmin();
+    if (!authCheck.success) {
+      return { data: [], error: authCheck.error };
+    }
     
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data, error } = await supabase.rpc('get_recent_audit_logs', {
       p_limit: Math.min(limit, 500),
       p_action_filter: actionFilter || null,
@@ -227,11 +219,14 @@ export async function getAllUsers(
   search?: string
 ): Promise<{ data: AdminUser[]; error?: string }> {
   try {
-    const admin = await requireAdmin();
+    const authCheck = await requireAdmin();
+    if (!authCheck.success || !authCheck.user) {
+      return { data: [], error: authCheck.error };
+    }
     
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data, error } = await supabase.rpc('get_all_users_admin', {
-      p_admin_id: admin.id,
+      p_admin_id: authCheck.user.id,
       p_limit: Math.min(limit, 100),
       p_offset: offset,
       p_search: search || null,
@@ -275,7 +270,10 @@ export async function blockUser(
   reason?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const admin = await requireAdmin();
+    const authCheck = await requireAdmin();
+    if (!authCheck.success || !authCheck.user) {
+      return { success: false, error: authCheck.error };
+    }
     
     // Validate userId
     const validation = uuidSchema.safeParse(userId);
@@ -283,9 +281,9 @@ export async function blockUser(
       return { success: false, error: 'Invalid user ID' };
     }
     
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { error } = await supabase.rpc('admin_block_user', {
-      p_admin_id: admin.id,
+      p_admin_id: authCheck.user.id,
       p_target_user_id: userId,
       p_blocked: blocked,
       p_reason: reason || null,
@@ -296,7 +294,7 @@ export async function blockUser(
     // Log the action
     const metadata = await getRequestMetadata();
     await logAuditEvent({
-      userId: admin.id,
+      userId: authCheck.user.id,
       action: blocked ? 'user_blocked' : 'user_unblocked',
       targetUserId: userId,
       metadata: { reason },
@@ -321,7 +319,10 @@ export async function updateUserRole(
   role: 'admin' | 'user'
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const admin = await requireAdmin();
+    const authCheck = await requireAdmin();
+    if (!authCheck.success || !authCheck.user) {
+      return { success: false, error: authCheck.error };
+    }
     
     // Validate userId
     const validation = uuidSchema.safeParse(userId);
@@ -329,9 +330,9 @@ export async function updateUserRole(
       return { success: false, error: 'Invalid user ID' };
     }
     
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { error } = await supabase.rpc('admin_update_user_role', {
-      p_admin_id: admin.id,
+      p_admin_id: authCheck.user.id,
       p_target_user_id: userId,
       p_new_role: role,
     });
@@ -341,7 +342,7 @@ export async function updateUserRole(
     // Log the action
     const metadata = await getRequestMetadata();
     await logAuditEvent({
-      userId: admin.id,
+      userId: authCheck.user.id,
       action: 'role_changed',
       targetUserId: userId,
       metadata: { newRole: role },
@@ -368,7 +369,10 @@ export async function adminCreateUser(data: {
   role?: 'admin' | 'user';
 }): Promise<{ success: boolean; userId?: string; error?: string }> {
   try {
-    const admin = await requireAdmin();
+    const authCheck = await requireAdmin();
+    if (!authCheck.success || !authCheck.user) {
+      return { success: false, error: authCheck.error };
+    }
     
     // Validate input
     const validation = createUserSchema.safeParse(data);
@@ -377,7 +381,7 @@ export async function adminCreateUser(data: {
     }
     
     const { username, password, full_name, role } = validation.data;
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const passwordHash = await hashPassword(password);
     
     // Check if username already exists
@@ -418,7 +422,7 @@ export async function adminCreateUser(data: {
     try {
       const metadata = await getRequestMetadata();
       await logAuditEvent({
-        userId: admin.id,
+        userId: authCheck.user.id,
         action: 'user_created',
         targetUserId: newUser.id,
         metadata: { username, role: role || 'user' },
@@ -445,7 +449,10 @@ export async function adminCreateUser(data: {
 
 export async function adminDeleteUser(userId: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const admin = await requireAdmin();
+    const authCheck = await requireAdmin();
+    if (!authCheck.success || !authCheck.user) {
+      return { success: false, error: authCheck.error };
+    }
     
     // Validate userId
     const validation = uuidSchema.safeParse(userId);
@@ -454,11 +461,11 @@ export async function adminDeleteUser(userId: string): Promise<{ success: boolea
     }
     
     // Prevent self-deletion
-    if (userId === admin.id) {
+    if (userId === authCheck.user.id) {
       return { success: false, error: 'Cannot delete yourself' };
     }
     
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     
     // Get username for logging
     const { data: targetUser } = await supabase
@@ -477,7 +484,7 @@ export async function adminDeleteUser(userId: string): Promise<{ success: boolea
     // Log the action
     const metadata = await getRequestMetadata();
     await logAuditEvent({
-      userId: admin.id,
+      userId: authCheck.user.id,
       action: 'user_updated',
       targetUserId: userId,
       metadata: { action: 'deleted', username: targetUser?.username },
@@ -502,7 +509,10 @@ export async function adminResetPassword(
   newPassword: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const admin = await requireAdmin();
+    const authCheck = await requireAdmin();
+    if (!authCheck.success || !authCheck.user) {
+      return { success: false, error: authCheck.error };
+    }
     
     // Validate userId
     const validation = uuidSchema.safeParse(userId);
@@ -517,7 +527,7 @@ export async function adminResetPassword(
       return { success: false, error: passwordValidation.error };
     }
     
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const passwordHash = await hashPassword(newPassword);
     
     const { error } = await supabase
@@ -530,7 +540,7 @@ export async function adminResetPassword(
     // Log the action
     const metadata = await getRequestMetadata();
     await logAuditEvent({
-      userId: admin.id,
+      userId: authCheck.user.id,
       action: 'password_reset',
       targetUserId: userId,
       ...metadata,

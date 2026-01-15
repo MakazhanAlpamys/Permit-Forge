@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
-import { createServerClient } from '@/lib/supabase';
+import { createAdminClient } from '@/lib/supabase-server';
 import { generateEmbedding } from '@/lib/gemini';
 import { createPDFParser, PDFParser } from '@/lib/pdf-parser';
 import type { 
@@ -276,7 +276,7 @@ export async function runIngestionPipeline(
       message: `Processing ${totalChunks} chunks (TOC: ${structure.flatTOC.length} entries)...`,
     });
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     let processedCount = 0;
     const totalBatches = Math.ceil(totalChunks / BATCH_SIZE);
 

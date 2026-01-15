@@ -1,11 +1,13 @@
 'use server';
 
 // ============================================================================
-// PDF Ingestion Server Actions
+// PDF Ingestion Server Actions (Admin Only)
 // ============================================================================
 
-import { createServerClient } from '@/lib/supabase';
+import { createAdminClient } from '@/lib/supabase-server';
+import { requireAdmin } from '@/lib/security';
 import { runIngestionPipeline } from '@/lib/pdf-ingestion';
+import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import type { ChunkMetadata, IngestionResult } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -13,8 +15,42 @@ import type { ChunkMetadata, IngestionResult } from '@/types';
 // -----------------------------------------------------------------------------
 
 export async function ingestPDF(): Promise<IngestionResult> {
+  // SECURITY: Verify admin role
+  const authCheck = await requireAdmin();
+  if (!authCheck.success || !authCheck.user) {
+    return {
+      success: false,
+      chunksProcessed: 0,
+      error: authCheck.error || 'Unauthorized',
+    };
+  }
+
   console.log('📄 Starting PDF ingestion...');
-  return runIngestionPipeline();
+  
+  // Log admin action
+  const metadata = await getRequestMetadata();
+  await logAuditEvent({
+    userId: authCheck.user.id,
+    action: 'pdf_ingested',
+    metadata: { stage: 'started' },
+    ...metadata,
+  });
+  
+  const result = await runIngestionPipeline();
+  
+  // Log completion
+  await logAuditEvent({
+    userId: authCheck.user.id,
+    action: 'pdf_ingested',
+    metadata: { 
+      stage: 'completed',
+      success: result.success,
+      chunksProcessed: result.chunksProcessed,
+    },
+    ...metadata,
+  });
+  
+  return result;
 }
 
 // -----------------------------------------------------------------------------
@@ -22,8 +58,14 @@ export async function ingestPDF(): Promise<IngestionResult> {
 // -----------------------------------------------------------------------------
 
 export async function clearChunks(): Promise<{ success: boolean; error?: string }> {
+  // SECURITY: Verify admin role
+  const authCheck = await requireAdmin();
+  if (!authCheck.success || !authCheck.user) {
+    return { success: false, error: authCheck.error || 'Unauthorized' };
+  }
+
   try {
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     
     // Check if table exists and has data
     const { count, error: countError } = await supabase
@@ -57,6 +99,16 @@ export async function clearChunks(): Promise<{ success: boolean; error?: string 
     }
 
     console.log(`✅ Cleared ${count} chunks from database`);
+    
+    // Log admin action
+    const metadata = await getRequestMetadata();
+    await logAuditEvent({
+      userId: authCheck.user.id,
+      action: 'chunks_cleared',
+      metadata: { chunksCleared: count },
+      ...metadata,
+    });
+    
     return { success: true };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -82,8 +134,19 @@ export async function getIngestionStatus(): Promise<{
   hasPageRanges?: boolean;
   error?: string;
 }> {
+  // SECURITY: Verify admin role
+  const authCheck = await requireAdmin();
+  if (!authCheck.success) {
+    return {
+      hasChunks: false,
+      chunkCount: 0,
+      dbConnected: false,
+      error: authCheck.error || 'Unauthorized',
+    };
+  }
+
   try {
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     
     const { count, error } = await supabase
       .from('dubai_code_chunks')
@@ -173,8 +236,18 @@ export async function testRAGQuery(): Promise<{
   };
   error?: string;
 }> {
+  // SECURITY: Verify admin role
+  const authCheck = await requireAdmin();
+  if (!authCheck.success) {
+    return {
+      success: false,
+      chunksFound: 0,
+      error: authCheck.error || 'Unauthorized',
+    };
+  }
+
   try {
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     
     const { count, error: countError } = await supabase
       .from('dubai_code_chunks')

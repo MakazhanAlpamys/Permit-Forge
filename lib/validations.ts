@@ -1,8 +1,19 @@
 // ============================================================================
-// Zod Validation Schemas
+// Zod Validation Schemas (Security-First)
 // ============================================================================
 
 import { z } from 'zod';
+
+// -----------------------------------------------------------------------------
+// Security Helpers
+// -----------------------------------------------------------------------------
+
+// Sanitize string to prevent XSS (removes HTML tags)
+const sanitizeString = (s: string) => s.replace(/<[^>]*>/g, '').trim();
+
+// Sanitize for SQL-like injection patterns (additional layer - DB should use parameterized queries)
+const sanitizeSQLPatterns = (s: string) => 
+  s.replace(/(['";]|--|\bOR\b|\bAND\b|\bUNION\b|\bSELECT\b|\bDROP\b|\bDELETE\b|\bINSERT\b|\bUPDATE\b)/gi, '');
 
 // -----------------------------------------------------------------------------
 // Password Validation (Unified - min 8 chars with complexity requirements)
@@ -38,34 +49,40 @@ export function validatePassword(password: string): { valid: boolean; error?: st
 }
 
 // -----------------------------------------------------------------------------
-// UUID Validation
+// UUID Validation (Strict)
 // -----------------------------------------------------------------------------
 
-export const uuidSchema = z.string().uuid('Invalid UUID format');
+export const uuidSchema = z.string()
+  .uuid('Invalid UUID format')
+  .refine(
+    (uuid) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid),
+    'Invalid UUID format'
+  );
 
 // -----------------------------------------------------------------------------
-// Chat Message Validation
+// Chat Message Validation (with XSS protection)
 // -----------------------------------------------------------------------------
 
 export const chatMessageSchema = z.object({
   message: z.string()
     .min(1, 'Message is required')
     .max(500, 'Message must be 500 characters or less')
-    .transform(s => s.trim()),
+    .transform(sanitizeString),
   sessionId: z.string().uuid().optional().nullable(),
 });
 
 export type ChatMessageInput = z.infer<typeof chatMessageSchema>;
 
 // -----------------------------------------------------------------------------
-// User Input Validation
+// User Input Validation (Strict)
 // -----------------------------------------------------------------------------
 
 export const loginSchema = z.object({
   username: z.string()
     .min(3, 'Username must be at least 3 characters')
     .max(50, 'Username must be 50 characters or less')
-    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
+    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores')
+    .transform(s => s.toLowerCase()), // Normalize to lowercase
   password: z.string()
     .min(8, 'Password must be at least 8 characters')
     .max(100, 'Password must be 100 characters or less'),
@@ -77,13 +94,44 @@ export const createUserSchema = z.object({
   username: z.string()
     .min(3, 'Username must be at least 3 characters')
     .max(50, 'Username must be 50 characters or less')
-    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
+    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores')
+    .transform(s => s.toLowerCase()),
   password: passwordSchema,
-  full_name: z.string().max(100).optional(),
+  full_name: z.string()
+    .max(100)
+    .transform(sanitizeString)
+    .optional(),
   role: z.enum(['admin', 'user']).default('user'),
 });
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;
+
+// -----------------------------------------------------------------------------
+// Profile Update Schema (Restricted fields)
+// -----------------------------------------------------------------------------
+
+export const updateProfileSchema = z.object({
+  // Only allow safe fields to be updated
+  full_name: z.string()
+    .max(100, 'Name must be 100 characters or less')
+    .transform(sanitizeString)
+    .optional(),
+}).strict(); // Reject any extra fields
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
+// Fields that are NEVER allowed to be updated via profile update
+export const FORBIDDEN_PROFILE_FIELDS = [
+  'id',
+  'username', 
+  'role', 
+  'password_hash', 
+  'blocked',
+  'blocked_reason',
+  'blocked_at',
+  'blocked_by',
+  'created_at',
+] as const;
 
 // -----------------------------------------------------------------------------
 // Change Password Schema
@@ -92,6 +140,33 @@ export type CreateUserInput = z.infer<typeof createUserSchema>;
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
   newPassword: passwordSchema,
+});
+
+// -----------------------------------------------------------------------------
+// Chat Session Schema
+// -----------------------------------------------------------------------------
+
+export const createSessionSchema = z.object({
+  title: z.string()
+    .min(1, 'Title is required')
+    .max(100, 'Title must be 100 characters or less')
+    .transform(sanitizeString),
+});
+
+export const saveMessageSchema = z.object({
+  sessionId: uuidSchema,
+  role: z.enum(['user', 'assistant']),
+  content: z.string()
+    .min(1, 'Content is required')
+    .max(50000, 'Content too large'),
+  citations: z.array(z.object({
+    chunkId: z.number().int().positive(),
+    page: z.number().int().nonnegative(),
+    section: z.string().optional(),
+    excerpt: z.string(),
+    similarity: z.number().min(0).max(1),
+  })).optional(),
+  complianceStatus: z.enum(['compliant', 'non-compliant', 'requires-review', 'pending']).optional(),
 });
 
 // -----------------------------------------------------------------------------
@@ -124,14 +199,26 @@ export type PaginationInput = z.infer<typeof paginationSchema>;
 // -----------------------------------------------------------------------------
 
 export const updateUserRoleSchema = z.object({
-  userId: z.string().uuid(),
+  userId: uuidSchema,
   role: z.enum(['admin', 'user']),
 });
 
 export const blockUserSchema = z.object({
-  userId: z.string().uuid(),
+  userId: uuidSchema,
   blocked: z.boolean(),
-  reason: z.string().max(500).optional(),
+  reason: z.string()
+    .max(500)
+    .transform(sanitizeString)
+    .optional(),
+});
+
+export const adminResetPasswordSchema = z.object({
+  userId: uuidSchema,
+  newPassword: passwordSchema,
+});
+
+export const adminDeleteUserSchema = z.object({
+  userId: uuidSchema,
 });
 
 // -----------------------------------------------------------------------------
@@ -147,6 +234,21 @@ export const jwtPayloadSchema = z.object({
 });
 
 export type JWTPayload = z.infer<typeof jwtPayloadSchema>;
+
+// -----------------------------------------------------------------------------
+// Search/Filter Schemas (SQL injection protection)
+// -----------------------------------------------------------------------------
+
+export const searchQuerySchema = z.object({
+  query: z.string()
+    .max(200, 'Search query too long')
+    .transform(sanitizeSQLPatterns)
+    .transform(sanitizeString),
+  limit: z.number().int().min(1).max(100).default(50),
+  offset: z.number().int().min(0).default(0),
+});
+
+export type SearchQueryInput = z.infer<typeof searchQuerySchema>;
 
 
 

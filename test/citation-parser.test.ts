@@ -4,10 +4,13 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock Supabase client
+// Mock Supabase client - must mock the actual import path used in citation-parser.ts
 const mockRpc = vi.fn();
-vi.mock('@/lib/supabase', () => ({
+vi.mock('@/lib/supabase-server', () => ({
   createServerClient: () => ({
+    rpc: mockRpc,
+  }),
+  createAdminClient: () => ({
     rpc: mockRpc,
   }),
 }));

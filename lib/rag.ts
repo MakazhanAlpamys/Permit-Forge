@@ -2,7 +2,7 @@
 // RAG (Retrieval-Augmented Generation) Query Engine - Advanced Hybrid Search
 // ============================================================================
 
-import { createServerClient } from '@/lib/supabase';
+import { createServerClient } from '@/lib/supabase-server';
 import { embeddingsModel } from '@/lib/gemini';
 import type { MatchedChunk, RAGQuery, RAGResult, ChunkMetadata, HybridSearchResult } from '@/types';
 

@@ -482,24 +482,3 @@ export async function createPDFParser(pdfPath: string): Promise<PDFParser> {
   await parser.load();
   return parser;
 }
-
-/**
- * Format page range for display
- * @example formatPageRange(45, 45) => "Page 45"
- * @example formatPageRange(45, 46) => "Pages 45-46"
- */
-export function formatPageRange(startPage: number, endPage: number): string {
-  if (startPage === endPage) {
-    return `Page ${startPage}`;
-  }
-  return `Pages ${startPage}-${endPage}`;
-}
-
-/**
- * Extract section number from text
- * @example "3.2.1 Fire Safety" => "3.2.1"
- */
-export function extractSectionNumber(text: string): string | undefined {
-  const match = text.match(/^(\d+(?:\.\d+)+)/);
-  return match ? match[1] : undefined;
-}

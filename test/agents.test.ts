@@ -3,7 +3,9 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mockInvokeFn, resetMockInvoke } from './agents-mock';
+
+// Create mock function directly in test file
+const mockInvokeFn = vi.fn();
 
 // Mock the ChatGoogleGenerativeAI model with class syntax
 vi.mock('@langchain/google-genai', () => {
@@ -43,7 +45,7 @@ import type { MatchedChunk } from '@/types';
 
 describe('AI Agents', () => {
   beforeEach(() => {
-    resetMockInvoke();
+    mockInvokeFn.mockReset();
   });
 
   afterEach(() => {

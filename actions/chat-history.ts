@@ -4,7 +4,7 @@
 // Chat History Server Actions (with Access Control)
 // ============================================================================
 
-import { createPublicClient, createServerClient } from '@/lib/supabase';
+import { createServerClient } from '@/lib/supabase-server';
 import { getSession, getQuickSession, logAuditEvent } from '@/lib/auth';
 import { uuidSchema, paginationSchema, citationsArraySchema } from '@/lib/validations';
 import type { ChatSession, ChatMessage, Citation } from '@/types';
@@ -17,7 +17,7 @@ async function verifySessionOwnership(sessionId: string, userId: string): Promis
   const validation = uuidSchema.safeParse(sessionId);
   if (!validation.success) return false;
   
-  const supabase = createPublicClient();
+  const supabase = createServerClient();
   const { data, error } = await supabase
     .from('chat_sessions')
     .select('user_id')
@@ -39,7 +39,7 @@ export async function createChatSession(title?: string): Promise<{ sessionId: st
       return { sessionId: null, error: 'Not authenticated' };
     }
 
-    const supabase = createPublicClient();
+    const supabase = createServerClient();
     
     // Sanitize title
     const sanitizedTitle = (title || 'New Chat').slice(0, 100).trim();
@@ -106,7 +106,7 @@ export async function saveMessageToSession(params: {
       }
     }
 
-    const supabase = createPublicClient();
+    const supabase = createServerClient();
     const { error } = await supabase
       .from('chat_messages')
       .insert({
@@ -155,7 +155,7 @@ export async function getChatSessions(
     const paginationValidation = paginationSchema.safeParse({ cursor, limit });
     const validLimit = paginationValidation.success ? paginationValidation.data.limit : 20;
 
-    const supabase = createPublicClient();
+    const supabase = createServerClient();
     
     let query = supabase
       .from('chat_sessions')
@@ -224,7 +224,7 @@ export async function getSessionMessages(sessionId: string): Promise<{ messages:
       return { messages: [], error: 'Access denied' };
     }
     
-    const supabase = createPublicClient();
+    const supabase = createServerClient();
     const { data, error } = await supabase
       .from('chat_messages')
       .select('*')
@@ -277,7 +277,7 @@ export async function deleteChatSession(sessionId: string): Promise<{ success: b
       return { success: false, error: 'Access denied' };
     }
     
-    const supabase = createPublicClient();
+    const supabase = createServerClient();
     const { error } = await supabase
       .from('chat_sessions')
       .delete()
@@ -330,7 +330,7 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
     // Sanitize title
     const sanitizedTitle = title.slice(0, 100).trim();
     
-    const supabase = createPublicClient();
+    const supabase = createServerClient();
     const { error } = await supabase
       .from('chat_sessions')
       .update({ title: sanitizedTitle, updated_at: new Date().toISOString() })

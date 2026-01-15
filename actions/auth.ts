@@ -4,7 +4,7 @@
 // Authentication Server Actions (with JWT, CSRF, and Audit Logging)
 // ============================================================================
 
-import { createPublicClient, createServerClient } from '@/lib/supabase';
+import { createServerClient, createAdminClient } from '@/lib/supabase-server';
 import { 
   hashPassword, 
   verifyPassword, 
@@ -14,7 +14,7 @@ import {
   logAuditEvent,
   getQuickSession
 } from '@/lib/auth';
-import { loginSchema, createUserSchema } from '@/lib/validations';
+import { loginSchema } from '@/lib/validations';
 import { redirect } from 'next/navigation';
 import { getRequestMetadata } from '@/lib/auth';
 
@@ -40,7 +40,7 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
       return { error: validation.error.errors[0].message };
     }
 
-    const supabase = createPublicClient();
+    const supabase = createServerClient();
 
     // Find user by username
     const { data: user, error } = await supabase
@@ -134,69 +134,9 @@ export async function logoutAction(): Promise<void> {
 }
 
 // -----------------------------------------------------------------------------
-// Create User Action (Admin only)
-// -----------------------------------------------------------------------------
-
-export async function createUserAction(data: {
-  username: string;
-  password: string;
-  full_name?: string;
-  role?: string;
-}): Promise<{ success: boolean; error?: string; userId?: string }> {
-  try {
-    // Verify admin access
-    const currentUser = await getQuickSession();
-    if (!currentUser || currentUser.role !== 'admin') {
-      return { success: false, error: 'Unauthorized' };
-    }
-
-    // Validate input
-    const validation = createUserSchema.safeParse(data);
-    if (!validation.success) {
-      return { success: false, error: validation.error.errors[0].message };
-    }
-
-    const { username, password, full_name, role } = validation.data;
-    const supabase = createServerClient();
-    const passwordHash = await hashPassword(password);
-
-    const { data: newUser, error } = await supabase
-      .from('users')
-      .insert({
-        username,
-        password_hash: passwordHash,
-        full_name,
-        role,
-      })
-      .select('id')
-      .single();
-
-    if (error) {
-      if (error.code === '23505') { // Unique constraint violation
-        return { success: false, error: 'Username already exists' };
-      }
-      return { success: false, error: error.message };
-    }
-
-    // Log the action
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: currentUser.id,
-      action: 'user_created',
-      targetUserId: newUser.id,
-      metadata: { username, role },
-      ...metadata,
-    });
-
-    return { success: true, userId: newUser.id };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return { success: false, error: `Failed to create user: ${errorMessage}` };
-  }
-}
-
-// -----------------------------------------------------------------------------
 // Change Own Password Action (for authenticated users)
+// -----------------------------------------------------------------------------
+// NOTE: For admin user creation, use adminCreateUser() from @/actions/admin
 // -----------------------------------------------------------------------------
 
 export async function changeOwnPasswordAction(data: {

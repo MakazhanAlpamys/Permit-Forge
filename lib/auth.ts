@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { cookies, headers } from 'next/headers';
-import { createPublicClient } from './supabase';
+import { createServerClient } from './supabase-server';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { SignJWT, jwtVerify } from 'jose';
@@ -162,7 +162,7 @@ export async function getSession(): Promise<User | null> {
   if (!tokenPayload) return null;
   
   try {
-    const supabase = createPublicClient();
+    const supabase = createServerClient();
     const { data: user, error } = await supabase
       .from('users')
       .select('id, username, full_name, role, blocked')
@@ -281,7 +281,7 @@ interface AuditLogEntry {
 export async function logAuditEvent(entry: AuditLogEntry): Promise<void> {
   try {
     // Use public client for audit logging - RLS allows insert for anon/authenticated
-    const supabase = createPublicClient();
+    const supabase = createServerClient();
     
     const { error } = await supabase.from('audit_logs').insert({
       user_id: entry.userId,

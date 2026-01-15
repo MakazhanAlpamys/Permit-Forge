@@ -2,7 +2,7 @@
 // Citation Parser - Extract and Match Citations from AI Responses
 // ============================================================================
 
-import { createServerClient } from '@/lib/supabase';
+import { createServerClient } from '@/lib/supabase-server';
 import type { Citation, MatchedChunk, ChunkMetadata } from '@/types';
 
 // -----------------------------------------------------------------------------

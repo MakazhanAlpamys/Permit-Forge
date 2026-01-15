@@ -32,7 +32,7 @@
 | 📊 **Confidence Scoring** | Real-time confidence assessment for every generated answer. |
 | 📄 **Rich Excerpts** | Renders tables and lists from the source PDF directly in the chat. |
 | 🔗 **PDF Deep Links** | Direct links to the exact page in the official PDF document. |
-| 🌍 **Multi-language** | Full support for **English**, **Arabic**, and **Russian**. |
+| 🌍 **Global Support** | Optimized for **English** with varying capabilities in **Arabic** and **Russian** (via Gemini). |
 | 🔐 **Enterprise Security** | JWT Authentication, Role-Based Access Control (RBAC), and Audit Logging. |
 | 🛠️ **Admin Panel** | Comprehensive dashboard for User Management, PDF Ingestion, and System Analytics. |
 

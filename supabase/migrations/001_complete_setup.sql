@@ -894,7 +894,7 @@ $$;
 GRANT SELECT, INSERT, DELETE, UPDATE ON dubai_code_chunks TO anon, authenticated, service_role;
 GRANT USAGE, SELECT ON SEQUENCE dubai_code_chunks_id_seq TO anon, authenticated, service_role;
 
--- Grant RPC function permissions
+-- Grant RPC function permissions (public RAG functions)
 GRANT EXECUTE ON FUNCTION match_dubai_code TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION search_dubai_code_keywords TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION match_dubai_code_hybrid TO anon, authenticated, service_role;
@@ -903,29 +903,36 @@ GRANT EXECUTE ON FUNCTION find_chunks_by_page TO anon, authenticated, service_ro
 GRANT EXECUTE ON FUNCTION find_chunks_by_section TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION match_citation TO anon, authenticated, service_role;
 
--- Grant permissions for auth and chat systems
-GRANT ALL ON users TO anon, authenticated, service_role;
-GRANT ALL ON chat_sessions TO anon, authenticated, service_role;
-GRANT ALL ON chat_messages TO anon, authenticated, service_role;
+-- Grant permissions for users table (restricted - authenticated only)
+GRANT SELECT, UPDATE ON users TO authenticated;
+GRANT ALL ON users TO service_role;
+-- NOTE: No GRANT for anon on users table - anonymous users cannot access user data
 
--- Grant permissions for rate limiting
-GRANT ALL ON rate_limits TO anon, authenticated, service_role;
-GRANT USAGE, SELECT ON SEQUENCE rate_limits_id_seq TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION check_rate_limit TO anon, authenticated, service_role;
+-- Grant permissions for chat systems (authenticated users only)
+GRANT ALL ON chat_sessions TO authenticated, service_role;
+GRANT ALL ON chat_messages TO authenticated, service_role;
+-- NOTE: No GRANT for anon on chat tables
 
--- Grant permissions for admin functions
-GRANT EXECUTE ON FUNCTION get_admin_stats TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION get_weekly_activity TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION get_recent_audit_logs TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION admin_block_user TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION admin_update_user_role TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION get_all_users_admin TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION refresh_analytics TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION update_session_timestamp TO anon, authenticated, service_role;
+-- Grant permissions for rate limiting (authenticated only)
+GRANT ALL ON rate_limits TO authenticated, service_role;
+GRANT USAGE, SELECT ON SEQUENCE rate_limits_id_seq TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION check_rate_limit TO authenticated, service_role;
 
--- Grant access to audit_logs table
-GRANT ALL ON audit_logs TO anon, authenticated, service_role;
-GRANT USAGE, SELECT ON SEQUENCE audit_logs_id_seq TO anon, authenticated, service_role;
+-- Grant permissions for ADMIN functions (service_role ONLY)
+-- These functions perform privileged operations and should NOT be accessible to anon/authenticated
+GRANT EXECUTE ON FUNCTION get_admin_stats TO service_role;
+GRANT EXECUTE ON FUNCTION get_weekly_activity TO service_role;
+GRANT EXECUTE ON FUNCTION get_recent_audit_logs TO service_role;
+GRANT EXECUTE ON FUNCTION admin_block_user TO service_role;
+GRANT EXECUTE ON FUNCTION admin_update_user_role TO service_role;
+GRANT EXECUTE ON FUNCTION get_all_users_admin TO service_role;
+GRANT EXECUTE ON FUNCTION refresh_analytics TO service_role;
+GRANT EXECUTE ON FUNCTION update_session_timestamp TO authenticated, service_role;
+
+-- Grant access to audit_logs table (service_role only for read, authenticated can insert)
+GRANT INSERT ON audit_logs TO authenticated;
+GRANT ALL ON audit_logs TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE audit_logs_id_seq TO authenticated, service_role;
 
 -- ============================================================================
 -- 11. ROW LEVEL SECURITY
@@ -942,9 +949,14 @@ ALTER TABLE rate_limits ENABLE ROW LEVEL SECURITY;
 ALTER TABLE dubai_code_chunks ENABLE ROW LEVEL SECURITY;
 
 -- -----------------------------------------------------------------------------
--- USERS TABLE POLICIES
+-- USERS TABLE POLICIES (SECURE)
 -- -----------------------------------------------------------------------------
--- Service role bypasses RLS automatically, but we need policies for app access
+-- Service role bypasses RLS automatically
+-- Security principles:
+-- 1. Users can only see their own profile
+-- 2. Anonymous users cannot modify any data
+-- 3. Only the profile owner can update their profile
+-- 4. Admins use service_role which bypasses RLS
 
 -- Drop all existing policies first
 DROP POLICY IF EXISTS "Service role full access to users" ON users;
@@ -954,14 +966,30 @@ DROP POLICY IF EXISTS "Allow update for login" ON users;
 DROP POLICY IF EXISTS "Allow insert users" ON users;
 DROP POLICY IF EXISTS "Allow delete users" ON users;
 DROP POLICY IF EXISTS "Allow all users operations" ON users;
+DROP POLICY IF EXISTS "Authenticated users can view own profile" ON users;
+DROP POLICY IF EXISTS "Authenticated users can update own profile" ON users;
 
--- FULL ACCESS: Allow all operations on users table (admin check done in application layer)
--- This is needed because we use service_role key for admin operations
-CREATE POLICY "Allow all users operations" ON users
-  FOR ALL
-  TO anon, authenticated, service_role
-  USING (true)
-  WITH CHECK (true);
+-- SELECT: Authenticated users can only view their own profile
+CREATE POLICY "Authenticated users can view own profile" ON users
+  FOR SELECT
+  TO authenticated
+  USING (id = auth.uid());
+
+-- UPDATE: Only the profile owner (authenticated) can update their own profile
+CREATE POLICY "Authenticated users can update own profile" ON users
+  FOR UPDATE
+  TO authenticated
+  USING (id = auth.uid())
+  WITH CHECK (id = auth.uid());
+
+-- NOTE: No INSERT/DELETE policies for anon or authenticated
+-- Anonymous users have NO access to users table
+-- INSERT/DELETE operations are handled via service_role (server-side only)
+-- This prevents:
+-- - Anonymous users from reading any user data
+-- - Anonymous users from creating/modifying/deleting users
+-- - Authenticated users from seeing other users' profiles
+-- - Authenticated users from modifying other users' profiles
 
 -- -----------------------------------------------------------------------------
 -- DUBAI_CODE_CHUNKS POLICIES (Full access for PDF ingestion)
@@ -1055,7 +1083,24 @@ CREATE POLICY "Allow all rate limits operations" ON rate_limits
 -- Note: Service role key bypasses RLS, so admin operations still work
 
 -- ============================================================================
--- 12. DEFAULT ADMIN USER
+-- 13. REVOKE ADMIN FUNCTION EXECUTE PERMISSIONS FROM ANON AND AUTHENTICATED
+-- ============================================================================
+-- Security: Admin functions should only be callable via service_role
+-- This prevents privilege escalation attacks
+
+REVOKE EXECUTE ON FUNCTION admin_block_user FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION admin_update_user_role FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION get_all_users_admin FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION get_admin_stats FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION get_recent_audit_logs FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION refresh_analytics FROM anon, authenticated;
+
+-- Also revoke permissions on sensitive tables for anon role
+REVOKE ALL ON users FROM anon;
+REVOKE ALL ON audit_logs FROM anon;
+
+-- ============================================================================
+-- 14. DEFAULT ADMIN USER
 -- ============================================================================
 -- 
 -- Creates default admin user with bcrypt hashed password
