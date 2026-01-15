@@ -306,45 +306,6 @@ export async function createSmartCitations(
 }
 
 // -----------------------------------------------------------------------------
-// Verify Chunks Against Parsed Citations
-// -----------------------------------------------------------------------------
-
-/**
- * Mark which chunks from the retrieved set were actually cited by AI
- * Returns chunks with isVerified flag set appropriately
- */
-export function verifyChunksAgainstCitations(
-  chunks: MatchedChunk[],
-  parsedCitations: ParsedCitation[]
-): (MatchedChunk & { isVerified: boolean })[] {
-  return chunks.map(chunk => {
-    const metadata = chunk.metadata;
-    const chunkStartPage = metadata.startPage || metadata.page || 0;
-    const chunkEndPage = metadata.endPage || metadata.page || 0;
-    const chunkSection = metadata.section;
-
-    // Check if this chunk matches any parsed citation
-    const isVerified = parsedCitations.some(citation => {
-      // Page match: citation page is within chunk's page range
-      const pageMatch = citation.page >= chunkStartPage && citation.page <= chunkEndPage;
-      
-      // Section match: if citation has section, it must match
-      const sectionMatch = !citation.section || 
-        citation.section === chunkSection ||
-        (chunkSection && citation.section.startsWith(chunkSection)) ||
-        (chunkSection && chunkSection.startsWith(citation.section));
-
-      return pageMatch && sectionMatch;
-    });
-
-    return {
-      ...chunk,
-      isVerified,
-    };
-  });
-}
-
-// -----------------------------------------------------------------------------
 // Utility Functions
 // -----------------------------------------------------------------------------
 

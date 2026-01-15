@@ -4,43 +4,34 @@
 // Chat Server Action with Advanced RAG Pipeline
 // ============================================================================
 
-import { queryDubaiCode, multiQuerySearch } from '@/lib/rag';
 import { generateChatResponse, COMPLIANCE_SYSTEM_PROMPT } from '@/lib/gemini';
 import { 
-  expandQuery, 
-  rerankChunks, 
-  verifyAnswer, 
-  detectQueryType,
-  classifyTopic
-} from '@/lib/agents';
-import { createSmartCitations, getCitationStats } from '@/lib/citation-parser';
+  classifyUserTopic,
+  executeRAGPipeline,
+  buildContextFromChunks,
+  verifyAIResponse,
+  generateCitations,
+  OFF_TOPIC_RESPONSE,
+  GREETING_RESPONSE,
+  CHAT_PIPELINE_CONFIG,
+} from '@/lib/chat-pipeline';
 import { checkRateLimit } from '@/lib/supabase';
 import { getSession } from '@/lib/auth';
 import type { 
   ChatRequest, 
   ChatResponse, 
-  Citation, 
   ComplianceStatus,
-  MatchedChunk,
-  EnhancedCitation,
-  VerifiedAnswer
 } from '@/types';
 
 // -----------------------------------------------------------------------------
-// Configuration: Advanced RAG Pipeline
+// Configuration
 // -----------------------------------------------------------------------------
 
-const ENABLE_QUERY_EXPANSION = true;    // Generate multiple search queries
-const ENABLE_RERANKING = true;          // AI-powered relevance scoring
-const ENABLE_VERIFICATION = true;       // Self-check for hallucinations
-const MAX_EXPANDED_QUERIES = 4;         // Max queries after expansion
-const RERANK_TOP_K = 7;                 // Keep top 7 after reranking
+const MAX_MESSAGE_LENGTH = 500;
 
 // -----------------------------------------------------------------------------
 // Input Validation
 // -----------------------------------------------------------------------------
-
-const MAX_MESSAGE_LENGTH = 500;
 
 function validateMessage(message: string): { valid: boolean; error?: string } {
   if (!message || typeof message !== 'string') {
@@ -115,11 +106,11 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
     // =========================================================================
     // STEP 0: Topic Classification (Skip RAG for off-topic/greetings)
     // =========================================================================
-    const topicClassification = await classifyTopic(trimmedMessage);
+    const topicClassification = await classifyUserTopic(trimmedMessage);
     
     if (!topicClassification.isOnTopic) {
       return {
-        message: "I'm Emirate Forge, a Dubai Building Code 2021 assistant. I can help you with questions about building regulations, parking requirements, fire safety, structural requirements, and more. Feel free to ask me anything about the Dubai Building Code!",
+        message: OFF_TOPIC_RESPONSE,
         citations: [],
         complianceStatus: 'pending',
       };
@@ -127,60 +118,21 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
 
     if (!topicClassification.shouldUseRAG) {
       return {
-        message: "Hello! I'm Emirate Forge, your Dubai Building Code 2021 assistant. I can help you with:\n\n- **Parking requirements** for different building types\n- **Fire safety** regulations and exit requirements\n- **Building heights** and setback rules\n- **Structural requirements** and load specifications\n- **Accessibility** standards\n- **MEP systems** requirements\n\nJust ask me any question about the Dubai Building Code!",
+        message: GREETING_RESPONSE,
         citations: [],
         complianceStatus: 'pending',
       };
     }
 
     // =========================================================================
-    // STEP 1: Query Type Detection
+    // STEP 1-4: RAG Pipeline (Query Expansion → Search → Rerank)
     // =========================================================================
-    const queryType = detectQueryType(trimmedMessage);
-
-    // =========================================================================
-    // STEP 2: Query Expansion (Generate multiple search variations)
-    // =========================================================================
-    let searchQueries = [trimmedMessage];
-    
-    if (ENABLE_QUERY_EXPANSION && queryType !== 'exact') {
-      const expandedQueries = await expandQuery(trimmedMessage);
-      searchQueries = expandedQueries.slice(0, MAX_EXPANDED_QUERIES);
-    }
-
-    // =========================================================================
-    // STEP 3: Hybrid Search (Vector + Keyword with RRF)
-    // =========================================================================
-    let chunks: MatchedChunk[];
-    
-    if (searchQueries.length > 1) {
-      // Multi-query search with RRF fusion
-      chunks = await multiQuerySearch(searchQueries, 15);
-    } else {
-      // Single query hybrid search
-      const ragResult = await queryDubaiCode({
-        query: trimmedMessage,
-        matchThreshold: 0.4,  // Lower threshold for hybrid
-        matchCount: 25,       // Get more for reranking
-      });
-      chunks = ragResult.chunks;
-    }
-
-    // =========================================================================
-    // STEP 4: Re-ranking (AI-powered relevance scoring)
-    // =========================================================================
-    if (ENABLE_RERANKING && chunks.length > RERANK_TOP_K) {
-      chunks = await rerankChunks(trimmedMessage, chunks, RERANK_TOP_K);
-    }
+    const chunks = await executeRAGPipeline(trimmedMessage);
 
     // =========================================================================
     // STEP 5: Generate Answer with Citations
     // =========================================================================
-    
-    // Build context for answer generation
-    const context = chunks.map((chunk, idx) => 
-      `[SOURCE ${idx + 1}] Page ${chunk.metadata.page}, Section: ${chunk.metadata.section || 'N/A'}, Chapter: ${chunk.metadata.chapter || 'N/A'}:\n"${chunk.content}"`
-    ).join('\n\n');
+    const context = buildContextFromChunks(chunks);
 
     const responseText = await generateChatResponse({
       systemPrompt: COMPLIANCE_SYSTEM_PROMPT,
@@ -193,32 +145,22 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
     // STEP 6: Answer Verification (Self-check for hallucinations)
     // =========================================================================
     let finalResponse = responseText;
-    let verificationResult: VerifiedAnswer | null = null;
+    let verificationConfidence = 50;
 
-    if (ENABLE_VERIFICATION && chunks.length > 0) {
-      verificationResult = await verifyAnswer(responseText, chunks, trimmedMessage);
-      
-      if (!verificationResult.isVerified && verificationResult.confidence < 50) {
-        // Low confidence - add disclaimer
-        finalResponse = responseText + '\n\n⚠️ Note: I could not fully verify all details in this response against the source documents. Please cross-reference with the official Dubai Building Code.';
-      }
+    if (CHAT_PIPELINE_CONFIG.ENABLE_VERIFICATION && chunks.length > 0) {
+      const { verifiedResponse, verificationResult } = await verifyAIResponse(
+        responseText,
+        chunks,
+        trimmedMessage
+      );
+      finalResponse = verifiedResponse;
+      verificationConfidence = verificationResult.confidence;
     }
 
     // =========================================================================
-    // STEP 7: Extract Smart Citations (Parse from AI response)
+    // STEP 7: Extract Smart Citations
     // =========================================================================
-    // Use verification confidence to score citations
-    const verificationConfidence = verificationResult?.confidence ?? 50;
-    const citations = await createSmartCitations(
-      finalResponse, 
-      chunks,
-      verificationConfidence,
-      30 // Min confidence threshold
-    );
-    
-    // Log citation statistics
-    const stats = getCitationStats(citations);
-    console.log(`📊 Citation stats: ${stats.verified} verified / ${stats.total} total, ${stats.uniquePages} pages, ${stats.uniqueSections} sections, verification confidence: ${verificationConfidence}`);
+    const citations = await generateCitations(finalResponse, chunks, verificationConfidence);
 
     // =========================================================================
     // STEP 8: Determine Compliance Status
@@ -238,42 +180,6 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
       complianceStatus: 'pending',
     };
   }
-}
-
-// -----------------------------------------------------------------------------
-// Enhanced Citation Extraction
-// -----------------------------------------------------------------------------
-
-function extractEnhancedCitations(
-  chunks: MatchedChunk[], 
-  verificationResult: VerifiedAnswer | null
-): Citation[] {
-  // If we have verification result with enhanced citations, use those
-  if (verificationResult?.citations && verificationResult.citations.length > 0) {
-    return verificationResult.citations.map((ec: EnhancedCitation, idx: number) => ({
-      chunkId: ec.chunkId,
-      page: ec.page,
-      section: ec.section,
-      excerpt: ec.exactQuote || ec.context.slice(0, 200),
-      similarity: ec.similarity,
-    }));
-  }
-
-  // Fallback to standard extraction
-  return chunks.slice(0, 5).map(chunk => ({
-    chunkId: chunk.id,
-    page: chunk.metadata.page || 0,
-    section: chunk.metadata.section,
-    excerpt: truncateExcerpt(chunk.content, 200),
-    similarity: chunk.similarity,
-  }));
-}
-
-function truncateExcerpt(text: string, maxLength: number): string {
-  if (text.length <= maxLength) {
-    return text;
-  }
-  return text.substring(0, maxLength).trim() + '...';
 }
 
 // -----------------------------------------------------------------------------

@@ -4,15 +4,15 @@ import { getQuickSession } from '@/lib/auth';
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
 import { COMPLIANCE_SYSTEM_PROMPT } from '@/lib/gemini';
-import { queryDubaiCode, multiQuerySearch } from '@/lib/rag';
-import { 
-  expandQuery, 
-  rerankChunks, 
-  detectQueryType,
-  classifyTopic,
-  verifyAnswer
-} from '@/lib/agents';
-import { createSmartCitations, getCitationStats } from '@/lib/citation-parser';
+import {
+  classifyUserTopic,
+  executeRAGPipeline,
+  buildContextFromChunks,
+  verifyAIResponse,
+  generateCitations,
+  OFF_TOPIC_RESPONSE,
+  GREETING_RESPONSE,
+} from '@/lib/chat-pipeline';
 
 // Streaming chat model
 const streamingModel = new ChatGoogleGenerativeAI({
@@ -45,55 +45,22 @@ export async function POST(request: NextRequest) {
 
     const trimmedMessage = message.trim().slice(0, 500);
 
-    // Topic classification
-    const topicClassification = await classifyTopic(trimmedMessage);
+    // Topic classification using centralized pipeline
+    const topicClassification = await classifyUserTopic(trimmedMessage);
     
     if (!topicClassification.isOnTopic) {
-      return new Response(
-        "I'm Emirate Forge, a Dubai Building Code 2021 assistant. I can help you with questions about building regulations, parking requirements, fire safety, structural requirements, and more. Feel free to ask me anything about the Dubai Building Code!",
-        { headers: { 'Content-Type': 'text/plain' } }
-      );
+      return new Response(OFF_TOPIC_RESPONSE, { headers: { 'Content-Type': 'text/plain' } });
     }
 
     if (!topicClassification.shouldUseRAG) {
-      return new Response(
-        "Hello! I'm Emirate Forge, your Dubai Building Code 2021 assistant. I can help you with:\n\n- **Parking requirements** for different building types\n- **Fire safety** regulations and exit requirements\n- **Building heights** and setback rules\n- **Structural requirements** and load specifications\n- **Accessibility** standards\n- **MEP systems** requirements\n\nJust ask me any question about the Dubai Building Code!",
-        { headers: { 'Content-Type': 'text/plain' } }
-      );
+      return new Response(GREETING_RESPONSE, { headers: { 'Content-Type': 'text/plain' } });
     }
 
-    // RAG Pipeline
-    const queryType = detectQueryType(trimmedMessage);
-    
-    // Query expansion
-    let searchQueries = [trimmedMessage];
-    if (queryType !== 'exact') {
-      const expandedQueries = await expandQuery(trimmedMessage);
-      searchQueries = expandedQueries.slice(0, 4);
-    }
+    // Execute RAG Pipeline using centralized module
+    const chunks = await executeRAGPipeline(trimmedMessage);
 
-    // Hybrid search
-    let chunks;
-    if (searchQueries.length > 1) {
-      chunks = await multiQuerySearch(searchQueries, 15);
-    } else {
-      const ragResult = await queryDubaiCode({
-        query: trimmedMessage,
-        matchThreshold: 0.4,
-        matchCount: 25,
-      });
-      chunks = ragResult.chunks;
-    }
-
-    // Reranking
-    if (chunks.length > 7) {
-      chunks = await rerankChunks(trimmedMessage, chunks, 7);
-    }
-
-    // Build context
-    const context = chunks.map((chunk, idx) => 
-      `[SOURCE ${idx + 1}] Page ${chunk.metadata.page}, Section: ${chunk.metadata.section || 'N/A'}:\n"${chunk.content}"`
-    ).join('\n\n');
+    // Build context using centralized function
+    const context = buildContextFromChunks(chunks);
 
     // Load conversation history
     let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
@@ -146,29 +113,20 @@ export async function POST(request: NextRequest) {
             }
           }
           
-          // Send smart citations at the end (parsed from AI response)
+          // Send smart citations at the end using centralized functions
           if (chunks.length > 0) {
-            // Quick verification to get confidence score
-            let verificationConfidence = 50; // Default
+            // Verification to get confidence score
+            let verificationConfidence = 50;
             try {
-              const verification = await verifyAnswer(fullContent, chunks, trimmedMessage);
-              verificationConfidence = verification.confidence;
-              console.log(`🔍 Verification: ${verification.isVerified ? '✓' : '✗'} (${verificationConfidence}%)`);
+              const { verificationResult } = await verifyAIResponse(fullContent, chunks, trimmedMessage);
+              verificationConfidence = verificationResult.confidence;
+              console.log(`🔍 Verification: ${verificationResult.isVerified ? '✓' : '✗'} (${verificationConfidence}%)`);
             } catch (e) {
               console.error('Verification error:', e);
             }
             
-            // Use smart citations with verification confidence
-            const citations = await createSmartCitations(
-              fullContent, 
-              chunks, 
-              verificationConfidence,
-              30 // Min confidence threshold
-            );
-            
-            // Log stats for debugging
-            const stats = getCitationStats(citations);
-            console.log(`📊 Stream citations: ${stats.verified}/${stats.total} verified, confidence: ${verificationConfidence}`);
+            // Use centralized citation generation
+            const citations = await generateCitations(fullContent, chunks, verificationConfidence);
             
             controller.enqueue(encoder.encode(`\n\n__CITATIONS__${JSON.stringify(citations)}`));
           }

@@ -202,17 +202,3 @@ export interface ChunkWithPageRange {
   contentType: 'text' | 'table' | 'list' | 'heading';
 }
 
-export interface PageContent {
-  pageNumber: number;
-  text: string;
-  chapter?: string;
-  sections: string[];
-}
-
-export interface EnhancedChunkMetadata extends ChunkMetadata {
-  paragraph?: number;
-  startOffset?: number;
-  endOffset?: number;
-  headings?: string[];
-}
-
