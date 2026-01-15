@@ -102,7 +102,7 @@ How documents are processed and indexed:
 flowchart LR
     A[Admin Upload] --> B[PDF Parse]
     B --> C[Page Extraction]
-    C --> D[Chunking (800 chars)]
+    C --> D[Chunking Strategy]
     D --> E[Metadata Extraction]
     E --> F[Embedding Generation]
     F --> G[Supabase Storage]
