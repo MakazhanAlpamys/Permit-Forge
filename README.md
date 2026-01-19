@@ -741,7 +741,7 @@ See [LICENSE](./LICENSE) for more information.
 **Makazhan Alpamys**
 
 - GitHub: [@MakazhanAlpamys](https://github.com/MakazhanAlpamys)
-- Email: contact@example.com
+- Email: makazanalpamys@gmail.com
 
 ---
 
@@ -758,7 +758,5 @@ See [LICENSE](./LICENSE) for more information.
 <div align="center">
 
 **Built with ❤️ for the construction industry**
-
-[⬆ Back to Top](#-emirate-forge)
 
 </div>
