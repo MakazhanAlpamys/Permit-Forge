@@ -11,10 +11,6 @@ import { z } from 'zod';
 // Sanitize string to prevent XSS (removes HTML tags)
 const sanitizeString = (s: string) => s.replace(/<[^>]*>/g, '').trim();
 
-// Sanitize for SQL-like injection patterns (additional layer - DB should use parameterized queries)
-const sanitizeSQLPatterns = (s: string) => 
-  s.replace(/(['";]|--|\bOR\b|\bAND\b|\bUNION\b|\bSELECT\b|\bDROP\b|\bDELETE\b|\bINSERT\b|\bUPDATE\b)/gi, '');
-
 // -----------------------------------------------------------------------------
 // Password Validation (Unified - min 8 chars with complexity requirements)
 // -----------------------------------------------------------------------------
@@ -107,33 +103,6 @@ export const createUserSchema = z.object({
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 // -----------------------------------------------------------------------------
-// Profile Update Schema (Restricted fields)
-// -----------------------------------------------------------------------------
-
-export const updateProfileSchema = z.object({
-  // Only allow safe fields to be updated
-  full_name: z.string()
-    .max(100, 'Name must be 100 characters or less')
-    .transform(sanitizeString)
-    .optional(),
-}).strict(); // Reject any extra fields
-
-export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
-
-// Fields that are NEVER allowed to be updated via profile update
-export const FORBIDDEN_PROFILE_FIELDS = [
-  'id',
-  'username', 
-  'role', 
-  'password_hash', 
-  'blocked',
-  'blocked_reason',
-  'blocked_at',
-  'blocked_by',
-  'created_at',
-] as const;
-
-// -----------------------------------------------------------------------------
 // Change Password Schema
 // -----------------------------------------------------------------------------
 
@@ -143,15 +112,8 @@ export const changePasswordSchema = z.object({
 });
 
 // -----------------------------------------------------------------------------
-// Chat Session Schema
+// Chat Message Schema
 // -----------------------------------------------------------------------------
-
-export const createSessionSchema = z.object({
-  title: z.string()
-    .min(1, 'Title is required')
-    .max(100, 'Title must be 100 characters or less')
-    .transform(sanitizeString),
-});
 
 export const saveMessageSchema = z.object({
   sessionId: uuidSchema,
@@ -195,33 +157,6 @@ export const paginationSchema = z.object({
 export type PaginationInput = z.infer<typeof paginationSchema>;
 
 // -----------------------------------------------------------------------------
-// Admin User Management
-// -----------------------------------------------------------------------------
-
-export const updateUserRoleSchema = z.object({
-  userId: uuidSchema,
-  role: z.enum(['admin', 'user']),
-});
-
-export const blockUserSchema = z.object({
-  userId: uuidSchema,
-  blocked: z.boolean(),
-  reason: z.string()
-    .max(500)
-    .transform(sanitizeString)
-    .optional(),
-});
-
-export const adminResetPasswordSchema = z.object({
-  userId: uuidSchema,
-  newPassword: passwordSchema,
-});
-
-export const adminDeleteUserSchema = z.object({
-  userId: uuidSchema,
-});
-
-// -----------------------------------------------------------------------------
 // Session Token Payload
 // -----------------------------------------------------------------------------
 
@@ -234,21 +169,6 @@ export const jwtPayloadSchema = z.object({
 });
 
 export type JWTPayload = z.infer<typeof jwtPayloadSchema>;
-
-// -----------------------------------------------------------------------------
-// Search/Filter Schemas (SQL injection protection)
-// -----------------------------------------------------------------------------
-
-export const searchQuerySchema = z.object({
-  query: z.string()
-    .max(200, 'Search query too long')
-    .transform(sanitizeSQLPatterns)
-    .transform(sanitizeString),
-  limit: z.number().int().min(1).max(100).default(50),
-  offset: z.number().int().min(0).default(0),
-});
-
-export type SearchQueryInput = z.infer<typeof searchQuerySchema>;
 
 
 

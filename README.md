@@ -8,104 +8,56 @@
 [![Gemini](https://img.shields.io/badge/Gemini-2.5_Flash-blue?logo=google)](https://ai.google.dev/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-green?logo=supabase)](https://supabase.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?logo=typescript)](https://www.typescriptlang.org/)
-[![Tests](https://img.shields.io/badge/Tests-96%20passing-brightgreen)](./test)
-[![RAG Accuracy](https://img.shields.io/badge/RAG%20Accuracy-93%25-success)](./plan.md)
+[![Tests](https://img.shields.io/badge/Tests-82%20passing-brightgreen)](./test)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](./LICENSE)
-
-**Production-ready • Fully Tested • 93% Citation Accuracy • Scalable Architecture**
 
 </div>
 
 ---
 
-## 📋 Project Overview
+## 📋 Overview
 
-**Emirate Forge** is a specialized AI assistant designed to navigate the **Dubai Building Code 2021**. It leverages an Advanced RAG (Retrieval-Augmented Generation) pipeline to provide accurate, citation-backed answers to complex compliance queries.
+**Emirate Forge** is an AI assistant for navigating the **Dubai Building Code 2021**. It uses an Advanced RAG (Retrieval-Augmented Generation) pipeline to provide accurate, citation-backed answers to compliance queries.
 
-### Key Features
+### Features
 
 | Feature | Description |
 |---------|-------------|
-| 🤖 **AI Chat** | Powered by **Gemini 2.5 Flash** for rapid reasoning and response generation. |
-| 📚 **Advanced RAG** | **Hybrid Search** (Vector + Keyword) with Reciprocal Rank Fusion (RRF) and AI Re-ranking. |
-| 📍 **Smart Citations** | Automatically parses and verifies citations (e.g., `[Page 42, Section 3.1]`) with **93% accuracy**. |
-| 📊 **Confidence Scoring** | Real-time confidence assessment for every generated answer. |
-| 📄 **Rich Excerpts** | Renders tables and lists from the source PDF directly in the chat. |
-| 🔗 **PDF Deep Links** | Direct links to the exact page in the official PDF document. |
-| 🌍 **Global Support** | Optimized for **English** with varying capabilities in **Arabic** and **Russian** (via Gemini). |
-| 🔐 **Enterprise Security** | JWT Authentication, Role-Based Access Control (RBAC), and Audit Logging. |
-| 🛠️ **Admin Panel** | Comprehensive dashboard for User Management, PDF Ingestion, and System Analytics. |
-
----
-
-## 🖼️ Interface
-
-### AI Assistant
-![AI Assistant Main Page](./public/emirate-forge-main.png)
-
-### Admin Dashboard
-![Admin Dashboard](./public/emirate-forge-admin.png)
+| 🤖 **AI Chat** | Powered by **Gemini 2.5 Flash** with streaming responses |
+| 📚 **Hybrid RAG** | Vector + Keyword search with RRF fusion and AI re-ranking |
+| 📍 **Smart Citations** | Auto-parsed citations with page/section references |
+| 📊 **Confidence Scoring** | Verification confidence for each answer |
+| 📄 **Rich Excerpts** | Tables and lists rendered directly in chat |
+| 🔗 **PDF Deep Links** | Direct links to source pages |
+| 🔐 **Enterprise Security** | JWT auth, RBAC, audit logging |
+| 🛠️ **Admin Panel** | User management, PDF ingestion, analytics |
 
 ---
 
 ## 🏛️ Architecture
 
-### Tech Stack
-
-```mermaid
-graph TD
-    Frontend[Next.js 15 + React 18 + Tailwind 4] --> ServerActions[Server Actions]
-    ServerActions --> Lib[Core Libraries: Auth, RAG, Agents]
-    Lib --> Supabase[Supabase: Postgres + pgvector]
-    Lib --> Gemini[Google Gemini 2.5 Flash]
 ```
-
-- **Frontend:** Next.js 15 (App Router), React 18, Tailwind CSS 4, shadcn/ui.
-- **Backend:** Next.js Server Actions.
-- **Database:** Supabase (PostgreSQL) with `pgvector` and Full-Text Search.
-- **AI/ML:** Google Gemini 2.5 Flash, `text-embedding-004`.
-- **Auth:** Custom JWT implementation with HttpOnly cookies.
-
-### 🔄 System Workflows
-
-#### 1. RAG Chat Pipeline
-How the system delivers accurate answers:
-
-```mermaid
-flowchart TD
-    A[User Query] --> B{Topic Classifier}
-    B -->|Off-topic| C[Standard Response]
-    B -->|On-topic| E[Query Expansion]
-    
-    E --> F[Generate 4 Variations]
-    F --> G[Hybrid Search]
-    
-    G --> H{Search Strategy}
-    H -->|Vector| I[Semantic Match]
-    H -->|Keyword| J[Exact Match]
-    
-    I & J --> K[RRF Fusion]
-    K --> L[Top 25 Chunks]
-    
-    L --> M[AI Re-ranking]
-    M --> N[Top 7 Relevant Chunks]
-    
-    N --> O[Gemini Generation]
-    O --> P[Answer Verification]
-    P --> Q[Final Response with Citations]
-```
-
-#### 2. PDF Ingestion Process
-How documents are processed and indexed:
-
-```mermaid
-flowchart LR
-    A[Admin Upload] --> B[PDF Parse]
-    B --> C[Page Extraction]
-    C --> D[Chunking Strategy]
-    D --> E[Metadata Extraction]
-    E --> F[Embedding Generation]
-    F --> G[Supabase Storage]
+┌─────────────────────────────────────────────────────────────┐
+│                        Frontend                             │
+│     Next.js 15 (App Router) + React 18 + Tailwind CSS 4     │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    Server Actions / API                     │
+│   actions/chat.ts  │  actions/admin.ts  │  actions/auth.ts  │
+└─────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              ▼                               ▼
+┌─────────────────────────┐     ┌─────────────────────────────┐
+│      Core Libraries     │     │       External APIs         │
+│  lib/rag.ts             │     │  Supabase (PostgreSQL +     │
+│  lib/agents.ts          │     │  pgvector + FTS)            │
+│  lib/auth.ts            │     │                             │
+│  lib/chat-pipeline.ts   │     │  Google Gemini 2.5 Flash    │
+│  lib/citation-parser.ts │     │  text-embedding-004         │
+└─────────────────────────┘     └─────────────────────────────┘
 ```
 
 ---
@@ -114,86 +66,164 @@ flowchart LR
 
 ### Prerequisites
 - Node.js 20+
-- Supabase Project
+- Supabase Project (with pgvector extension)
 - Google Gemini API Key
 
 ### Installation
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/MakazhanAlpamys/Emirate-Forge.git
-   cd Emirate-Forge
-   npm install
-   ```
+```bash
+# Clone and install
+git clone https://github.com/MakazhanAlpamys/Emirate-Forge.git
+cd Emirate-Forge
+npm install
+```
 
-2. **Configure Environment**
-   Create a `.env.local` file:
-   ```env
-   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-   SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-   GEMINI_API_KEY=your_gemini_api_key
-   JWT_SECRET=your_super_secret_jwt_key_must_be_32_chars_long
-   ```
+### Environment Variables
 
-3. **Database Setup**
-   Run the SQL migration script in your Supabase SQL Editor:
-   - File: `supabase/migrations/001_complete_setup.sql`
-   - This creates all tables (`users`, `chat_sessions`, `dubai_code_chunks`, etc.) and the default admin account.
+Create `.env.local`:
 
-4. **Run the Application**
-   ```bash
-   npm run dev
-   ```
+```env
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_anon_key
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
-### Initial Setup
-1. Log in at `/login` with default credentials:
-   - **Username:** `admin`
-   - **Password:** `Admin123!`
-2. Go to **Admin Panel** -> **User Management** and **change your password immediately**.
-3. Go to **PDF Management** and ingest the `dubai-code.pdf` file (ensure it is placed in the `public` folder).
+# Google Gemini
+GEMINI_API_KEY=your_gemini_api_key
+
+# JWT (minimum 32 characters, recommended 64+ for production)
+JWT_SECRET=your_secure_random_jwt_secret_at_least_32_chars
+```
+
+### Database Setup
+
+1. Open **Supabase Dashboard** → **SQL Editor**
+2. Run the migration: `supabase/migrations/001_complete_setup.sql`
+3. This creates all tables, functions, and the default admin user
+
+### Run
+
+```bash
+npm run dev
+```
+
+### First Login
+
+1. Go to `http://localhost:3000/login`
+2. Login: `admin` / `Admin123!`
+3. **Change your password immediately** in Admin Panel → Users
+4. Go to **PDF Ingestion** tab and ingest `dubai-code.pdf`
 
 ---
 
-## 🔒 Security Measures
+## 📁 Project Structure
 
-- **Authentication:** Secure JWT tokens stored in HttpOnly cookies.
-- **Passwords:** Bcrypt hashing with 12 rounds.
-- **Rate Limiting:** Built-in protection against API abuse.
-- **Input Validation:** Strict Zod schemas for all server actions.
-- **Audit Logs:** Complete tracking of all user actions and system events.
+```
+permitai/
+├── actions/           # Server Actions
+│   ├── auth.ts        # Login, logout, password change
+│   ├── admin.ts       # User management, stats
+│   ├── chat.ts        # Main chat with RAG
+│   ├── chat-history.ts # Session management
+│   └── ingest-pdf.ts  # PDF ingestion (admin only)
+├── app/
+│   ├── page.tsx       # Main chat interface
+│   ├── login/         # Login page
+│   ├── admin/         # Admin dashboard
+│   └── api/
+│       ├── chat/stream/ # Streaming chat API
+│       └── ingest/     # PDF ingestion with progress
+├── components/
+│   ├── chat/          # Chat UI components
+│   ├── admin/         # Admin panel components
+│   ├── dashboard/     # Main layout components
+│   └── ui/            # shadcn/ui components
+├── lib/
+│   ├── auth.ts        # JWT, sessions, password hashing
+│   ├── rag.ts         # Hybrid search, multi-query
+│   ├── agents.ts      # AI agents (classifier, reranker, verifier)
+│   ├── chat-pipeline.ts # Centralized RAG pipeline
+│   ├── citation-parser.ts # Citation extraction & matching
+│   ├── pdf-parser.ts  # PDF.js text extraction with TOC
+│   ├── pdf-ingestion.ts # Chunking & embedding
+│   ├── gemini.ts      # LangChain Gemini client
+│   └── supabase-server.ts # Supabase clients
+├── supabase/
+│   └── migrations/    # SQL schema & functions
+├── test/              # Vitest tests (82 tests)
+└── types/             # TypeScript definitions
+```
+
+---
+
+## 🔒 Security
+
+| Feature | Implementation |
+|---------|----------------|
+| **Authentication** | JWT tokens in HttpOnly cookies |
+| **Password Hashing** | bcrypt with 12 rounds |
+| **Rate Limiting** | Database-backed (10 req/min) |
+| **Input Validation** | Zod schemas on all endpoints |
+| **XSS Protection** | DOMPurify for user content |
+| **CSRF Protection** | Token-based validation |
+| **Audit Logging** | All security events tracked |
+| **RLS** | Row Level Security on all tables |
 
 ---
 
 ## 🧪 Testing
 
-The project maintains high code quality with a comprehensive test suite.
-
 ```bash
-# Run all unit and integration tests
-npm test
-
-# Run tests with UI
-npm run test:ui
-
-# Check test coverage
-npm run test:coverage
+npm test              # Run all tests
+npm run test:ui       # Interactive UI
+npm run test:coverage # Coverage report
 ```
 
-Current Status: **96 passing tests** covering Auth, RAG Logic, and Parsers.
+**82 tests** covering:
+- Authentication & JWT
+- RAG pipeline & search
+- Citation parsing
+- Admin functions
+- Input validation
 
 ---
 
-## 📝 Roadmap
+## 📝 API Reference
 
-- [x] Advanced RAG Pipeline (Hybrid Search + Reranking)
-- [x] Smart Citation System
-- [x] Admin Dashboard & User Management
-- [x] PDF Ingestion & Vectorization
-- [x] Multi-language Support
-- [ ] Redis Caching for Rate Limiting
-- [ ] Email Verification Flow
-- [ ] Support for Multiple Documents/Codes
-- [ ] OCR Support for Scanned PDFs
+### Chat (Streaming)
+```
+POST /api/chat/stream
+Body: { message: string, sessionId?: string }
+Response: text/event-stream with citations
+```
+
+### PDF Ingestion (Admin)
+```
+POST /api/ingest
+Response: Server-Sent Events with progress
+```
+
+### Server Actions
+- `loginAction(formData)` - Authenticate user
+- `sendChatMessage(request)` - Non-streaming chat
+- `createChatSession(title)` - New chat session
+- `adminCreateUser(data)` - Create user (admin)
+- `ingestPDF()` - Start PDF ingestion (admin)
+
+---
+
+## 🛣️ Roadmap
+
+- [x] Hybrid RAG with RRF fusion
+- [x] AI-powered re-ranking
+- [x] Smart citation system
+- [x] Admin dashboard
+- [x] PDF ingestion pipeline
+- [x] Streaming responses
+- [ ] Redis caching for rate limiting
+- [ ] Multiple document support
+- [ ] OCR for scanned PDFs
+- [ ] Email verification
 
 ---
 

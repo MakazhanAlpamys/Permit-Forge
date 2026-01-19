@@ -130,16 +130,6 @@ async function checkUserBlocked(userId: string): Promise<{ blocked: boolean; rea
   }
 }
 
-// Force invalidate cache for a user (call this when blocking a user)
-export function invalidateBlockCache(userId: string): void {
-  blockStatusCache.delete(userId);
-}
-
-// Invalidate all cache (useful for admin operations)
-export function invalidateAllBlockCache(): void {
-  blockStatusCache.clear();
-}
-
 export async function middleware(request: NextRequest) {
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const { pathname } = request.nextUrl;

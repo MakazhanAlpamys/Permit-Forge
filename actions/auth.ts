@@ -40,7 +40,8 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
       return { error: validation.error.issues[0].message };
     }
 
-    const supabase = createServerClient();
+    // Use admin client for login - anon key doesn't have access to users table
+    const supabase = createAdminClient();
 
     // Find user by username
     const { data: user, error } = await supabase

@@ -48,13 +48,6 @@ export interface RAGPipelineResult {
   verificationResult?: VerifiedAnswer;
 }
 
-export interface ChatPipelineResult {
-  responseText: string;
-  citations: Citation[];
-  verificationConfidence: number;
-  wasVerified: boolean;
-}
-
 // -----------------------------------------------------------------------------
 // Off-Topic Response Templates
 // -----------------------------------------------------------------------------
@@ -201,48 +194,3 @@ export async function generateCitations(
   return citations;
 }
 
-// -----------------------------------------------------------------------------
-// Complete Pipeline
-// -----------------------------------------------------------------------------
-
-/**
- * Execute complete chat pipeline:
- * 1. RAG search
- * 2. Answer verification (optional)
- * 3. Citation generation
- */
-export async function executeChatPipeline(
-  query: string,
-  aiResponse: string
-): Promise<ChatPipelineResult> {
-  const { ENABLE_VERIFICATION } = CHAT_PIPELINE_CONFIG;
-  
-  // Execute RAG pipeline
-  const chunks = await executeRAGPipeline(query);
-  
-  // Verify answer if enabled
-  let responseText = aiResponse;
-  let verificationConfidence = 50;
-  let wasVerified = false;
-  
-  if (ENABLE_VERIFICATION && chunks.length > 0) {
-    const { verifiedResponse, verificationResult } = await verifyAIResponse(
-      aiResponse,
-      chunks,
-      query
-    );
-    responseText = verifiedResponse;
-    verificationConfidence = verificationResult.confidence;
-    wasVerified = verificationResult.isVerified;
-  }
-  
-  // Generate citations
-  const citations = await generateCitations(responseText, chunks, verificationConfidence);
-  
-  return {
-    responseText,
-    citations,
-    verificationConfidence,
-    wasVerified,
-  };
-}

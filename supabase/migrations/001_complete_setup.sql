@@ -983,10 +983,11 @@ CREATE POLICY "Authenticated users can update own profile" ON users
   WITH CHECK (id = auth.uid());
 
 -- NOTE: No INSERT/DELETE policies for anon or authenticated
--- Anonymous users have NO access to users table
+-- Anonymous users have NO direct access to users table from client
 -- INSERT/DELETE operations are handled via service_role (server-side only)
+-- LOGIN: The application uses service_role (createAdminClient) for login queries
+--        This bypasses RLS and allows reading users table for authentication
 -- This prevents:
--- - Anonymous users from reading any user data
 -- - Anonymous users from creating/modifying/deleting users
 -- - Authenticated users from seeing other users' profiles
 -- - Authenticated users from modifying other users' profiles

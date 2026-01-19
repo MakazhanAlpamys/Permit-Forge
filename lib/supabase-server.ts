@@ -122,15 +122,3 @@ export async function checkRateLimit(userId: string): Promise<RateLimitResult> {
   }
 }
 
-// -----------------------------------------------------------------------------
-// Security Helper: Verify this is running on server
-// -----------------------------------------------------------------------------
-
-export function assertServerSide(): void {
-  if (typeof window !== 'undefined') {
-    throw new Error(
-      'SECURITY ERROR: Server-only code is being executed on the client. ' +
-      'This is a critical security vulnerability.'
-    );
-  }
-}
