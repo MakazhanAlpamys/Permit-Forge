@@ -255,3 +255,162 @@ function buildContext(chunks: MatchedChunk[]): string {
   return `CONTEXT FROM DUBAI BUILDING CODE 2021:\n\n${contextParts.join('\n\n---\n\n')}`;
 }
 
+// -----------------------------------------------------------------------------
+// Filtered Search (For Tree Reasoning)
+// -----------------------------------------------------------------------------
+
+export interface PageRange {
+  startPage: number;
+  endPage: number;
+  section?: string;
+}
+
+/**
+ * Perform hybrid search filtered by page ranges (Tree Reasoning)
+ * Only searches within specified page ranges for more precise results
+ */
+export async function filteredHybridSearch(
+  query: string,
+  pageRanges: PageRange[],
+  matchCount: number = DEFAULT_MATCH_COUNT
+): Promise<HybridSearchResult[]> {
+  const supabase = createServerClient();
+
+  // Generate embedding for the query
+  const queryEmbedding = await embeddingsModel.embedQuery(query);
+
+  // Call filtered hybrid search RPC
+  const { data, error } = await supabase.rpc('match_dubai_code_hybrid_filtered', {
+    query_text: query,
+    query_embedding: queryEmbedding,
+    page_ranges: pageRanges.map(r => ({
+      start_page: r.startPage,
+      end_page: r.endPage,
+    })),
+    match_count: matchCount,
+    keyword_weight: 0.3,
+    vector_weight: 0.7,
+    rrf_k: 60,
+  });
+
+  if (error) {
+    // Fallback to regular hybrid search if filtered RPC doesn't exist
+    if (error.message.includes('does not exist') || error.message.includes('not found')) {
+      console.warn('Filtered search RPC not found, falling back to regular search with post-filter');
+      return await hybridSearchWithPostFilter(query, pageRanges, matchCount);
+    }
+    console.error('Filtered hybrid search error:', error);
+    throw new Error(`Filtered hybrid search failed: ${error.message}`);
+  }
+
+  return (data || []).map((item: {
+    id: number;
+    content: string;
+    metadata: ChunkMetadata;
+    vector_similarity: number;
+    keyword_rank: number;
+    hybrid_score: number;
+  }) => ({
+    id: item.id,
+    content: item.content,
+    metadata: item.metadata || {},
+    vectorSimilarity: item.vector_similarity || 0,
+    keywordRank: item.keyword_rank || 0,
+    hybridScore: item.hybrid_score || 0,
+  }));
+}
+
+/**
+ * Fallback: Regular hybrid search with post-filtering by page ranges
+ * Used when filtered RPC is not available
+ */
+async function hybridSearchWithPostFilter(
+  query: string,
+  pageRanges: PageRange[],
+  matchCount: number
+): Promise<HybridSearchResult[]> {
+  // Get more results to filter
+  const expandedCount = matchCount * 3;
+  const results = await hybridSearch(query, expandedCount);
+
+  // Filter by page ranges
+  const filtered = results.filter(result => {
+    const chunkStart = result.metadata.startPage || result.metadata.page || 0;
+    const chunkEnd = result.metadata.endPage || result.metadata.page || 0;
+
+    return pageRanges.some(range => {
+      // Check if chunk overlaps with any page range
+      return chunkStart <= range.endPage && chunkEnd >= range.startPage;
+    });
+  });
+
+  return filtered.slice(0, matchCount);
+}
+
+/**
+ * Query Dubai Code with Tree Reasoning filter
+ * Searches only within specified page ranges
+ */
+export async function queryDubaiCodeFiltered(
+  params: RAGQuery & { pageRanges: PageRange[] }
+): Promise<RAGResult> {
+  const {
+    query,
+    pageRanges,
+    matchCount = DEFAULT_MATCH_COUNT
+  } = params;
+
+  // Check if we need exact search
+  const needsExactSearch = /\b\d+\.\d+(\.\d+)?\b|section\s+\d+|table\s+\d+/i.test(query);
+
+  let chunks: MatchedChunk[] = [];
+
+  if (needsExactSearch) {
+    const patternMatch = query.match(/\b(\d+\.\d+(?:\.\d+)?)\b|section\s+(\d+[\.\d]*)|table\s+(\d+[-\d]*)/i);
+    if (patternMatch) {
+      const pattern = patternMatch[1] || patternMatch[2] || patternMatch[3];
+      const exactResults = await exactSearch(pattern, 5);
+      
+      // Filter exact results by page ranges too
+      const filteredExact = exactResults.filter(chunk => {
+        const chunkPage = chunk.metadata.page || 0;
+        return pageRanges.some(range => 
+          chunkPage >= range.startPage && chunkPage <= range.endPage
+        );
+      });
+      
+      chunks.push(...filteredExact);
+    }
+  }
+
+  // Filtered hybrid search
+  const filteredResults = await filteredHybridSearch(query, pageRanges, matchCount);
+
+  // Convert to MatchedChunk format
+  const filteredChunks: MatchedChunk[] = filteredResults.map(result => ({
+    id: result.id,
+    content: result.content,
+    metadata: result.metadata,
+    similarity: result.hybridScore * 10,
+  }));
+
+  // Merge results, avoiding duplicates
+  const seenIds = new Set(chunks.map(c => c.id));
+  for (const chunk of filteredChunks) {
+    if (!seenIds.has(chunk.id)) {
+      chunks.push(chunk);
+      seenIds.add(chunk.id);
+    }
+  }
+
+  // Sort by similarity
+  chunks.sort((a, b) => b.similarity - a.similarity);
+  chunks = chunks.slice(0, FINAL_CHUNK_COUNT);
+
+  const context = buildContext(chunks);
+
+  return {
+    chunks,
+    context,
+  };
+}

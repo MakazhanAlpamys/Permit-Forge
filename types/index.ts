@@ -202,3 +202,63 @@ export interface ChunkWithPageRange {
   contentType: 'text' | 'table' | 'list' | 'heading';
 }
 
+// -----------------------------------------------------------------------------
+// Tree Reasoning Types (Structure-Aware RAG)
+// -----------------------------------------------------------------------------
+
+/**
+ * Tree node for document structure (stored in database)
+ * Each node represents a section/chapter in the document hierarchy
+ */
+export interface TreeNode {
+  id: string;                    // Unique node ID (e.g., "0001", "0002")
+  title: string;                 // Section title
+  section?: string;              // Section number (e.g., "3.2.1")
+  level: number;                 // Hierarchy level (0 = root, 1 = chapter, etc.)
+  startPage: number;             // First page of this section
+  endPage: number;               // Last page of this section
+  parentId?: string;             // Parent node ID
+  path: string;                  // Full path (e.g., "Chapter 3 > Fire Safety > Requirements")
+}
+
+/**
+ * Document tree stored in database
+ */
+export interface DocumentTree {
+  id: string;
+  documentName: string;          // e.g., "Dubai Building Code 2021"
+  totalPages: number;
+  nodes: TreeNode[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Result from Tree Reasoner Agent
+ */
+export interface TreeReasoningResult {
+  selectedNodes: string[];       // Node IDs to search within
+  reasoning: string;             // LLM's explanation of why these nodes
+  confidence: number;            // 0-100 confidence score
+  searchScope: 'narrow' | 'medium' | 'wide';  // How focused the search should be
+}
+
+/**
+ * Configuration for Tree Reasoning
+ */
+export interface TreeReasoningConfig {
+  enabled: boolean;
+  maxNodes: number;              // Max nodes to select (default: 5)
+  minConfidence: number;         // Min confidence to use tree reasoning (default: 60)
+  fallbackToFullSearch: boolean; // Fallback to full search on low confidence
+}
+
+/**
+ * Query classification for routing
+ */
+export interface QueryClassification {
+  isStructural: boolean;         // Does query reference document structure?
+  structuralHints: string[];     // Detected structural keywords
+  suggestedPath: 'tree' | 'standard' | 'exact';
+}
+

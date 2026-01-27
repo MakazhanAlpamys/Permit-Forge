@@ -20,6 +20,7 @@ DROP TABLE IF EXISTS dubai_code_chunks CASCADE;
 DROP FUNCTION IF EXISTS match_dubai_code CASCADE;
 DROP FUNCTION IF EXISTS search_dubai_code_keywords CASCADE;
 DROP FUNCTION IF EXISTS match_dubai_code_hybrid CASCADE;
+DROP FUNCTION IF EXISTS match_dubai_code_hybrid_filtered CASCADE;
 DROP FUNCTION IF EXISTS search_dubai_code_exact CASCADE;
 DROP FUNCTION IF EXISTS update_session_timestamp CASCADE;
 DROP FUNCTION IF EXISTS check_rate_limit CASCADE;
@@ -33,6 +34,11 @@ DROP FUNCTION IF EXISTS get_all_users_admin CASCADE;
 DROP FUNCTION IF EXISTS find_chunks_by_page CASCADE;
 DROP FUNCTION IF EXISTS find_chunks_by_section CASCADE;
 DROP FUNCTION IF EXISTS match_citation CASCADE;
+DROP FUNCTION IF EXISTS get_document_tree CASCADE;
+DROP FUNCTION IF EXISTS save_document_tree CASCADE;
+
+-- Drop Tree Reasoning table
+DROP TABLE IF EXISTS document_trees CASCADE;
 
 -- Drop materialized views
 DROP MATERIALIZED VIEW IF EXISTS analytics_daily CASCADE;
@@ -443,6 +449,170 @@ BEGIN
     OR (d.metadata->>'page')::INT = citation_page
   ORDER BY match_score DESC
   LIMIT match_count;
+END;
+$$;
+
+-- ============================================================================
+-- 2.8 DOCUMENT TREE TABLE (For Tree Reasoning)
+-- Stores hierarchical structure of documents for structure-aware search
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS document_trees (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  document_name TEXT NOT NULL UNIQUE,  -- e.g., "Dubai Building Code 2021"
+  total_pages INT NOT NULL DEFAULT 0,
+  tree_data JSONB NOT NULL DEFAULT '[]',  -- Array of TreeNode objects
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Index for fast lookup by document name
+CREATE INDEX IF NOT EXISTS idx_document_trees_name ON document_trees(document_name);
+
+-- ============================================================================
+-- 2.9 FILTERED HYBRID SEARCH (For Tree Reasoning)
+-- Combines vector + keyword search within specified page ranges
+-- ============================================================================
+
+CREATE OR REPLACE FUNCTION match_dubai_code_hybrid_filtered(
+  query_text TEXT,
+  query_embedding VECTOR(768),
+  page_ranges JSONB,  -- Array of {start_page: int, end_page: int}
+  match_count INT DEFAULT 10,
+  keyword_weight FLOAT DEFAULT 0.3,
+  vector_weight FLOAT DEFAULT 0.7,
+  rrf_k INT DEFAULT 60
+)
+RETURNS TABLE (
+  id BIGINT,
+  content TEXT,
+  metadata JSONB,
+  vector_similarity FLOAT,
+  keyword_rank FLOAT,
+  hybrid_score FLOAT
+)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  range_filter TEXT;
+BEGIN
+  RETURN QUERY
+  WITH 
+  -- Filter chunks by page ranges first
+  page_filtered AS (
+    SELECT d.*
+    FROM dubai_code_chunks d
+    WHERE EXISTS (
+      SELECT 1 
+      FROM jsonb_array_elements(page_ranges) AS r
+      WHERE (
+        COALESCE((d.metadata->>'startPage')::INT, (d.metadata->>'page')::INT, 0) <= (r->>'end_page')::INT
+        AND COALESCE((d.metadata->>'endPage')::INT, (d.metadata->>'page')::INT, 9999) >= (r->>'start_page')::INT
+      )
+    )
+  ),
+  -- Vector search results with ranking (within filtered chunks)
+  vector_results AS (
+    SELECT 
+      pf.id,
+      pf.content,
+      pf.metadata,
+      1 - (pf.embedding <=> query_embedding) AS similarity,
+      ROW_NUMBER() OVER (ORDER BY pf.embedding <=> query_embedding) AS vector_rank
+    FROM page_filtered pf
+    WHERE 1 - (pf.embedding <=> query_embedding) > 0.35
+    ORDER BY pf.embedding <=> query_embedding
+    LIMIT 30
+  ),
+  -- Keyword search results with ranking (within filtered chunks)
+  keyword_results AS (
+    SELECT 
+      pf.id,
+      pf.content,
+      pf.metadata,
+      ts_rank_cd(pf.fts, plainto_tsquery('english', query_text))::FLOAT AS kw_rank,
+      ROW_NUMBER() OVER (ORDER BY ts_rank_cd(pf.fts, plainto_tsquery('english', query_text)) DESC) AS keyword_rank
+    FROM page_filtered pf
+    WHERE pf.fts @@ plainto_tsquery('english', query_text)
+    ORDER BY kw_rank DESC
+    LIMIT 30
+  ),
+  -- Combine using Reciprocal Rank Fusion (RRF)
+  combined AS (
+    SELECT 
+      COALESCE(v.id, k.id) AS id,
+      COALESCE(v.content, k.content) AS content,
+      COALESCE(v.metadata, k.metadata) AS metadata,
+      COALESCE(v.similarity, 0.0) AS vec_sim,
+      COALESCE(k.kw_rank, 0.0) AS kw_score,
+      (
+        vector_weight * COALESCE(1.0 / (rrf_k + v.vector_rank), 0.0) +
+        keyword_weight * COALESCE(1.0 / (rrf_k + k.keyword_rank), 0.0)
+      ) AS rrf_score
+    FROM vector_results v
+    FULL OUTER JOIN keyword_results k ON v.id = k.id
+  )
+  SELECT 
+    combined.id,
+    combined.content,
+    combined.metadata,
+    combined.vec_sim AS vector_similarity,
+    combined.kw_score AS keyword_rank,
+    combined.rrf_score AS hybrid_score
+  FROM combined
+  ORDER BY combined.rrf_score DESC
+  LIMIT match_count;
+END;
+$$;
+
+-- ============================================================================
+-- 2.10 TREE HELPER FUNCTIONS
+-- ============================================================================
+
+-- Get document tree
+CREATE OR REPLACE FUNCTION get_document_tree(
+  p_document_name TEXT DEFAULT 'Dubai Building Code 2021'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_tree JSONB;
+BEGIN
+  SELECT tree_data INTO v_tree
+  FROM document_trees
+  WHERE document_name = p_document_name;
+  
+  RETURN COALESCE(v_tree, '[]'::JSONB);
+END;
+$$;
+
+-- Save/Update document tree
+CREATE OR REPLACE FUNCTION save_document_tree(
+  p_document_name TEXT,
+  p_total_pages INT,
+  p_tree_data JSONB
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_id UUID;
+BEGIN
+  INSERT INTO document_trees (document_name, total_pages, tree_data, updated_at)
+  VALUES (p_document_name, p_total_pages, p_tree_data, NOW())
+  ON CONFLICT (document_name) 
+  DO UPDATE SET 
+    total_pages = EXCLUDED.total_pages,
+    tree_data = EXCLUDED.tree_data,
+    updated_at = NOW()
+  RETURNING id INTO v_id;
+  
+  RETURN v_id;
 END;
 $$;
 
@@ -898,10 +1068,17 @@ GRANT USAGE, SELECT ON SEQUENCE dubai_code_chunks_id_seq TO anon, authenticated,
 GRANT EXECUTE ON FUNCTION match_dubai_code TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION search_dubai_code_keywords TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION match_dubai_code_hybrid TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION match_dubai_code_hybrid_filtered TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION search_dubai_code_exact TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION find_chunks_by_page TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION find_chunks_by_section TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION match_citation TO anon, authenticated, service_role;
+
+-- Grant permissions for Tree Reasoning
+GRANT SELECT ON document_trees TO anon, authenticated, service_role;
+GRANT ALL ON document_trees TO service_role;
+GRANT EXECUTE ON FUNCTION get_document_tree TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION save_document_tree TO service_role;
 
 -- Grant permissions for users table (restricted - authenticated only)
 GRANT SELECT, UPDATE ON users TO authenticated;
@@ -947,6 +1124,9 @@ ALTER TABLE rate_limits ENABLE ROW LEVEL SECURITY;
 
 -- dubai_code_chunks is read-only for users, so RLS optional
 ALTER TABLE dubai_code_chunks ENABLE ROW LEVEL SECURITY;
+
+-- document_trees for Tree Reasoning
+ALTER TABLE document_trees ENABLE ROW LEVEL SECURITY;
 
 -- -----------------------------------------------------------------------------
 -- USERS TABLE POLICIES (SECURE)
@@ -1008,6 +1188,25 @@ DROP POLICY IF EXISTS "Allow all chunks operations" ON dubai_code_chunks;
 CREATE POLICY "Allow all chunks operations" ON dubai_code_chunks
   FOR ALL
   TO anon, authenticated, service_role
+  USING (true)
+  WITH CHECK (true);
+
+-- -----------------------------------------------------------------------------
+-- DOCUMENT_TREES POLICIES (Tree Reasoning)
+-- -----------------------------------------------------------------------------
+DROP POLICY IF EXISTS "Allow read document trees" ON document_trees;
+DROP POLICY IF EXISTS "Service role full access to document trees" ON document_trees;
+
+-- Allow read access to everyone (tree structure is not sensitive)
+CREATE POLICY "Allow read document trees" ON document_trees
+  FOR SELECT
+  TO anon, authenticated, service_role
+  USING (true);
+
+-- Allow full access for service_role (admin operations)
+CREATE POLICY "Service role full access to document trees" ON document_trees
+  FOR ALL
+  TO service_role
   USING (true)
   WITH CHECK (true);
 
@@ -1129,4 +1328,5 @@ SELECT
   (SELECT COUNT(*) FROM chat_messages) AS messages_count,
   (SELECT COUNT(*) FROM rate_limits) AS rate_limits_count,
   (SELECT COUNT(*) FROM audit_logs) AS audit_logs_count,
-  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'blocked') AS blocked_column_exists;
+  EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'document_trees') AS tree_reasoning_enabled,
+  EXISTS(SELECT 1 FROM information_schema.routines WHERE routine_name = 'match_dubai_code_hybrid_filtered') AS filtered_search_exists;

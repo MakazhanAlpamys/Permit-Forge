@@ -438,3 +438,225 @@ export function detectQueryType(query: string): QueryType {
 
   return 'hybrid'; // Default to hybrid for best coverage
 }
+
+// -----------------------------------------------------------------------------
+// 6. TREE REASONING - Structure-Aware Search
+// -----------------------------------------------------------------------------
+
+import type { TreeNode, TreeReasoningResult, QueryClassification } from '@/types';
+
+const TREE_REASONING_PROMPT = `You are a document structure expert for the Dubai Building Code 2021.
+
+Your task is to analyze a user's query and determine which sections of the document are most likely to contain the answer.
+
+DOCUMENT STRUCTURE:
+{tree}
+
+USER QUERY: {query}
+
+INSTRUCTIONS:
+1. Analyze the query to understand what information the user needs
+2. Select the most relevant section(s) from the document structure
+3. Be specific - prefer narrow sections over broad chapters when possible
+4. Select 1-5 nodes maximum
+5. If the query is about a specific topic (parking, fire safety, etc.), find that exact section
+6. If the query compares topics, select multiple relevant sections
+
+OUTPUT FORMAT (JSON only):
+{
+  "selectedNodes": ["node_id_1", "node_id_2"],
+  "reasoning": "Brief explanation of why these sections",
+  "confidence": 85,
+  "searchScope": "narrow" | "medium" | "wide"
+}
+
+SCOPE GUIDELINES:
+- "narrow": Query is specific, 1-2 sections (e.g., "parking dimensions")
+- "medium": Query spans 2-4 related sections (e.g., "parking requirements for residential")
+- "wide": Query is broad or comparative (e.g., "compare fire safety across building types")`;
+
+/**
+ * Detect if a query would benefit from Tree Reasoning
+ * Uses fast pattern matching - NO LLM call
+ */
+export function classifyQueryStructure(query: string): QueryClassification {
+  const structuralPatterns = [
+    // Direct section/chapter references
+    { pattern: /\b(in|from|within)\s+(chapter|section|part)\s+\d/i, hint: 'section_reference' },
+    { pattern: /\bsummarize\s+(chapter|section|the\s+\w+\s+section)/i, hint: 'summarize_section' },
+    { pattern: /\b(chapter|section)\s+\d+\s+(content|requirements|says|states)/i, hint: 'section_content' },
+    { pattern: /\bwhat('s| is| are)\s+(in|under)\s+(chapter|section|the)/i, hint: 'whats_in_section' },
+    
+    // Comparative queries
+    { pattern: /\bcompare\s+.+\s+(and|with|to|vs)/i, hint: 'comparison' },
+    { pattern: /\bdifference\s+between\s+.+\s+and/i, hint: 'comparison' },
+    { pattern: /\bhow\s+(does|do)\s+.+\s+differ/i, hint: 'comparison' },
+    
+    // Contextual queries (topic + context)
+    { pattern: /\b(residential|commercial|industrial|high-rise|low-rise)\s+.*(requirement|section|building)/i, hint: 'contextual' },
+    { pattern: /\b(parking|fire|safety|structural|electrical|plumbing)\s+.*(for|in)\s+(residential|commercial|industrial)/i, hint: 'contextual' },
+    { pattern: /\brequirements?\s+for\s+\w+\s+buildings?/i, hint: 'building_type' },
+    
+    // Scope-limited queries
+    { pattern: /\b(only|specifically|just)\s+(in|for|about)\s+(the\s+)?(chapter|section)/i, hint: 'scope_limited' },
+    { pattern: /\baccording\s+to\s+(chapter|section)\s+\d/i, hint: 'section_reference' },
+  ];
+
+  const detectedHints: string[] = [];
+  
+  for (const { pattern, hint } of structuralPatterns) {
+    if (pattern.test(query)) {
+      detectedHints.push(hint);
+    }
+  }
+
+  const isStructural = detectedHints.length > 0;
+  
+  // Determine suggested path
+  let suggestedPath: 'tree' | 'standard' | 'exact' = 'standard';
+  
+  if (isStructural) {
+    suggestedPath = 'tree';
+  } else if (detectQueryType(query) === 'exact') {
+    suggestedPath = 'exact';
+  }
+
+  return {
+    isStructural,
+    structuralHints: detectedHints,
+    suggestedPath,
+  };
+}
+
+/**
+ * Tree Reasoner Agent - Analyzes document structure to select relevant sections
+ * Only called for structural queries
+ */
+export async function treeReasoner(
+  query: string,
+  tree: TreeNode[]
+): Promise<TreeReasoningResult> {
+  // Format tree for LLM
+  const treeText = formatTreeForLLM(tree);
+  
+  const prompt = TREE_REASONING_PROMPT
+    .replace('{tree}', treeText)
+    .replace('{query}', query);
+
+  try {
+    const response = await agentModel.invoke([
+      new HumanMessage(prompt),
+    ]);
+
+    const content = response.content as string;
+    
+    // Parse JSON from response
+    const jsonMatch = content.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const result = JSON.parse(jsonMatch[0]) as TreeReasoningResult;
+      
+      // Validate node IDs exist in tree
+      const validNodeIds = new Set(tree.map(n => n.id));
+      result.selectedNodes = result.selectedNodes.filter(id => validNodeIds.has(id));
+      
+      // Ensure we have at least some nodes
+      if (result.selectedNodes.length === 0) {
+        console.warn('Tree Reasoner selected no valid nodes, will fallback');
+        return {
+          selectedNodes: [],
+          reasoning: 'No relevant sections found',
+          confidence: 0,
+          searchScope: 'wide',
+        };
+      }
+      
+      return result;
+    }
+
+    // Fallback if parsing fails
+    return {
+      selectedNodes: [],
+      reasoning: 'Failed to parse LLM response',
+      confidence: 0,
+      searchScope: 'wide',
+    };
+  } catch (error) {
+    console.error('Tree Reasoner error:', error);
+    return {
+      selectedNodes: [],
+      reasoning: 'Tree reasoning failed',
+      confidence: 0,
+      searchScope: 'wide',
+    };
+  }
+}
+
+/**
+ * Format tree nodes for LLM consumption
+ */
+function formatTreeForLLM(tree: TreeNode[]): string {
+  if (tree.length === 0) {
+    return 'No document structure available.';
+  }
+
+  // Sort by level and start page
+  const sorted = [...tree].sort((a, b) => {
+    if (a.level !== b.level) return a.level - b.level;
+    return a.startPage - b.startPage;
+  });
+
+  const lines = sorted.map(node => {
+    const indent = '  '.repeat(node.level);
+    const pages = node.startPage === node.endPage 
+      ? `Page ${node.startPage}` 
+      : `Pages ${node.startPage}-${node.endPage}`;
+    return `${indent}[${node.id}] ${node.title} (${pages})`;
+  });
+
+  return lines.join('\n');
+}
+
+/**
+ * Get page ranges for selected tree nodes
+ * Used to filter chunks by page range in search
+ */
+export function getPageRangesForNodes(
+  selectedNodeIds: string[],
+  tree: TreeNode[]
+): Array<{ startPage: number; endPage: number; section?: string }> {
+  const nodeMap = new Map(tree.map(n => [n.id, n]));
+  const ranges: Array<{ startPage: number; endPage: number; section?: string }> = [];
+
+  for (const nodeId of selectedNodeIds) {
+    const node = nodeMap.get(nodeId);
+    if (node) {
+      ranges.push({
+        startPage: node.startPage,
+        endPage: node.endPage,
+        section: node.section,
+      });
+    }
+  }
+
+  // Merge overlapping ranges
+  if (ranges.length > 1) {
+    ranges.sort((a, b) => a.startPage - b.startPage);
+    const merged: typeof ranges = [ranges[0]];
+    
+    for (let i = 1; i < ranges.length; i++) {
+      const last = merged[merged.length - 1];
+      const current = ranges[i];
+      
+      if (current.startPage <= last.endPage + 1) {
+        // Overlapping or adjacent - merge
+        last.endPage = Math.max(last.endPage, current.endPage);
+      } else {
+        merged.push(current);
+      }
+    }
+    
+    return merged;
+  }
+
+  return ranges;
+}

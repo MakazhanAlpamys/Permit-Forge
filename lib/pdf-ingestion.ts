@@ -9,10 +9,15 @@ import { createPDFParser, PDFParser } from '@/lib/pdf-parser';
 import type { 
   ChunkMetadata,
   PDFPageContent,
-  ChunkWithPageRange
+  ChunkWithPageRange,
+  TreeNode,
+  TOCEntry
 } from '@/types';
 import path from 'path';
 import fs from 'fs';
+
+// Document name constant
+const DOCUMENT_NAME = 'Dubai Building Code 2021';
 
 // -----------------------------------------------------------------------------
 // Configuration
@@ -247,6 +252,17 @@ export async function runIngestionPipeline(
 
     const structure = await parser.extractTOC();
 
+    // Stage 2.5: Save document tree for Tree Reasoning
+    await sendProgress({
+      stage: 'tree',
+      progress: 9,
+      total: 100,
+      message: 'Saving document tree for structure-aware search...',
+    });
+
+    const treeNodes = convertTOCToTreeNodes(structure.flatTOC, parser.totalPages);
+    await saveDocumentTree(supabase, DOCUMENT_NAME, parser.totalPages, treeNodes);
+
     // Stage 3: Extract text
     await sendProgress({
       stage: 'extracting',
@@ -366,5 +382,208 @@ export async function runIngestionPipeline(
     if (parser) {
       await parser.close();
     }
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Tree Reasoning Support Functions
+// -----------------------------------------------------------------------------
+
+/**
+ * Convert TOC entries to TreeNode format for Tree Reasoning
+ * Calculates page ranges for each section
+ */
+function convertTOCToTreeNodes(flatTOC: TOCEntry[], totalPages: number): TreeNode[] {
+  if (flatTOC.length === 0) {
+    return [];
+  }
+
+  const nodes: TreeNode[] = [];
+  const sortedTOC = [...flatTOC].sort((a, b) => a.pageNumber - b.pageNumber);
+
+  for (let i = 0; i < sortedTOC.length; i++) {
+    const entry = sortedTOC[i];
+    const nextEntry = sortedTOC[i + 1];
+
+    // Calculate end page (next section's start - 1, or total pages)
+    let endPage = totalPages;
+    
+    // Find next entry at same or higher level
+    for (let j = i + 1; j < sortedTOC.length; j++) {
+      if (sortedTOC[j].level <= entry.level) {
+        endPage = sortedTOC[j].pageNumber - 1;
+        break;
+      }
+    }
+
+    // Don't let end page exceed total pages
+    endPage = Math.min(endPage, totalPages);
+    
+    // Don't let end page be less than start page
+    if (endPage < entry.pageNumber) {
+      endPage = entry.pageNumber;
+    }
+
+    // Generate node ID (4-digit padded)
+    const nodeId = String(i + 1).padStart(4, '0');
+
+    // Build path from ancestors
+    const path = buildPathForEntry(entry, sortedTOC.slice(0, i));
+
+    nodes.push({
+      id: nodeId,
+      title: entry.title,
+      section: entry.section,
+      level: entry.level,
+      startPage: entry.pageNumber,
+      endPage: endPage,
+      parentId: findParentId(entry, sortedTOC.slice(0, i), nodes),
+      path: path,
+    });
+  }
+
+  return nodes;
+}
+
+/**
+ * Build path string for a TOC entry based on its ancestors
+ */
+function buildPathForEntry(entry: TOCEntry, previousEntries: TOCEntry[]): string {
+  const pathParts: string[] = [];
+  
+  // Find ancestors by looking at entries with lower level numbers
+  let currentLevel = entry.level;
+  
+  for (let i = previousEntries.length - 1; i >= 0; i--) {
+    const prev = previousEntries[i];
+    if (prev.level < currentLevel) {
+      pathParts.unshift(prev.title);
+      currentLevel = prev.level;
+    }
+    if (prev.level === 0) break;
+  }
+  
+  pathParts.push(entry.title);
+  return pathParts.join(' > ');
+}
+
+/**
+ * Find parent node ID for a TOC entry
+ */
+function findParentId(
+  entry: TOCEntry, 
+  previousEntries: TOCEntry[],
+  existingNodes: TreeNode[]
+): string | undefined {
+  if (entry.level === 0) return undefined;
+  
+  // Find the most recent entry with a lower level
+  for (let i = previousEntries.length - 1; i >= 0; i--) {
+    if (previousEntries[i].level < entry.level) {
+      // Return the corresponding node ID
+      return existingNodes[i]?.id;
+    }
+  }
+  
+  return undefined;
+}
+
+/**
+ * Save document tree to database
+ */
+async function saveDocumentTree(
+  supabase: ReturnType<typeof createAdminClient>,
+  documentName: string,
+  totalPages: number,
+  treeNodes: TreeNode[]
+): Promise<void> {
+  try {
+    const { error } = await supabase.rpc('save_document_tree', {
+      p_document_name: documentName,
+      p_total_pages: totalPages,
+      p_tree_data: treeNodes,
+    });
+
+    if (error) {
+      // If RPC doesn't exist, try direct insert/upsert
+      if (error.message.includes('does not exist')) {
+        console.warn('save_document_tree RPC not found, using direct insert');
+        await saveDocumentTreeDirect(supabase, documentName, totalPages, treeNodes);
+      } else {
+        console.error('Error saving document tree:', error);
+      }
+    } else {
+      console.log(`✅ Saved document tree with ${treeNodes.length} nodes`);
+    }
+  } catch (err) {
+    console.error('Failed to save document tree:', err);
+  }
+}
+
+/**
+ * Direct insert/upsert for document tree (fallback)
+ */
+async function saveDocumentTreeDirect(
+  supabase: ReturnType<typeof createAdminClient>,
+  documentName: string,
+  totalPages: number,
+  treeNodes: TreeNode[]
+): Promise<void> {
+  const { error } = await supabase
+    .from('document_trees')
+    .upsert({
+      document_name: documentName,
+      total_pages: totalPages,
+      tree_data: treeNodes,
+      updated_at: new Date().toISOString(),
+    }, {
+      onConflict: 'document_name',
+    });
+
+  if (error) {
+    console.error('Direct save document tree error:', error);
+  } else {
+    console.log(`✅ Saved document tree directly with ${treeNodes.length} nodes`);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Export helper for loading document tree
+// -----------------------------------------------------------------------------
+
+/**
+ * Load document tree from database
+ */
+export async function loadDocumentTree(
+  documentName: string = DOCUMENT_NAME
+): Promise<TreeNode[]> {
+  const supabase = createAdminClient();
+
+  try {
+    // Try RPC first
+    const { data, error } = await supabase.rpc('get_document_tree', {
+      p_document_name: documentName,
+    });
+
+    if (!error && data) {
+      return data as TreeNode[];
+    }
+
+    // Fallback to direct query
+    const { data: treeData, error: queryError } = await supabase
+      .from('document_trees')
+      .select('tree_data')
+      .eq('document_name', documentName)
+      .single();
+
+    if (queryError) {
+      console.warn('Document tree not found:', queryError.message);
+      return [];
+    }
+
+    return (treeData?.tree_data || []) as TreeNode[];
+  } catch (err) {
+    console.error('Error loading document tree:', err);
+    return [];
   }
 }
