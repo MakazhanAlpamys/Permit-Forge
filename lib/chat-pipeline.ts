@@ -3,11 +3,11 @@
 // Enhanced with Tree Reasoning for structure-aware search
 // ============================================================================
 
-import { queryDubaiCode, multiQuerySearch, queryDubaiCodeFiltered, type PageRange } from '@/lib/rag';
-import { 
-  expandQuery, 
-  rerankChunks, 
-  verifyAnswer, 
+import { queryDubaiCode, multiQuerySearch, queryDubaiCodeFiltered } from '@/lib/rag';
+import {
+  expandQuery,
+  rerankChunks,
+  verifyAnswer,
   detectQueryType,
   classifyTopic,
   classifyQueryStructure,
@@ -16,12 +16,11 @@ import {
 } from '@/lib/agents';
 import { createSmartCitations, getCitationStats } from '@/lib/citation-parser';
 import { loadDocumentTree } from '@/lib/pdf-ingestion';
-import type { 
+import type {
   Citation,
   MatchedChunk,
   VerifiedAnswer,
-  TreeNode,
-  TreeReasoningResult
+  TreeNode
 } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -39,7 +38,7 @@ export const CHAT_PIPELINE_CONFIG = {
   MATCH_THRESHOLD: 0.4,
   INITIAL_MATCH_COUNT: 25,
   MULTI_QUERY_MATCH_COUNT: 15,
-  
+
   // Tree Reasoning settings
   ENABLE_TREE_REASONING: true,           // Enable structure-aware search
   TREE_REASONING_MIN_CONFIDENCE: 60,     // Min confidence to use tree results
@@ -69,10 +68,10 @@ export interface RAGPipelineResult {
 // Off-Topic Response Templates
 // -----------------------------------------------------------------------------
 
-export const OFF_TOPIC_RESPONSE = 
+export const OFF_TOPIC_RESPONSE =
   "I'm Emirate Forge, a Dubai Building Code 2021 assistant. I can help you with questions about building regulations, parking requirements, fire safety, structural requirements, and more. Feel free to ask me anything about the Dubai Building Code!";
 
-export const GREETING_RESPONSE = 
+export const GREETING_RESPONSE =
   "Hello! I'm Emirate Forge, your Dubai Building Code 2021 assistant. I can help you with:\n\n" +
   "- **Parking requirements** for different building types\n" +
   "- **Fire safety** regulations and exit requirements\n" +
@@ -123,26 +122,26 @@ export async function executeRAGPipeline(query: string): Promise<MatchedChunk[]>
 
   // Classify query to determine routing
   const queryClassification = classifyQueryStructure(query);
-  
-  console.log(`🔍 Query classification: ${queryClassification.suggestedPath}`, 
-    queryClassification.structuralHints.length > 0 
-      ? `(hints: ${queryClassification.structuralHints.join(', ')})` 
+
+  console.log(`🔍 Query classification: ${queryClassification.suggestedPath}`,
+    queryClassification.structuralHints.length > 0
+      ? `(hints: ${queryClassification.structuralHints.join(', ')})`
       : '');
 
   // Route to Tree Reasoning path for structural queries
   if (
-    ENABLE_TREE_REASONING && 
-    queryClassification.isStructural && 
+    ENABLE_TREE_REASONING &&
+    queryClassification.isStructural &&
     queryClassification.suggestedPath === 'tree'
   ) {
     try {
       const treeResult = await executeTreeReasoningPipeline(query);
-      
+
       if (treeResult.chunks.length > 0 && treeResult.confidence >= TREE_REASONING_MIN_CONFIDENCE) {
         console.log(`🌳 Tree Reasoning: Found ${treeResult.chunks.length} chunks with ${treeResult.confidence}% confidence`);
         return treeResult.chunks;
       }
-      
+
       // Low confidence - fallback
       if (TREE_REASONING_FALLBACK) {
         console.log(`⚠️ Tree Reasoning low confidence (${treeResult.confidence}%), falling back to standard`);
@@ -173,7 +172,7 @@ async function executeTreeReasoningPipeline(query: string): Promise<{
 
   // Load document tree (cached)
   const tree = await getDocumentTree();
-  
+
   if (tree.length === 0) {
     console.warn('No document tree available, cannot use Tree Reasoning');
     return { chunks: [], confidence: 0, reasoning: 'No tree available' };
@@ -181,8 +180,8 @@ async function executeTreeReasoningPipeline(query: string): Promise<{
 
   // Step 1: Tree Reasoner selects relevant sections
   const treeResult = await treeReasoner(query, tree);
-  
-  console.log(`🌳 Tree Reasoner selected ${treeResult.selectedNodes.length} nodes:`, 
+
+  console.log(`🌳 Tree Reasoner selected ${treeResult.selectedNodes.length} nodes:`,
     treeResult.selectedNodes.join(', '));
   console.log(`   Reasoning: ${treeResult.reasoning}`);
   console.log(`   Confidence: ${treeResult.confidence}%, Scope: ${treeResult.searchScope}`);
@@ -196,12 +195,12 @@ async function executeTreeReasoningPipeline(query: string): Promise<{
 
   // Step 2: Get page ranges for selected nodes
   const pageRanges = getPageRangesForNodes(selectedNodes, tree);
-  
+
   if (pageRanges.length === 0) {
     return { chunks: [], confidence: 0, reasoning: 'No valid page ranges' };
   }
 
-  console.log(`📄 Searching in page ranges:`, 
+  console.log(`📄 Searching in page ranges:`,
     pageRanges.map(r => `${r.startPage}-${r.endPage}`).join(', '));
 
   // Step 3: Filtered search within page ranges
@@ -303,7 +302,7 @@ export function clearDocumentTreeCache(): void {
  * Build context string from chunks for LLM consumption
  */
 export function buildContextFromChunks(chunks: MatchedChunk[]): string {
-  return chunks.map((chunk, idx) => 
+  return chunks.map((chunk, idx) =>
     `[SOURCE ${idx + 1}] Page ${chunk.metadata.page}, Section: ${chunk.metadata.section || 'N/A'}, Chapter: ${chunk.metadata.chapter || 'N/A'}:\n"${chunk.content}"`
   ).join('\n\n');
 }
@@ -322,13 +321,13 @@ export async function verifyAIResponse(
   originalQuery: string
 ): Promise<{ verifiedResponse: string; verificationResult: VerifiedAnswer }> {
   const verificationResult = await verifyAnswer(response, chunks, originalQuery);
-  
+
   let verifiedResponse = response;
   if (!verificationResult.isVerified && verificationResult.confidence < 50) {
-    verifiedResponse = response + 
+    verifiedResponse = response +
       '\n\n⚠️ Note: I could not fully verify all details in this response against the source documents. Please cross-reference with the official Dubai Building Code.';
   }
-  
+
   return { verifiedResponse, verificationResult };
 }
 
@@ -345,18 +344,18 @@ export async function generateCitations(
   verificationConfidence: number
 ): Promise<Citation[]> {
   const { MIN_CITATION_CONFIDENCE } = CHAT_PIPELINE_CONFIG;
-  
+
   const citations = await createSmartCitations(
     aiResponse,
     chunks,
     verificationConfidence,
     MIN_CITATION_CONFIDENCE
   );
-  
+
   // Log citation statistics
   const stats = getCitationStats(citations);
   console.log(`📊 Citation stats: ${stats.verified} verified / ${stats.total} total, ${stats.uniquePages} pages, ${stats.uniqueSections} sections, verification confidence: ${verificationConfidence}`);
-  
+
   return citations;
 }
 

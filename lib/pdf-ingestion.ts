@@ -6,7 +6,7 @@ import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateEmbedding } from '@/lib/gemini';
 import { createPDFParser, PDFParser } from '@/lib/pdf-parser';
-import type { 
+import type {
   ChunkMetadata,
   PDFPageContent,
   ChunkWithPageRange,
@@ -66,7 +66,7 @@ export async function splitWithPageTracking(
   parser: PDFParser
 ): Promise<ChunkWithPageRange[]> {
   const { CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_LENGTH } = PDF_INGESTION_CONFIG;
-  
+
   const textSplitter = new RecursiveCharacterTextSplitter({
     chunkSize: CHUNK_SIZE,
     chunkOverlap: CHUNK_OVERLAP,
@@ -85,10 +85,10 @@ export async function splitWithPageTracking(
   // Build a map of character positions to page numbers
   const segments: PageTextSegment[] = [];
   let fullText = '';
-  
+
   for (const page of pages) {
     if (page.text.trim().length === 0) continue;
-    
+
     fullText += page.text + '\n\n';
     segments.push({
       text: page.text,
@@ -98,7 +98,7 @@ export async function splitWithPageTracking(
 
   // Split the full text
   const rawChunks = await textSplitter.splitText(fullText);
-  
+
   // For each chunk, determine which pages it spans
   const chunksWithPages: ChunkWithPageRange[] = [];
   let currentPosition = 0;
@@ -108,7 +108,7 @@ export async function splitWithPageTracking(
 
     const chunkStart = fullText.indexOf(chunkContent, currentPosition);
     const chunkEnd = chunkStart + chunkContent.length;
-    
+
     let position = 0;
     let startPage = 1;
     let endPage = 1;
@@ -116,21 +116,21 @@ export async function splitWithPageTracking(
 
     for (const segment of segments) {
       const segmentEnd = position + segment.text.length + 2; // +2 for '\n\n'
-      
+
       if (!foundStart && chunkStart < segmentEnd) {
         startPage = segment.pageNumber;
         foundStart = true;
       }
-      
+
       if (chunkEnd <= segmentEnd) {
         endPage = segment.pageNumber;
         break;
       }
-      
+
       if (foundStart) {
         endPage = segment.pageNumber;
       }
-      
+
       position = segmentEnd;
     }
 
@@ -161,10 +161,10 @@ export async function splitWithPageTracking(
 
 export function buildChunkMetadata(chunk: ChunkWithPageRange): ChunkMetadata {
   const chapter = chunk.sectionPath?.find(p => /chapter/i.test(p));
-  
+
   let tableId: string | undefined;
   let tableName: string | undefined;
-  
+
   if (chunk.isTable) {
     const tableMatch = chunk.content.match(/Table\s+(\d+[-.]?\d*)[:\s]*([^\n]*)/i);
     if (tableMatch) {
@@ -209,7 +209,7 @@ export async function runIngestionPipeline(
 ): Promise<IngestionResult> {
   const { PDF_PATH, BATCH_SIZE, BATCH_DELAY_MS } = PDF_INGESTION_CONFIG;
   let parser: PDFParser | null = null;
-  
+
   const sendProgress = async (progress: IngestionProgress) => {
     if (onProgress) {
       await onProgress(progress);
@@ -218,7 +218,7 @@ export async function runIngestionPipeline(
 
   try {
     const pdfPath = path.join(process.cwd(), PDF_PATH);
-    
+
     if (!fs.existsSync(pdfPath)) {
       const error = `PDF file not found at ${pdfPath}`;
       await sendProgress({
@@ -251,6 +251,8 @@ export async function runIngestionPipeline(
     });
 
     const structure = await parser.extractTOC();
+
+    const supabase = createAdminClient();
 
     // Stage 2.5: Save document tree for Tree Reasoning
     await sendProgress({
@@ -292,7 +294,6 @@ export async function runIngestionPipeline(
       message: `Processing ${totalChunks} chunks (TOC: ${structure.flatTOC.length} entries)...`,
     });
 
-    const supabase = createAdminClient();
     let processedCount = 0;
     const totalBatches = Math.ceil(totalChunks / BATCH_SIZE);
 
@@ -403,11 +404,11 @@ function convertTOCToTreeNodes(flatTOC: TOCEntry[], totalPages: number): TreeNod
 
   for (let i = 0; i < sortedTOC.length; i++) {
     const entry = sortedTOC[i];
-    const nextEntry = sortedTOC[i + 1];
+    // nextEntry not needed - page calculation uses loop below
 
     // Calculate end page (next section's start - 1, or total pages)
     let endPage = totalPages;
-    
+
     // Find next entry at same or higher level
     for (let j = i + 1; j < sortedTOC.length; j++) {
       if (sortedTOC[j].level <= entry.level) {
@@ -418,7 +419,7 @@ function convertTOCToTreeNodes(flatTOC: TOCEntry[], totalPages: number): TreeNod
 
     // Don't let end page exceed total pages
     endPage = Math.min(endPage, totalPages);
-    
+
     // Don't let end page be less than start page
     if (endPage < entry.pageNumber) {
       endPage = entry.pageNumber;
@@ -450,10 +451,10 @@ function convertTOCToTreeNodes(flatTOC: TOCEntry[], totalPages: number): TreeNod
  */
 function buildPathForEntry(entry: TOCEntry, previousEntries: TOCEntry[]): string {
   const pathParts: string[] = [];
-  
+
   // Find ancestors by looking at entries with lower level numbers
   let currentLevel = entry.level;
-  
+
   for (let i = previousEntries.length - 1; i >= 0; i--) {
     const prev = previousEntries[i];
     if (prev.level < currentLevel) {
@@ -462,7 +463,7 @@ function buildPathForEntry(entry: TOCEntry, previousEntries: TOCEntry[]): string
     }
     if (prev.level === 0) break;
   }
-  
+
   pathParts.push(entry.title);
   return pathParts.join(' > ');
 }
@@ -471,12 +472,12 @@ function buildPathForEntry(entry: TOCEntry, previousEntries: TOCEntry[]): string
  * Find parent node ID for a TOC entry
  */
 function findParentId(
-  entry: TOCEntry, 
+  entry: TOCEntry,
   previousEntries: TOCEntry[],
   existingNodes: TreeNode[]
 ): string | undefined {
   if (entry.level === 0) return undefined;
-  
+
   // Find the most recent entry with a lower level
   for (let i = previousEntries.length - 1; i >= 0; i--) {
     if (previousEntries[i].level < entry.level) {
@@ -484,7 +485,7 @@ function findParentId(
       return existingNodes[i]?.id;
     }
   }
-  
+
   return undefined;
 }
 
