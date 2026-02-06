@@ -2,27 +2,9 @@
 // AI Agents for Advanced RAG (Query Expansion, Re-ranking, Verification)
 // ============================================================================
 
-import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
+import { chatModel } from '@/lib/gemini';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import type { MatchedChunk, VerifiedAnswer, EnhancedCitation } from '@/types';
-
-// -----------------------------------------------------------------------------
-// Configuration
-// -----------------------------------------------------------------------------
-
-const geminiApiKey = process.env.GEMINI_API_KEY;
-
-if (!geminiApiKey) {
-  throw new Error('Configuration error: GEMINI_API_KEY environment variable is missing. Please set it in your .env file with a valid Google AI API key.');
-}
-
-// Use Gemini 2.5 Flash for agent tasks (good balance of speed and quality)
-const agentModel = new ChatGoogleGenerativeAI({
-  model: 'gemini-2.5-flash',
-  apiKey: geminiApiKey,
-  temperature: 0,
-  maxOutputTokens: 2048,
-});
 
 // -----------------------------------------------------------------------------
 // 0. TOPIC CLASSIFIER - Check if query is about Dubai Building Code
@@ -92,7 +74,7 @@ export async function classifyTopic(userQuery: string): Promise<TopicClassificat
 
   // Use LLM for ambiguous cases
   try {
-    const response = await agentModel.invoke([
+    const response = await chatModel.invoke([
       new HumanMessage(TOPIC_CLASSIFIER_PROMPT + userQuery),
     ]);
 
@@ -134,7 +116,7 @@ USER QUERY: `;
  */
 export async function expandQuery(userQuery: string): Promise<string[]> {
   try {
-    const response = await agentModel.invoke([
+    const response = await chatModel.invoke([
       new SystemMessage(QUERY_EXPANSION_PROMPT),
       new HumanMessage(userQuery),
     ]);
@@ -208,7 +190,7 @@ export async function rerankChunks(
       .replace('{question}', question)
       .replace('{chunks}', chunksText);
 
-    const response = await agentModel.invoke([
+    const response = await chatModel.invoke([
       new HumanMessage(prompt),
     ]);
 
@@ -301,7 +283,7 @@ export async function verifyAnswer(
       .replace('{answer}', answer)
       .replace('{chunks}', chunksText);
 
-    const response = await agentModel.invoke([
+    const response = await chatModel.invoke([
       new HumanMessage(prompt),
     ]);
 

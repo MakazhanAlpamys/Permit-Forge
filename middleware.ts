@@ -2,8 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 import { jwtPayloadSchema } from '@/lib/validations';
-
-const SESSION_COOKIE_NAME = 'ef_token';
+import { SESSION_COOKIE_NAME, getJWTSecret } from '@/lib/constants';
 
 // Block status check interval (5 minutes in milliseconds)
 const BLOCK_CHECK_INTERVAL_MS = 5 * 60 * 1000;
@@ -11,15 +10,6 @@ const BLOCK_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 // In-memory cache for blocked users (Edge Runtime compatible)
 // Key: userId, Value: { blocked: boolean, checkedAt: number }
 const blockStatusCache = new Map<string, { blocked: boolean; checkedAt: number }>();
-
-// Get JWT secret as Uint8Array
-function getJWTSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
-  if (!secret || secret.length < 32) {
-    throw new Error('JWT_SECRET must be at least 32 characters');
-  }
-  return new TextEncoder().encode(secret);
-}
 
 // Clear session and redirect to login
 function clearSessionAndRedirect(request: NextRequest, reason?: string): NextResponse {

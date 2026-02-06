@@ -8,29 +8,13 @@ import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import { jwtPayloadSchema, type JWTPayload } from './validations';
+import { SESSION_COOKIE_NAME, CSRF_COOKIE_NAME, SESSION_MAX_AGE, getJWTSecret } from './constants';
 
 // -----------------------------------------------------------------------------
 // Configuration
 // -----------------------------------------------------------------------------
 
-const SESSION_COOKIE_NAME = 'ef_token';
-const CSRF_COOKIE_NAME = 'ef_csrf';
-const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
 const BCRYPT_SALT_ROUNDS = 12;
-
-// Get JWT secret as Uint8Array for jose
-function getJWTSecret(): Uint8Array {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    console.error('JWT_SECRET is not set');
-    throw new Error('Configuration error: JWT_SECRET environment variable is missing.');
-  }
-  if (secret.length < 32) {
-    console.error('JWT_SECRET is too short');
-    throw new Error('Configuration error: JWT_SECRET must be at least 32 characters long.');
-  }
-  return new TextEncoder().encode(secret);
-}
 
 // -----------------------------------------------------------------------------
 // Password Hashing (bcrypt)

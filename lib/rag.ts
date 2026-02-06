@@ -232,7 +232,7 @@ const MAX_CHUNK_LENGTH = 1000;
  * Build context string for LLM consumption
  * Uses a clean, structured format with source attribution
  */
-function buildContext(chunks: MatchedChunk[]): string {
+export function buildContext(chunks: MatchedChunk[]): string {
   if (chunks.length === 0) {
     return '';
   }

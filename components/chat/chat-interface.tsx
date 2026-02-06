@@ -17,13 +17,13 @@ import {
   Square
 } from 'lucide-react';
 import type { ChatMessage, Citation } from '@/types';
+import { MAX_MESSAGE_LENGTH } from '@/lib/constants';
 
 // ============================================================================
 // Anti-Spam Configuration
 // ============================================================================
 
 const MIN_REQUEST_INTERVAL = 2000; // 2 seconds between requests
-const MAX_MESSAGE_LENGTH = 500;
 
 // ============================================================================
 // Main Chat Interface

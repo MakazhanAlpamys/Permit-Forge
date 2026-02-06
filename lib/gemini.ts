@@ -5,6 +5,7 @@
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
+import { MAX_MESSAGE_LENGTH } from './constants';
 
 // Environment variable validation
 const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -18,12 +19,21 @@ if (!geminiApiKey) {
 // -----------------------------------------------------------------------------
 
 // Chat model for compliance analysis - temperature=0 for deterministic responses
-const chatModel = new ChatGoogleGenerativeAI({
+export const chatModel = new ChatGoogleGenerativeAI({
   model: 'gemini-2.5-flash', // Latest model for best quality
   apiKey: geminiApiKey,
   temperature: 0,
   maxOutputTokens: 2048,
   maxRetries: 0, // Disable retries to save quota
+});
+
+// Streaming chat model for API routes (same config but with streaming enabled)
+export const streamingModel = new ChatGoogleGenerativeAI({
+  model: 'gemini-2.5-flash',
+  apiKey: geminiApiKey,
+  temperature: 0,
+  maxOutputTokens: 2048,
+  streaming: true,
 });
 
 // Embedding model for vector generation (768 dimensions)
@@ -89,7 +99,7 @@ export interface GeminiChatOptions {
 // -----------------------------------------------------------------------------
 
 const MAX_CONTEXT_LENGTH = 6000; // ~1500 tokens
-const MAX_USER_MESSAGE_LENGTH = 500; // Prevent spam
+// MAX_MESSAGE_LENGTH imported from constants.ts
 
 function truncateContext(context: string): string {
   if (context.length <= MAX_CONTEXT_LENGTH) return context;
@@ -97,7 +107,7 @@ function truncateContext(context: string): string {
 }
 
 function sanitizeUserMessage(message: string): string {
-  const trimmed = message.trim().slice(0, MAX_USER_MESSAGE_LENGTH);
+  const trimmed = message.trim().slice(0, MAX_MESSAGE_LENGTH);
   return trimmed.replace(/\s+/g, ' ');
 }
 

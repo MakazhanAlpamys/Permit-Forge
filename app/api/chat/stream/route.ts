@@ -2,27 +2,17 @@ import { NextRequest } from 'next/server';
 import { createServerClient, checkRateLimit } from '@/lib/supabase-server';
 import { getQuickSession } from '@/lib/auth';
 import { chatMessageSchema } from '@/lib/validations';
-import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
-import { COMPLIANCE_SYSTEM_PROMPT } from '@/lib/gemini';
+import { COMPLIANCE_SYSTEM_PROMPT, streamingModel } from '@/lib/gemini';
 import {
   classifyUserTopic,
   executeRAGPipeline,
-  buildContextFromChunks,
   verifyAIResponse,
   generateCitations,
   OFF_TOPIC_RESPONSE,
   GREETING_RESPONSE,
 } from '@/lib/chat-pipeline';
-
-// Streaming chat model
-const streamingModel = new ChatGoogleGenerativeAI({
-  model: 'gemini-2.5-flash',
-  apiKey: process.env.GEMINI_API_KEY!,
-  temperature: 0,
-  maxOutputTokens: 2048,
-  streaming: true,
-});
+import { buildContext } from '@/lib/rag';
 
 export async function POST(request: NextRequest) {
   try {
@@ -103,8 +93,8 @@ export async function POST(request: NextRequest) {
     // Execute RAG Pipeline using centralized module
     const chunks = await executeRAGPipeline(trimmedMessage);
 
-    // Build context using centralized function
-    const context = buildContextFromChunks(chunks);
+    // Build context using centralized function from rag.ts
+    const context = buildContext(chunks);
 
     // Load conversation history
     let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];

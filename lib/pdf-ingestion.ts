@@ -11,7 +11,8 @@ import type {
   PDFPageContent,
   ChunkWithPageRange,
   TreeNode,
-  TOCEntry
+  TOCEntry,
+  IngestionResult
 } from '@/types';
 import path from 'path';
 import fs from 'fs';
@@ -191,14 +192,6 @@ export function buildChunkMetadata(chunk: ChunkWithPageRange): ChunkMetadata {
 // -----------------------------------------------------------------------------
 // Main Ingestion Pipeline
 // -----------------------------------------------------------------------------
-
-export interface IngestionResult {
-  success: boolean;
-  chunksProcessed: number;
-  pagesProcessed?: number;
-  tocExtracted?: boolean;
-  error?: string;
-}
 
 /**
  * Main PDF ingestion pipeline

@@ -6,6 +6,32 @@ import { CheckCircle, XCircle, Clock } from 'lucide-react';
 import type { ComplianceStatus } from '@/types';
 
 // ============================================================================
+// Authentication Constants
+// ============================================================================
+
+export const SESSION_COOKIE_NAME = 'ef_token';
+export const CSRF_COOKIE_NAME = 'ef_csrf';
+export const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
+
+/**
+ * Get JWT secret as Uint8Array for jose library
+ * Compatible with both Edge Runtime (middleware) and Node.js runtime
+ */
+export function getJWTSecret(): Uint8Array {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error('JWT_SECRET must be at least 32 characters');
+  }
+  return new TextEncoder().encode(secret);
+}
+
+// ============================================================================
+// Chat Constants
+// ============================================================================
+
+export const MAX_MESSAGE_LENGTH = 500;
+
+// ============================================================================
 // Compliance Status Configuration
 // ============================================================================
 

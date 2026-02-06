@@ -71,17 +71,6 @@ export interface Citation {
 
 export type ComplianceStatus = 'compliant' | 'non-compliant' | 'pending';
 
-export interface ChatRequest {
-  message: string;
-  sessionId?: string;
-}
-
-export interface ChatResponse {
-  message: string;
-  citations: Citation[];
-  complianceStatus: ComplianceStatus;
-}
-
 // -----------------------------------------------------------------------------
 // Enhanced RAG Types (Advanced RAG Pipeline)
 // -----------------------------------------------------------------------------
@@ -222,18 +211,6 @@ export interface TreeNode {
 }
 
 /**
- * Document tree stored in database
- */
-export interface DocumentTree {
-  id: string;
-  documentName: string;          // e.g., "Dubai Building Code 2021"
-  totalPages: number;
-  nodes: TreeNode[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-/**
  * Result from Tree Reasoner Agent
  */
 export interface TreeReasoningResult {
@@ -241,16 +218,6 @@ export interface TreeReasoningResult {
   reasoning: string;             // LLM's explanation of why these nodes
   confidence: number;            // 0-100 confidence score
   searchScope: 'narrow' | 'medium' | 'wide';  // How focused the search should be
-}
-
-/**
- * Configuration for Tree Reasoning
- */
-export interface TreeReasoningConfig {
-  enabled: boolean;
-  maxNodes: number;              // Max nodes to select (default: 5)
-  minConfidence: number;         // Min confidence to use tree reasoning (default: 60)
-  fallbackToFullSearch: boolean; // Fallback to full search on low confidence
 }
 
 /**

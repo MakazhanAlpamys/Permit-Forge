@@ -9,7 +9,6 @@ import {
   rerankChunks,
   verifyAnswer,
   detectQueryType,
-  classifyTopic,
   classifyQueryStructure,
   treeReasoner,
   getPageRangesForNodes
@@ -21,6 +20,9 @@ import type {
   MatchedChunk,
   VerifiedAnswer,
 } from '@/types';
+
+// Re-export classifyTopic for backward compatibility
+export { classifyTopic as classifyUserTopic } from '@/lib/agents';
 
 // -----------------------------------------------------------------------------
 // Configuration
@@ -80,25 +82,11 @@ export const GREETING_RESPONSE =
   "Just ask me any question about the Dubai Building Code!";
 
 // -----------------------------------------------------------------------------
-// Topic Classification
-// -----------------------------------------------------------------------------
-
-/**
- * Classify whether a query is on-topic and whether to use RAG
- */
-export async function classifyUserTopic(query: string): Promise<TopicClassificationResult> {
-  return classifyTopic(query);
-}
-
-// -----------------------------------------------------------------------------
-// RAG Pipeline (Search → Rerank) with Tree Reasoning
+// RAG Pipeline (Search  Rerank) with Tree Reasoning
 // -----------------------------------------------------------------------------
 
 /**
  * Execute the RAG search pipeline with optional Tree Reasoning:
- * 
- * For STRUCTURAL queries (detected by classifyQueryStructure):
- *   1. Load document tree
  *   2. Tree Reasoner selects relevant sections
  *   3. Filtered search within sections
  *   4. Re-ranking
@@ -268,22 +256,7 @@ async function executeStandardRAGPipeline(query: string): Promise<MatchedChunk[]
   return chunks;
 }
 
-// Re-export clearDocumentTreeCache so existing imports from chat-pipeline still work
-export { clearDocumentTreeCache } from '@/lib/tree-cache';
-
 // -----------------------------------------------------------------------------
-// Build Context for LLM
-// -----------------------------------------------------------------------------
-
-/**
- * Build context string from chunks for LLM consumption
- */
-export function buildContextFromChunks(chunks: MatchedChunk[]): string {
-  return chunks.map((chunk, idx) =>
-    `[SOURCE ${idx + 1}] Page ${chunk.metadata.page}, Section: ${chunk.metadata.section || 'N/A'}, Chapter: ${chunk.metadata.chapter || 'N/A'}:\n"${chunk.content}"`
-  ).join('\n\n');
-}
-
 // -----------------------------------------------------------------------------
 // Answer Verification
 // -----------------------------------------------------------------------------

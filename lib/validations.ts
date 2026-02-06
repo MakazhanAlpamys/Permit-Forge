@@ -112,26 +112,6 @@ export const changePasswordSchema = z.object({
 });
 
 // -----------------------------------------------------------------------------
-// Chat Message Schema
-// -----------------------------------------------------------------------------
-
-export const saveMessageSchema = z.object({
-  sessionId: uuidSchema,
-  role: z.enum(['user', 'assistant']),
-  content: z.string()
-    .min(1, 'Content is required')
-    .max(50000, 'Content too large'),
-  citations: z.array(z.object({
-    chunkId: z.number().int().positive(),
-    page: z.number().int().nonnegative(),
-    section: z.string().optional(),
-    excerpt: z.string(),
-    similarity: z.number().min(0).max(1),
-  })).optional(),
-  complianceStatus: z.enum(['compliant', 'non-compliant', 'requires-review', 'pending']).optional(),
-});
-
-// -----------------------------------------------------------------------------
 // Citation Schema
 // -----------------------------------------------------------------------------
 
