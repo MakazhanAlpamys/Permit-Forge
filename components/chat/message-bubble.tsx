@@ -8,10 +8,10 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { CitationsList } from './source-citation';
 import { complianceStatusConfig } from '@/lib/constants';
-import { User, Bot } from 'lucide-react';
+import { User, Bot, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import DOMPurify from 'isomorphic-dompurify';
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import type { ChatMessage } from '@/types';
 
 // XSS Protection: Sanitize content before rendering
@@ -23,6 +23,31 @@ function sanitizeContent(content: string): string {
   });
 }
 
+/**
+ * Strip inline citation references from text for clean display.
+ * Removes patterns like [Page 10, Section 2.1], (Page 45), [Pages 10-12], etc.
+ * The actual sources are shown separately in the citations section.
+ */
+function stripInlineCitations(text: string): string {
+  return text
+    // [Page 45, Section 3.2.1] or [Page 45-46, Section 3.2]
+    .replace(/\[Pages?\s+\d+(?:\s*[-–,]\s*\d+)?,?\s*Section\s+[\d.]+\]/gi, '')
+    // [Page 45, §3.2.1]
+    .replace(/\[Pages?\s+\d+(?:\s*[-–,]\s*\d+)?,?\s*§\s*[\d.]+\]/gi, '')
+    // [Page 45] or [Page 45-46] or [Pages 45-46]
+    .replace(/\[Pages?\s+\d+(?:\s*[-–]\s*\d+)?\]/gi, '')
+    // (Page 45, Section 3.2.1)
+    .replace(/\(Pages?\s+\d+(?:\s*[-–,]\s*\d+)?,?\s*Section\s+[\d.]+\)/gi, '')
+    // (Page 45) or (Page 45-46)
+    .replace(/\(Pages?\s+\d+(?:\s*[-–]\s*\d+)?\)/gi, '')
+    // Section 3.2.1, Page 45
+    .replace(/Section\s+[\d.]+,?\s*Page\s+\d+/gi, '')
+    // Clean up double spaces and extra whitespace left over
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.,;:])/g, '$1')
+    .trim();
+}
+
 interface MessageBubbleProps {
   message: ChatMessage;
 }
@@ -32,9 +57,29 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const compliance = message.complianceStatus 
     ? complianceStatusConfig[message.complianceStatus] 
     : null;
+  const [copied, setCopied] = useState(false);
 
   // Sanitize content to prevent XSS attacks
   const sanitizedContent = useMemo(() => sanitizeContent(message.content), [message.content]);
+
+  // For assistant messages: strip inline citations for clean display
+  const displayContent = useMemo(() => {
+    if (isUser) return sanitizedContent;
+    return stripInlineCitations(sanitizedContent);
+  }, [sanitizedContent, isUser]);
+
+  // Copy answer text to clipboard
+  const handleCopy = useCallback(async () => {
+    try {
+      // Copy the clean text (without citations markers)
+      const textToCopy = stripInlineCitations(message.content);
+      await navigator.clipboard.writeText(textToCopy);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      console.error('Failed to copy text');
+    }
+  }, [message.content]);
 
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
@@ -67,7 +112,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           {/* Message Text */}
           <div className={`text-sm leading-relaxed ${isUser ? '' : 'prose prose-sm dark:prose-invert max-w-none'}`}>
             {isUser ? (
-              <span className="whitespace-pre-wrap">{sanitizedContent}</span>
+              <span className="whitespace-pre-wrap">{displayContent}</span>
             ) : (
               <ReactMarkdown
                 components={{
@@ -98,13 +143,36 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                   },
                 }}
               >
-                {sanitizedContent}
+                {displayContent}
               </ReactMarkdown>
             )}
           </div>
+
+          {/* Copy button for assistant messages - inside the bubble at bottom */}
+          {!isUser && (
+            <div className="flex items-center justify-end mt-2 pt-2 border-t border-border/30">
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-md hover:bg-background/50"
+                title="Copy answer"
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-500" />
+                    <span className="text-emerald-500">Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5" />
+                    <span>Copy answer</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Citations (only for assistant messages) */}
+        {/* Citations Section (only for assistant messages) */}
         {!isUser && message.citations && message.citations.length > 0 && (
           <CitationsList citations={message.citations} />
         )}
@@ -187,6 +255,9 @@ interface StreamingMessageProps {
 }
 
 export function StreamingMessage({ content, isComplete }: StreamingMessageProps) {
+  // Strip inline citations during streaming for clean display
+  const displayContent = useMemo(() => stripInlineCitations(content), [content]);
+
   return (
     <div className="flex gap-3">
       <Avatar className="h-8 w-8 shrink-0 bg-emerald-600">
@@ -207,7 +278,7 @@ export function StreamingMessage({ content, isComplete }: StreamingMessageProps)
                 code: ({ children }) => <code className="bg-muted px-1 py-0.5 rounded text-xs">{children}</code>,
               }}
             >
-              {content}
+              {displayContent}
             </ReactMarkdown>
             {!isComplete && (
               <span className="inline-block w-2 h-4 bg-emerald-500 animate-pulse ml-0.5 align-middle" />

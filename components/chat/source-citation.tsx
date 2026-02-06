@@ -404,27 +404,30 @@ export function CitationsList({ citations }: CitationsListProps) {
     return (a.startPage ?? a.page) - (b.startPage ?? b.page);
   });
 
-  const displayedCitations = showAll ? sortedCitations : sortedCitations.slice(0, 2);
-  const hasMore = sortedCitations.length > 2;
+  const displayedCitations = showAll ? sortedCitations : sortedCitations.slice(0, 3);
+  const hasMore = sortedCitations.length > 3;
   const verifiedCount = sortedCitations.filter(c => c.isVerified).length;
-
-
   const highConfidenceCount = sortedCitations.filter(c => (c.confidence ?? 0) >= 70).length;
 
   return (
     <div className="mt-3 space-y-2">
-      {/* Header */}
-      <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-        <FileText className="h-3 w-3" />
-        <span>Sources ({citations.length})</span>
+      {/* Sources Header with border */}
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card/80 border border-border/60">
+        <div className="flex items-center justify-center w-5 h-5 rounded-md bg-emerald-500/15">
+          <BookOpen className="h-3 w-3 text-emerald-500" />
+        </div>
+        <span className="text-xs font-medium text-foreground">Sources</span>
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-muted text-muted-foreground border-border">
+          {citations.length}
+        </Badge>
         {verifiedCount > 0 && (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-green-500/10 text-green-600 border-green-500/20">
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-green-500/10 text-green-600 border-green-500/20 ml-auto">
             <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />
             {verifiedCount} verified
           </Badge>
         )}
         {highConfidenceCount > 0 && !verifiedCount && (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-blue-500/10 text-blue-600 border-blue-500/20">
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-blue-500/10 text-blue-600 border-blue-500/20 ml-auto">
             <ShieldCheck className="h-2.5 w-2.5 mr-0.5" />
             {highConfidenceCount} high confidence
           </Badge>
@@ -458,7 +461,7 @@ export function CitationsList({ citations }: CitationsListProps) {
           ) : (
             <>
               <ChevronDown className="h-3 w-3 mr-1" />
-              Show {citations.length - 2} more sources
+              Show {citations.length - 3} more sources
             </>
           )}
         </Button>
