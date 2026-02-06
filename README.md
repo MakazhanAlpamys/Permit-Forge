@@ -223,7 +223,7 @@ Open [http://localhost:3000](http://localhost:3000)
                                  │
                                  ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                   SERVER ACTIONS & API ROUTES                     │
+│                   SERVER ACTIONS & API ROUTES                    │
 │                                                                  │
 │  actions/auth.ts ─── Login · Logout                              │
 │  actions/admin.ts ── User CRUD · Stats · Audit Logs              │
@@ -245,7 +245,7 @@ Open [http://localhost:3000](http://localhost:3000)
 │  └─ Feature flags         │              │  └─ Full-Text Search   │
 │                           │              │                        │
 │  rag.ts                   │              │  Google Gemini         │
-│  ├─ Hybrid Search (RRF)   │◄────────────►│  ├─ 2.5 Flash (chat)  │
+│  ├─ Hybrid Search (RRF)   │◄────────────►│  ├─ 2.5 Flash (chat)   │
 │  ├─ Filtered Search       │              │  └─ text-embedding-004 │
 │  └─ Multi-Query Search    │              │                        │
 │                           │              └────────────────────────┘
@@ -282,7 +282,7 @@ User Query
     │
     ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  QUERY STRUCTURE CLASSIFIER  (regex-based, ~1 ms, no LLM)   │
+│  QUERY STRUCTURE CLASSIFIER  (regex-based, ~1 ms, no LLM)    │
 │                                                              │
 │  "in chapter/section X" ───────► Structural                  │
 │  "summarize chapter" ──────────► Structural                  │
@@ -331,12 +331,12 @@ User Query
 │      users          │          │  dubai_code_chunks   │
 │ ─────────────────── │          │ ──────────────────── │
 │  id (UUID, PK)      │          │  id (BIGINT, PK)     │
-│  username (UNIQUE)   │          │  content (TEXT)       │
-│  password_hash       │          │  metadata (JSONB)     │
-│  role (admin/user)   │          │  embedding (VECTOR)   │ ◄── pgvector
-│  blocked (BOOL)      │          │  fts (TSVECTOR)       │ ◄── GIN index
-│  blocked_reason      │          └──────────────────────┘
-│  created_at          │
+│  username (UNIQUE)  │          │  content (TEXT)      │
+│  password_hash      │          │  metadata (JSONB)    │
+│  role (admin/user)  │          │  embedding (VECTOR)  │ ◄── pgvector
+│  blocked (BOOL)     │          │  fts (TSVECTOR)      │ ◄── GIN index
+│  blocked_reason     │          └──────────────────────┘
+│  created_at         │
 └──────────┬──────────┘          ┌──────────────────────┐
            │ 1:N                 │  document_trees      │
            ▼                     │ ──────────────────── │
