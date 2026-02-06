@@ -19,13 +19,17 @@ Determine if the user's message is related to:
 - Dubai/UAE construction standards
 - Greetings or questions about what you can help with
 
+The user may write in any language (English, Russian, Arabic, etc.). Classify based on meaning, not language.
+
 OUTPUT FORMAT: Return ONLY one word:
 - "ON_TOPIC" if the query is about building codes, construction, or asking what you can help with
 - "OFF_TOPIC" if it's completely unrelated (cooking, sports, movies, personal questions, etc.)
 
 Examples:
 - "What are parking requirements?" → ON_TOPIC
+- "Какие требования к парковке?" → ON_TOPIC
 - "Hello" → ON_TOPIC
+- "Привет" → ON_TOPIC
 - "What can you help with?" → ON_TOPIC
 - "How to make pasta?" → OFF_TOPIC
 - "Who won the world cup?" → OFF_TOPIC
@@ -43,6 +47,7 @@ export interface TopicClassification {
  */
 export async function classifyTopic(userQuery: string): Promise<TopicClassification> {
   // Quick patterns that are obviously on-topic (skip LLM call)
+  // Only English fast-path; all other languages go through the LLM classifier
   const onTopicPatterns = [
     /parking/i, /fire\s*safety/i, /building/i, /floor/i, /height/i,
     /setback/i, /structure/i, /foundation/i, /permit/i, /code/i,
@@ -60,10 +65,11 @@ export async function classifyTopic(userQuery: string): Promise<TopicClassificat
   }
 
   // Greetings - on-topic but don't use RAG
+  // Only English fast-path; non-English greetings go through LLM classifier
   const greetingPatterns = [
     /^(hi|hello|hey|greetings|good\s*(morning|afternoon|evening))[\s!?.]*$/i,
     /^(what can you|how can you|what do you|can you help)/i,
-    /^(help|помоги|привет|здравствуй)/i,
+    /^help[\s!?.]*$/i,
   ];
 
   for (const pattern of greetingPatterns) {

@@ -9,10 +9,9 @@ import {
   executeRAGPipeline,
   verifyAIResponse,
   generateCitations,
-  OFF_TOPIC_RESPONSE,
-  GREETING_RESPONSE,
 } from '@/lib/chat-pipeline';
 import { buildContext } from '@/lib/rag';
+import type { MatchedChunk } from '@/types';
 
 export async function POST(request: NextRequest) {
   try {
@@ -81,17 +80,13 @@ export async function POST(request: NextRequest) {
 
     // Topic classification using centralized pipeline
     const topicClassification = await classifyUserTopic(trimmedMessage);
-    
-    if (!topicClassification.isOnTopic) {
-      return new Response(OFF_TOPIC_RESPONSE, { headers: { 'Content-Type': 'text/plain' } });
-    }
 
-    if (!topicClassification.shouldUseRAG) {
-      return new Response(GREETING_RESPONSE, { headers: { 'Content-Type': 'text/plain' } });
+    // Execute RAG only for on-topic queries that need it
+    // Greetings and off-topic go through LLM without RAG context (for multilingual support)
+    let chunks: MatchedChunk[] = [];
+    if (topicClassification.isOnTopic && topicClassification.shouldUseRAG) {
+      chunks = await executeRAGPipeline(trimmedMessage);
     }
-
-    // Execute RAG Pipeline using centralized module
-    const chunks = await executeRAGPipeline(trimmedMessage);
 
     // Build context using centralized function from rag.ts
     const context = buildContext(chunks);
