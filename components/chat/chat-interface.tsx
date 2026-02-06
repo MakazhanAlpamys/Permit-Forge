@@ -42,12 +42,13 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
   const [streamingContent, setStreamingContent] = useState('');
   const [cooldown, setCooldown] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const [isCancelled, setIsCancelled] = useState(false);
+  const [isVerifyingSources, setIsVerifyingSources] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastRequestRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
+  const isCancelledRef = useRef(false);
 
   // Load messages when session changes
   useEffect(() => {
@@ -95,7 +96,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isLoading, isStreaming, streamingContent, scrollToBottom]);
+  }, [messages, isLoading, isStreaming, streamingContent, isVerifyingSources, scrollToBottom]);
 
   // Handle sending a message with streaming
   const handleSendMessage = async (messageText?: string) => {
@@ -122,7 +123,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     // Create new AbortController for this request
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    setIsCancelled(false);
+    isCancelledRef.current = false;
 
     // Create or use existing session
     let activeSessionId = currentSessionId;
@@ -181,37 +182,64 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
+      let rawContent = '';
       let fullContent = '';
       let citations: Citation[] = [];
+      let streamTextDone = false;
 
       if (reader) {
         while (true) {
+          if (isCancelledRef.current) break;
           const { done, value } = await reader.read();
           if (done) break;
           
           const chunk = decoder.decode(value, { stream: true });
+          rawContent += chunk;
           
-          // Check for citations marker
-          if (chunk.includes('__CITATIONS__')) {
-            const [textPart, citationsPart] = chunk.split('__CITATIONS__');
-            fullContent += textPart;
-            try {
-              citations = JSON.parse(citationsPart);
-            } catch {
-              // Ignore parse errors
-            }
+          // Extract display text (everything before __CITATIONS__ marker)
+          const citationMarkerIdx = rawContent.indexOf('__CITATIONS__');
+          if (citationMarkerIdx !== -1) {
+            fullContent = rawContent.slice(0, citationMarkerIdx);
           } else {
-            fullContent += chunk;
+            fullContent = rawContent;
           }
           
           if (isMountedRef.current) {
             setStreamingContent(fullContent);
+
+            // Detect when text is done but citations haven't arrived yet
+            // The marker may appear across chunk boundaries, so also check for the
+            // trailing newlines that precede it.
+            if (!streamTextDone && citationMarkerIdx === -1 && rawContent.includes('\n\n__CIT')) {
+              streamTextDone = true;
+            }
           }
+        }
+
+        // Show "Verifying sources..." while parsing citations
+        if (isMountedRef.current && !isCancelledRef.current) {
+          setIsVerifyingSources(true);
+        }
+
+        // After stream ends, parse citations from accumulated raw content
+        const citationMarkerIdx = rawContent.indexOf('__CITATIONS__');
+        if (citationMarkerIdx !== -1) {
+          fullContent = rawContent.slice(0, citationMarkerIdx);
+          const citationsJson = rawContent.slice(citationMarkerIdx + '__CITATIONS__'.length);
+          try {
+            citations = JSON.parse(citationsJson);
+          } catch {
+            console.error('Failed to parse citations JSON');
+          }
+        }
+
+        if (isMountedRef.current) {
+          setIsVerifyingSources(false);
         }
       }
 
       // Check if cancelled
-      if (!isMountedRef.current || isCancelled) return;
+      if (!isMountedRef.current || isCancelledRef.current) return;
 
       // Create final assistant message
       const assistantMessage: ChatMessage = {
@@ -241,7 +269,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       if (!isMountedRef.current) return;
       
       // Create error message only if not cancelled
-      if (!isCancelled && !(error instanceof DOMException && error.name === 'AbortError')) {
+      if (!isCancelledRef.current && !(error instanceof DOMException && error.name === 'AbortError')) {
         const errorMessage: ChatMessage = {
           id: `error-${Date.now()}`,
           role: 'assistant',
@@ -257,6 +285,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       if (isMountedRef.current) {
         setIsLoading(false);
         setIsStreaming(false);
+        setIsVerifyingSources(false);
         setStreamingContent('');
       }
     }
@@ -266,9 +295,10 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
   const handleStopGeneration = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      setIsCancelled(true);
+      isCancelledRef.current = true;
       setIsLoading(false);
       setIsStreaming(false);
+      setIsVerifyingSources(false);
       setStreamingContent('');
     }
   };
@@ -310,6 +340,15 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
             {isLoading && <LoadingMessage />}
             {isStreaming && streamingContent && (
               <StreamingMessage content={streamingContent} isComplete={false} />
+            )}
+            {isVerifyingSources && (
+              <div className="flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground animate-pulse">
+                <div className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </div>
+                Verifying sources...
+              </div>
             )}
           </div>
         )}

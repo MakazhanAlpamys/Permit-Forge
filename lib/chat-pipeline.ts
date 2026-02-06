@@ -15,12 +15,11 @@ import {
   getPageRangesForNodes
 } from '@/lib/agents';
 import { createSmartCitations, getCitationStats } from '@/lib/citation-parser';
-import { loadDocumentTree } from '@/lib/pdf-ingestion';
+import { getCachedDocumentTree, clearDocumentTreeCache } from '@/lib/tree-cache';
 import type {
   Citation,
   MatchedChunk,
   VerifiedAnswer,
-  TreeNode
 } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -46,8 +45,7 @@ export const CHAT_PIPELINE_CONFIG = {
   TREE_REASONING_FALLBACK: true,         // Fallback to standard search on failure
 } as const;
 
-// Cache for document tree (loaded once per request)
-let cachedDocumentTree: TreeNode[] | null = null;
+// Document tree cache is managed by lib/tree-cache.ts (TTL + Supabase-backed)
 
 // -----------------------------------------------------------------------------
 // Types
@@ -170,16 +168,16 @@ async function executeTreeReasoningPipeline(query: string): Promise<{
     TREE_REASONING_MAX_NODES,
   } = CHAT_PIPELINE_CONFIG;
 
-  // Load document tree (cached)
-  const tree = await getDocumentTree();
+  // Load document tree (TTL-cached via Supabase)
+  const tree = await getCachedDocumentTree();
 
   if (tree.length === 0) {
     console.warn('No document tree available, cannot use Tree Reasoning');
     return { chunks: [], confidence: 0, reasoning: 'No tree available' };
   }
 
-  // Step 1: Tree Reasoner selects relevant sections
-  const treeResult = await treeReasoner(query, tree);
+  // Step 1: Tree Reasoner selects relevant sections (deterministic, no LLM call)
+  const treeResult = treeReasoner(query, tree);
 
   console.log(`🌳 Tree Reasoner selected ${treeResult.selectedNodes.length} nodes:`,
     treeResult.selectedNodes.join(', '));
@@ -270,29 +268,8 @@ async function executeStandardRAGPipeline(query: string): Promise<MatchedChunk[]
   return chunks;
 }
 
-/**
- * Get document tree (with caching)
- */
-async function getDocumentTree(): Promise<TreeNode[]> {
-  if (cachedDocumentTree !== null) {
-    return cachedDocumentTree;
-  }
-
-  try {
-    cachedDocumentTree = await loadDocumentTree();
-    return cachedDocumentTree;
-  } catch (error) {
-    console.error('Failed to load document tree:', error);
-    return [];
-  }
-}
-
-/**
- * Clear document tree cache (call after re-ingestion)
- */
-export function clearDocumentTreeCache(): void {
-  cachedDocumentTree = null;
-}
+// Re-export clearDocumentTreeCache so existing imports from chat-pipeline still work
+export { clearDocumentTreeCache } from '@/lib/tree-cache';
 
 // -----------------------------------------------------------------------------
 // Build Context for LLM

@@ -7,6 +7,7 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { requireAdmin } from '@/lib/security';
 import { runIngestionPipeline } from '@/lib/pdf-ingestion';
+import { clearDocumentTreeCache } from '@/lib/tree-cache';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import type { ChunkMetadata, IngestionResult } from '@/types';
 
@@ -37,6 +38,11 @@ export async function ingestPDF(): Promise<IngestionResult> {
   });
   
   const result = await runIngestionPipeline();
+  
+  // Invalidate the in-memory tree cache so the next request fetches fresh data
+  if (result.success) {
+    clearDocumentTreeCache();
+  }
   
   // Log completion
   await logAuditEvent({

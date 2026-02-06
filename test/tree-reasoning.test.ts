@@ -1,13 +1,12 @@
 // ============================================================================
-// Tree Reasoning Tests - Structure-Aware RAG
+// Tree Reasoning Tests - Structure-Aware RAG (Deterministic Scoring)
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Create mock function for LLM
+// Mock the ChatGoogleGenerativeAI model (still needed for other agents functions)
 const mockInvokeFn = vi.fn();
 
-// Mock the ChatGoogleGenerativeAI model
 vi.mock('@langchain/google-genai', () => {
   return {
     ChatGoogleGenerativeAI: class MockChatGoogleGenerativeAI {
@@ -166,6 +165,34 @@ describe('Tree Reasoning', () => {
       expect(result.structuralHints).toContain('contextual');
     });
 
+    it('should detect topic + building type queries like "fire safety for high-rise"', () => {
+      const result = classifyQueryStructure('fire safety for high-rise');
+      expect(result.isStructural).toBe(true);
+      expect(result.suggestedPath).toBe('tree');
+    });
+
+    it('should detect building type + topic queries like "residential egress requirements"', () => {
+      const result = classifyQueryStructure('residential egress requirements');
+      expect(result.isStructural).toBe(true);
+      expect(result.suggestedPath).toBe('tree');
+    });
+
+    it('should detect "egress requirements for hotel" as structural', () => {
+      const result = classifyQueryStructure('egress requirements for hotel');
+      expect(result.isStructural).toBe(true);
+    });
+
+    it('should detect "ventilation standards for commercial" as structural', () => {
+      const result = classifyQueryStructure('ventilation standards for commercial buildings');
+      expect(result.isStructural).toBe(true);
+    });
+
+    it('should detect "list all requirements for parking" as structural', () => {
+      const result = classifyQueryStructure('list all requirements for parking');
+      expect(result.isStructural).toBe(true);
+      expect(result.structuralHints).toContain('overview');
+    });
+
     it('should NOT mark simple queries as structural', () => {
       const result = classifyQueryStructure('What are parking requirements?');
       expect(result.isStructural).toBe(false);
@@ -183,76 +210,69 @@ describe('Tree Reasoning', () => {
     });
   });
 
-  describe('treeReasoner', () => {
-    it('should select relevant nodes for parking query', async () => {
-      mockInvokeFn.mockResolvedValueOnce({
-        content: JSON.stringify({
-          selectedNodes: ['0007', '0008'],
-          reasoning: 'Query is about parking, selecting parking chapter and residential section',
-          confidence: 85,
-          searchScope: 'medium',
-        }),
-      });
+  describe('treeReasoner (deterministic scoring)', () => {
+    it('should select parking-related nodes for parking query', () => {
+      const result = treeReasoner('parking requirements for residential', sampleTree);
 
-      const result = await treeReasoner('parking requirements for residential', sampleTree);
-
-      expect(result.selectedNodes).toContain('0007');
-      expect(result.selectedNodes).toContain('0008');
-      expect(result.confidence).toBe(85);
-      expect(result.searchScope).toBe('medium');
+      expect(result.selectedNodes).toContain('0007'); // Chapter 4: Parking
+      expect(result.selectedNodes).toContain('0008'); // 4.1 Residential Parking
+      expect(result.confidence).toBeGreaterThan(0);
     });
 
-    it('should select fire safety nodes for fire query', async () => {
-      mockInvokeFn.mockResolvedValueOnce({
-        content: JSON.stringify({
-          selectedNodes: ['0004', '0005', '0006'],
-          reasoning: 'Query is about fire safety',
-          confidence: 90,
-          searchScope: 'medium',
-        }),
-      });
+    it('should select fire safety nodes for fire query', () => {
+      const result = treeReasoner('fire safety requirements', sampleTree);
 
-      const result = await treeReasoner('fire safety requirements', sampleTree);
-
-      expect(result.selectedNodes).toContain('0004');
-      expect(result.confidence).toBe(90);
+      // Should include fire safety chapter and/or sub-sections
+      expect(result.selectedNodes).toContain('0004'); // Chapter 3: Fire Safety
+      expect(result.confidence).toBeGreaterThan(0);
     });
 
-    it('should return empty nodes on LLM error', async () => {
-      mockInvokeFn.mockRejectedValueOnce(new Error('API Error'));
+    it('should prefer specific sub-sections over broad chapters', () => {
+      const result = treeReasoner('residential parking dimensions', sampleTree);
 
-      const result = await treeReasoner('test query', sampleTree);
+      // The residential parking sub-section should score well
+      expect(result.selectedNodes).toContain('0008'); // 4.1 Residential Parking
+    });
+
+    it('should return empty for completely unrelated query', () => {
+      const result = treeReasoner('recipe for chocolate cake', sampleTree);
 
       expect(result.selectedNodes).toEqual([]);
       expect(result.confidence).toBe(0);
     });
 
-    it('should filter out invalid node IDs', async () => {
-      mockInvokeFn.mockResolvedValueOnce({
-        content: JSON.stringify({
-          selectedNodes: ['0001', 'invalid_node', '9999'],
-          reasoning: 'Test',
-          confidence: 70,
-          searchScope: 'narrow',
-        }),
-      });
-
-      const result = await treeReasoner('test query', sampleTree);
-
-      expect(result.selectedNodes).toEqual(['0001']);
-      expect(result.selectedNodes).not.toContain('invalid_node');
-      expect(result.selectedNodes).not.toContain('9999');
-    });
-
-    it('should handle malformed JSON response', async () => {
-      mockInvokeFn.mockResolvedValueOnce({
-        content: 'This is not JSON',
-      });
-
-      const result = await treeReasoner('test query', sampleTree);
+    it('should return empty for empty tree', () => {
+      const result = treeReasoner('parking requirements', []);
 
       expect(result.selectedNodes).toEqual([]);
       expect(result.confidence).toBe(0);
+    });
+
+    it('should match exact section numbers', () => {
+      const result = treeReasoner('what does section 3.1 say?', sampleTree);
+
+      expect(result.selectedNodes).toContain('0005'); // 3.1 Fire Protection Systems
+      expect(result.confidence).toBeGreaterThanOrEqual(100); // Exact section match = high confidence
+    });
+
+    it('should select multiple sections for comparative queries', () => {
+      const result = treeReasoner('compare parking and fire safety', sampleTree);
+
+      // Should include both parking and fire safety nodes
+      const hasParking = result.selectedNodes.some(id =>
+        ['0007', '0008', '0009'].includes(id)
+      );
+      const hasFireSafety = result.selectedNodes.some(id =>
+        ['0004', '0005', '0006'].includes(id)
+      );
+      expect(hasParking).toBe(true);
+      expect(hasFireSafety).toBe(true);
+    });
+
+    it('should select emergency exits node for exit-related query', () => {
+      const result = treeReasoner('emergency exit requirements', sampleTree);
+
+      expect(result.selectedNodes).toContain('0006'); // 3.2 Emergency Exits
     });
   });
 
@@ -304,6 +324,9 @@ describe('Tree Reasoning Integration', () => {
       'what is in the fire safety section',
       'parking requirements for commercial buildings',
       'compare residential and commercial parking',
+      'fire safety for high-rise',
+      'egress requirements for hotel',
+      'elevator standards for commercial',
     ];
 
     for (const query of queries) {

@@ -445,35 +445,28 @@ export function detectQueryType(query: string): QueryType {
 
 import type { TreeNode, TreeReasoningResult, QueryClassification } from '@/types';
 
-const TREE_REASONING_PROMPT = `You are a document structure expert for the Dubai Building Code 2021.
+// Topic keywords used for tree-matching and structural detection
+const TOPIC_KEYWORDS = [
+  'parking', 'fire', 'safety', 'structural', 'electrical', 'plumbing',
+  'egress', 'ventilation', 'elevator', 'stair', 'exit', 'accessibility',
+  'foundation', 'seismic', 'load', 'concrete', 'steel', 'glazing',
+  'facade', 'drainage', 'sanitary', 'hvac', 'mechanical', 'lighting',
+  'insulation', 'waterproofing', 'cladding', 'roofing', 'setback',
+  'height', 'occupancy', 'classification', 'permit', 'inspection',
+  'mep', 'duct', 'sprinkler', 'alarm', 'smoke', 'corridor',
+  'stairway', 'ramp', 'balcony', 'basement', 'podium', 'tower',
+  'swimming', 'pool', 'generator', 'transformer', 'gas', 'lpg',
+  'refrigerant', 'boiler', 'chiller', 'ahu', 'bms',
+];
 
-Your task is to analyze a user's query and determine which sections of the document are most likely to contain the answer.
-
-DOCUMENT STRUCTURE:
-{tree}
-
-USER QUERY: {query}
-
-INSTRUCTIONS:
-1. Analyze the query to understand what information the user needs
-2. Select the most relevant section(s) from the document structure
-3. Be specific - prefer narrow sections over broad chapters when possible
-4. Select 1-5 nodes maximum
-5. If the query is about a specific topic (parking, fire safety, etc.), find that exact section
-6. If the query compares topics, select multiple relevant sections
-
-OUTPUT FORMAT (JSON only):
-{
-  "selectedNodes": ["node_id_1", "node_id_2"],
-  "reasoning": "Brief explanation of why these sections",
-  "confidence": 85,
-  "searchScope": "narrow" | "medium" | "wide"
-}
-
-SCOPE GUIDELINES:
-- "narrow": Query is specific, 1-2 sections (e.g., "parking dimensions")
-- "medium": Query spans 2-4 related sections (e.g., "parking requirements for residential")
-- "wide": Query is broad or comparative (e.g., "compare fire safety across building types")`;
+const BUILDING_TYPE_KEYWORDS = [
+  'residential', 'commercial', 'industrial', 'high-rise', 'high rise',
+  'low-rise', 'low rise', 'mid-rise', 'mid rise', 'mixed-use', 'mixed use',
+  'office', 'retail', 'hotel', 'hospital', 'school', 'mosque',
+  'warehouse', 'assembly', 'educational', 'institutional', 'mercantile',
+  'storage', 'hazardous', 'business', 'factory', 'laboratory',
+  'multi-storey', 'single-storey', 'villa', 'townhouse', 'apartment',
+];
 
 /**
  * Detect if a query would benefit from Tree Reasoning
@@ -492,14 +485,22 @@ export function classifyQueryStructure(query: string): QueryClassification {
     { pattern: /\bdifference\s+between\s+.+\s+and/i, hint: 'comparison' },
     { pattern: /\bhow\s+(does|do)\s+.+\s+differ/i, hint: 'comparison' },
     
-    // Contextual queries (topic + context)
-    { pattern: /\b(residential|commercial|industrial|high-rise|low-rise)\s+.*(requirement|section|building)/i, hint: 'contextual' },
-    { pattern: /\b(parking|fire|safety|structural|electrical|plumbing)\s+.*(for|in)\s+(residential|commercial|industrial)/i, hint: 'contextual' },
-    { pattern: /\brequirements?\s+for\s+\w+\s+buildings?/i, hint: 'building_type' },
+    // Contextual queries (topic + building type, broader matching)
+    { pattern: /\b(residential|commercial|industrial|high-rise|low-rise|mixed-use|hotel|hospital|school|warehouse|office|retail|assembly|villa|apartment)\s+.*(requirement|section|building|code|standard|regulation|rule|compliance)/i, hint: 'contextual' },
+    // Topic + "for/in" + building type (both directions)
+    { pattern: new RegExp(`\\b(${TOPIC_KEYWORDS.join('|')})\\b.*\\b(for|in)\\s+(${BUILDING_TYPE_KEYWORDS.join('|')})\\b`, 'i'), hint: 'contextual' },
+    { pattern: new RegExp(`\\b(${BUILDING_TYPE_KEYWORDS.join('|')})\\b.*\\b(${TOPIC_KEYWORDS.join('|')})\\b`, 'i'), hint: 'contextual' },
+    // "requirements for X buildings" - broader
+    { pattern: /\brequirements?\s+for\s+\w+/i, hint: 'building_type' },
+    // Topic + "for" + any noun (e.g. "fire safety for high-rise")
+    { pattern: new RegExp(`\\b(${TOPIC_KEYWORDS.join('|')})\\s+(requirements?|rules?|regulations?|standards?|code|provisions?)\\s+(for|in)\\s+`, 'i'), hint: 'contextual' },
     
     // Scope-limited queries
     { pattern: /\b(only|specifically|just)\s+(in|for|about)\s+(the\s+)?(chapter|section)/i, hint: 'scope_limited' },
     { pattern: /\baccording\s+to\s+(chapter|section)\s+\d/i, hint: 'section_reference' },
+
+    // "all/list/overview" of a topic (implies structural scan)
+    { pattern: /\b(all|list|overview|outline)\s+(of\s+)?(the\s+)?(requirements?|rules?|regulations?|provisions?)\s+(for|about|regarding|related)/i, hint: 'overview' },
   ];
 
   const detectedHints: string[] = [];
@@ -529,91 +530,119 @@ export function classifyQueryStructure(query: string): QueryClassification {
 }
 
 /**
- * Tree Reasoner Agent - Analyzes document structure to select relevant sections
- * Only called for structural queries
+ * Tree Reasoner - Deterministic scoring algorithm (NO LLM call)
+ * Selects relevant tree nodes based on keyword overlap with the query.
+ * This replaces the previous LLM-based approach to reduce latency and API costs.
  */
-export async function treeReasoner(
+export function treeReasoner(
   query: string,
   tree: TreeNode[]
-): Promise<TreeReasoningResult> {
-  // Format tree for LLM
-  const treeText = formatTreeForLLM(tree);
-  
-  const prompt = TREE_REASONING_PROMPT
-    .replace('{tree}', treeText)
-    .replace('{query}', query);
+): TreeReasoningResult {
+  if (tree.length === 0) {
+    return {
+      selectedNodes: [],
+      reasoning: 'No document tree available',
+      confidence: 0,
+      searchScope: 'wide',
+    };
+  }
 
-  try {
-    const response = await agentModel.invoke([
-      new HumanMessage(prompt),
-    ]);
+  const queryLower = query.toLowerCase();
+  // Extract meaningful words (length > 2 to skip "a", "is", "of", etc.)
+  const queryTokens = queryLower.split(/\s+/).filter(w => w.length > 2);
 
-    const content = response.content as string;
-    
-    // Parse JSON from response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const result = JSON.parse(jsonMatch[0]) as TreeReasoningResult;
-      
-      // Validate node IDs exist in tree
-      const validNodeIds = new Set(tree.map(n => n.id));
-      result.selectedNodes = result.selectedNodes.filter(id => validNodeIds.has(id));
-      
-      // Ensure we have at least some nodes
-      if (result.selectedNodes.length === 0) {
-        console.warn('Tree Reasoner selected no valid nodes, will fallback');
-        return {
-          selectedNodes: [],
-          reasoning: 'No relevant sections found',
-          confidence: 0,
-          searchScope: 'wide',
-        };
+  // Score every node
+  const scored = tree.map(node => {
+    const titleLower = node.title.toLowerCase();
+    const pathLower = (node.path || '').toLowerCase();
+    const sectionLower = (node.section || '').toLowerCase();
+    let score = 0;
+
+    // 1. Exact section number match (e.g. query mentions "3.2" and node.section is "3.2")
+    if (node.section) {
+      const sectionPattern = new RegExp(`\\b${node.section.replace(/\./g, '\\.')}\\b`);
+      if (sectionPattern.test(query)) {
+        score += 50;
       }
-      
-      return result;
     }
 
-    // Fallback if parsing fails
+    // 2. Token overlap with title
+    for (const token of queryTokens) {
+      if (titleLower.includes(token)) {
+        score += 10;
+      }
+      // Path gives extra context but lower weight
+      if (pathLower.includes(token)) {
+        score += 3;
+      }
+    }
+
+    // 3. Topic keyword match in title (specific domain terms are high signal)
+    for (const topic of TOPIC_KEYWORDS) {
+      if (queryLower.includes(topic) && titleLower.includes(topic)) {
+        score += 15;
+      }
+    }
+
+    // 4. Building type keyword match in title
+    for (const btype of BUILDING_TYPE_KEYWORDS) {
+      if (queryLower.includes(btype) && titleLower.includes(btype)) {
+        score += 12;
+      }
+    }
+
+    // 5. Prefer narrower (deeper-level) nodes when scores are close
+    //    A small bonus ensures leaf nodes win ties over chapters
+    if (node.level >= 1) {
+      score += 2;
+    }
+    if (node.level >= 2) {
+      score += 1;
+    }
+
+    return { node, score };
+  });
+
+  // Sort descending and filter out low-score nodes (minimum 5 to avoid noise)
+  scored.sort((a, b) => b.score - a.score);
+  const relevant = scored.filter(s => s.score >= 5);
+
+  if (relevant.length === 0) {
     return {
       selectedNodes: [],
-      reasoning: 'Failed to parse LLM response',
-      confidence: 0,
-      searchScope: 'wide',
-    };
-  } catch (error) {
-    console.error('Tree Reasoner error:', error);
-    return {
-      selectedNodes: [],
-      reasoning: 'Tree reasoning failed',
+      reasoning: 'No matching sections found by keyword scoring',
       confidence: 0,
       searchScope: 'wide',
     };
   }
-}
 
-/**
- * Format tree nodes for LLM consumption
- */
-function formatTreeForLLM(tree: TreeNode[]): string {
-  if (tree.length === 0) {
-    return 'No document structure available.';
+  // Select top nodes (max 5), but also include any with score >= 50% of the top score
+  const topScore = relevant[0].score;
+  const threshold = topScore * 0.4;
+  const selected = relevant
+    .filter(s => s.score >= threshold)
+    .slice(0, 5);
+
+  // Calculate confidence: top score mapped to 0-100
+  // A score of 50+ is very confident, 10 is low
+  const confidence = Math.min(100, Math.round((topScore / 50) * 100));
+
+  // Determine scope
+  let searchScope: 'narrow' | 'medium' | 'wide' = 'narrow';
+  if (selected.length >= 4) {
+    searchScope = 'wide';
+  } else if (selected.length >= 2) {
+    searchScope = 'medium';
   }
 
-  // Sort by level and start page
-  const sorted = [...tree].sort((a, b) => {
-    if (a.level !== b.level) return a.level - b.level;
-    return a.startPage - b.startPage;
-  });
+  const reasoning = `Keyword scoring selected ${selected.length} node(s): ${selected.map(s => `"${s.node.title}" (score=${s.score})`).join(', ')}`;
 
-  const lines = sorted.map(node => {
-    const indent = '  '.repeat(node.level);
-    const pages = node.startPage === node.endPage 
-      ? `Page ${node.startPage}` 
-      : `Pages ${node.startPage}-${node.endPage}`;
-    return `${indent}[${node.id}] ${node.title} (${pages})`;
-  });
-
-  return lines.join('\n');
+  return {
+    selectedNodes: selected.map(s => s.node.id),
+    reasoning,
+    confidence,
+    searchScope,
+  };
 }
 
 /**
