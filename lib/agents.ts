@@ -555,7 +555,6 @@ export function treeReasoner(
   const scored = tree.map(node => {
     const titleLower = node.title.toLowerCase();
     const pathLower = (node.path || '').toLowerCase();
-    const sectionLower = (node.section || '').toLowerCase();
     let score = 0;
 
     // 1. Exact section number match (e.g. query mentions "3.2" and node.section is "3.2")

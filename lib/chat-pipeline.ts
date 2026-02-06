@@ -15,7 +15,7 @@ import {
   getPageRangesForNodes
 } from '@/lib/agents';
 import { createSmartCitations, getCitationStats } from '@/lib/citation-parser';
-import { getCachedDocumentTree, clearDocumentTreeCache } from '@/lib/tree-cache';
+import { getCachedDocumentTree } from '@/lib/tree-cache';
 import type {
   Citation,
   MatchedChunk,
