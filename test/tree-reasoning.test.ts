@@ -15,6 +15,11 @@ vi.mock('@langchain/google-genai', () => {
         return mockInvokeFn(...args);
       }
     },
+    GoogleGenerativeAIEmbeddings: class MockGoogleGenerativeAIEmbeddings {
+      constructor() {}
+      async embedQuery() { return new Array(768).fill(0); }
+      async embedDocuments(docs: string[]) { return docs.map(() => new Array(768).fill(0)); }
+    },
   };
 });
 
