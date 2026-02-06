@@ -468,7 +468,7 @@ npm run test:coverage # Coverage report (v8)
 ## 📁 Project Structure
 
 ```
-permitai/
+Emirate-Forge/
 ├── actions/                    # Server Actions
 │   ├── auth.ts                 #   Login / Logout
 │   ├── admin.ts                #   User CRUD, stats, audit logs
