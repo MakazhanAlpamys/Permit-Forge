@@ -229,3 +229,93 @@ export interface QueryClassification {
   suggestedPath: 'tree' | 'standard' | 'exact';
 }
 
+// -----------------------------------------------------------------------------
+// Permit Application Types
+// -----------------------------------------------------------------------------
+
+export type PermitStatus = 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected';
+
+export type ProjectType = 'residential' | 'commercial' | 'industrial' | 'mixed_use' | 'institutional';
+
+export interface BuildingDetails {
+  numberOfFloors: number;
+  totalBuiltUpArea: number;     // sq meters
+  plotArea: number;             // sq meters
+  buildingHeight: number;       // meters
+  numberOfUnits: number;
+  numberOfParkingSpaces: number;
+  occupancyType: string;
+  constructionType: string;
+}
+
+export interface ComplianceRequirements {
+  fireSafety: boolean;
+  accessibility: boolean;
+  parkingCompliance: boolean;
+  structuralSafety: boolean;
+  mepSystems: boolean;
+  energyEfficiency: boolean;
+  additionalNotes?: string;
+}
+
+export interface ComplianceCheckReference {
+  page: number;
+  section: string;
+  excerpt: string;
+}
+
+export interface ComplianceCheckItem {
+  category: string;
+  status: 'compliant' | 'non_compliant' | 'requires_review';
+  details: string;
+  codeReferences: ComplianceCheckReference[];
+}
+
+export interface ComplianceCheckResult {
+  overallStatus: 'compliant' | 'non_compliant' | 'requires_review';
+  checks: ComplianceCheckItem[];
+  summary: string;
+  checkedAt: string;
+}
+
+export interface PermitApplication {
+  id: string;
+  userId: string;
+  status: PermitStatus;
+  projectName: string;
+  projectType: ProjectType;
+  projectAddress: string;
+  plotNumber?: string;
+  projectDescription?: string;
+  buildingDetails: BuildingDetails;
+  complianceRequirements: ComplianceRequirements;
+  complianceCheckResult?: ComplianceCheckResult | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  reviewComments?: string | null;
+  submittedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PermitStatusHistoryEntry {
+  id: string;
+  permitId: string;
+  fromStatus: string | null;
+  toStatus: string;
+  changedBy: string;
+  changedByUsername?: string;
+  comment?: string;
+  createdAt: string;
+}
+
+export interface PermitStats {
+  totalPermits: number;
+  draftCount: number;
+  submittedCount: number;
+  underReviewCount: number;
+  approvedCount: number;
+  rejectedCount: number;
+  permitsToday: number;
+}
+

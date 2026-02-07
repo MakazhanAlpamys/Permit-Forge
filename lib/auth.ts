@@ -238,7 +238,7 @@ export async function validateCSRFToken(token: string): Promise<boolean> {
 // Audit Logging
 // -----------------------------------------------------------------------------
 
-export type AuditAction = 
+export type AuditAction =
   | 'login_success'
   | 'login_failed'
   | 'logout'
@@ -251,7 +251,12 @@ export type AuditAction =
   | 'password_changed'
   | 'pdf_ingested'
   | 'chunks_cleared'
-  | 'session_deleted';
+  | 'session_deleted'
+  | 'permit_created'
+  | 'permit_submitted'
+  | 'permit_reviewed'
+  | 'permit_deleted'
+  | 'permit_compliance_checked';
 
 interface AuditLogEntry {
   userId?: string;

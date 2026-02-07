@@ -137,6 +137,80 @@ export const paginationSchema = z.object({
 export type PaginationInput = z.infer<typeof paginationSchema>;
 
 // -----------------------------------------------------------------------------
+// Permit Application Schemas
+// -----------------------------------------------------------------------------
+
+export const projectTypeSchema = z.enum([
+  'residential', 'commercial', 'industrial', 'mixed_use', 'institutional'
+]);
+
+export const permitStatusSchema = z.enum([
+  'draft', 'submitted', 'under_review', 'approved', 'rejected'
+]);
+
+export const buildingDetailsSchema = z.object({
+  numberOfFloors: z.number().int().min(1, 'Must have at least 1 floor').max(200),
+  totalBuiltUpArea: z.number().positive('Built-up area must be positive').max(1000000),
+  plotArea: z.number().positive('Plot area must be positive').max(1000000),
+  buildingHeight: z.number().positive('Building height must be positive').max(1000),
+  numberOfUnits: z.number().int().min(0).max(10000),
+  numberOfParkingSpaces: z.number().int().min(0).max(50000),
+  occupancyType: z.string().min(1, 'Occupancy type is required').max(100).transform(sanitizeString),
+  constructionType: z.string().min(1, 'Construction type is required').max(100).transform(sanitizeString),
+});
+
+export const complianceRequirementsSchema = z.object({
+  fireSafety: z.boolean(),
+  accessibility: z.boolean(),
+  parkingCompliance: z.boolean(),
+  structuralSafety: z.boolean(),
+  mepSystems: z.boolean(),
+  energyEfficiency: z.boolean(),
+  additionalNotes: z.string().max(2000).transform(sanitizeString).optional(),
+});
+
+export const createPermitSchema = z.object({
+  projectName: z.string()
+    .min(3, 'Project name must be at least 3 characters')
+    .max(200, 'Project name must be 200 characters or less')
+    .transform(sanitizeString),
+  projectType: projectTypeSchema,
+  projectAddress: z.string()
+    .min(5, 'Address must be at least 5 characters')
+    .max(500, 'Address must be 500 characters or less')
+    .transform(sanitizeString),
+  plotNumber: z.string().max(50).transform(sanitizeString).optional(),
+  projectDescription: z.string().max(2000).transform(sanitizeString).optional(),
+});
+
+export type CreatePermitInput = z.infer<typeof createPermitSchema>;
+
+export const updateBuildingDetailsSchema = z.object({
+  permitId: uuidSchema,
+  buildingDetails: buildingDetailsSchema,
+});
+
+export type UpdateBuildingDetailsInput = z.infer<typeof updateBuildingDetailsSchema>;
+
+export const updateComplianceRequirementsSchema = z.object({
+  permitId: uuidSchema,
+  complianceRequirements: complianceRequirementsSchema,
+});
+
+export type UpdateComplianceRequirementsInput = z.infer<typeof updateComplianceRequirementsSchema>;
+
+export const reviewPermitSchema = z.object({
+  permitId: uuidSchema,
+  action: z.enum(['approve', 'reject']),
+  comments: z.string()
+    .min(1, 'Review comments are required')
+    .max(2000, 'Comments must be 2000 characters or less')
+    .transform(sanitizeString),
+});
+
+export type ReviewPermitInput = z.infer<typeof reviewPermitSchema>;
+
+// -----------------------------------------------------------------------------
 // Session Token Payload
 // -----------------------------------------------------------------------------
 

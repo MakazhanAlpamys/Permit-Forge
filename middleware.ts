@@ -172,8 +172,8 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // If admin trying to access root, redirect to admin
-  if (pathname === '/' && role === 'admin') {
+  // If admin trying to access user pages, redirect to admin
+  if ((pathname === '/' || pathname.startsWith('/permits')) && role === 'admin') {
     return NextResponse.redirect(new URL('/admin', request.url));
   }
 

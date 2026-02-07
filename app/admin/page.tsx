@@ -5,38 +5,42 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  getDashboardStats, 
-  getWeeklyActivity, 
-  getAuditLogs, 
+import {
+  getDashboardStats,
+  getWeeklyActivity,
+  getAuditLogs,
   getAllUsers,
   type DashboardStats,
   type WeeklyActivity,
   type AuditLogEntry,
   type AdminUser
 } from '@/actions/admin';
+import { getAdminPermits, getPermitStats } from '@/actions/admin-permits';
 import { logoutAction } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { 
-  StatsCards, 
-  ActivityChart, 
-  UserManagement, 
-  AuditLogs, 
+import {
+  StatsCards,
+  ActivityChart,
+  UserManagement,
+  AuditLogs,
   CreateUserDialog,
   PdfIngestionTab,
+  PermitManagement,
 } from '@/components/admin';
-import { 
-  FileText, 
+import {
+  FileText,
   RefreshCw,
   LogOut,
   LayoutDashboard,
   Users,
-  History
+  History,
+  ClipboardCheck,
 } from 'lucide-react';
+import type { PermitApplication, PermitStats } from '@/types';
 
-type Tab = 'overview' | 'users' | 'pdf' | 'logs';
+type Tab = 'overview' | 'users' | 'permits' | 'pdf' | 'logs';
 
 export default function AdminPage() {
   // Tab state
@@ -47,8 +51,10 @@ export default function AdminPage() {
   const [weeklyActivity, setWeeklyActivity] = useState<WeeklyActivity[]>([]);
   const [auditLogs, setAuditLogsData] = useState<AuditLogEntry[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [permits, setPermits] = useState<(PermitApplication & { username?: string })[]>([]);
+  const [permitStats, setPermitStatsData] = useState<PermitStats | null>(null);
   const [dataLoading, setDataLoading] = useState(true);
-  
+
   // User dialog
   const [createUserOpen, setCreateUserOpen] = useState(false);
 
@@ -82,16 +88,31 @@ export default function AdminPage() {
     loadDashboardData();
   }, [loadDashboardData]);
 
-  // Load users when tab changes
+  // Load permits
+  const loadPermits = useCallback(async (status?: string) => {
+    setDataLoading(true);
+    const [permitsResult, statsResult] = await Promise.all([
+      getAdminPermits(status),
+      getPermitStats(),
+    ]);
+    setPermits(permitsResult.data);
+    if (statsResult.data) setPermitStatsData(statsResult.data);
+    setDataLoading(false);
+  }, []);
+
+  // Load data when tab changes
   useEffect(() => {
     if (activeTab === 'users') {
       loadUsers();
+    } else if (activeTab === 'permits') {
+      loadPermits();
     }
-  }, [activeTab, loadUsers]);
+  }, [activeTab, loadUsers, loadPermits]);
 
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: LayoutDashboard },
     { id: 'users' as Tab, label: 'Users', icon: Users },
+    { id: 'permits' as Tab, label: 'Permits', icon: ClipboardCheck },
     { id: 'pdf' as Tab, label: 'PDF Ingestion', icon: FileText },
     { id: 'logs' as Tab, label: 'Audit Logs', icon: History },
   ];
@@ -211,6 +232,24 @@ export default function AdminPage() {
                   isOpen={createUserOpen}
                   onClose={() => setCreateUserOpen(false)}
                   onSuccess={() => loadUsers()}
+                />
+              </>
+            )}
+
+            {/* Permits Tab */}
+            {activeTab === 'permits' && (
+              <>
+                <div className="mb-6">
+                  <h2 className="text-2xl font-bold">Permit Applications</h2>
+                  <p className="text-muted-foreground">Review and manage permit applications</p>
+                </div>
+
+                <PermitManagement
+                  permits={permits}
+                  stats={permitStats}
+                  loading={dataLoading}
+                  onRefresh={() => loadPermits()}
+                  onFilterStatus={(status) => loadPermits(status)}
                 />
               </>
             )}

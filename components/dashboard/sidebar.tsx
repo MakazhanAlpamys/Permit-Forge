@@ -12,13 +12,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { getChatSessions, deleteChatSession } from '@/actions/chat-history';
 import type { ChatSession } from '@/types';
-import { 
-  MessageSquare, 
+import {
+  MessageSquare,
   BookOpen,
   ChevronRight,
   ExternalLink,
   Trash2,
-  Plus
+  Plus,
+  ClipboardList
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -36,6 +37,12 @@ const navItems = [
     href: '/',
     icon: MessageSquare,
     description: 'AI compliance assistant',
+  },
+  {
+    title: 'Permits',
+    href: '/permits',
+    icon: ClipboardList,
+    description: 'Permit applications',
   },
 ];
 

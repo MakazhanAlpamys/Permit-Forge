@@ -2,8 +2,8 @@
 // Emirate Forge Constants & Configuration
 // ============================================================================
 
-import { CheckCircle, XCircle, Clock } from 'lucide-react';
-import type { ComplianceStatus } from '@/types';
+import { CheckCircle, XCircle, Clock, FileEdit, Send, Eye, CheckCircle2 } from 'lucide-react';
+import type { ComplianceStatus, PermitStatus } from '@/types';
 
 // ============================================================================
 // Authentication Constants
@@ -64,3 +64,55 @@ export const complianceStatusConfig: Record<ComplianceStatus, StatusConfigItem> 
     badgeClassName: 'bg-muted text-muted-foreground border-muted',
   },
 };
+
+// ============================================================================
+// Permit Status Configuration
+// ============================================================================
+
+export interface PermitStatusConfigItem {
+  icon: typeof CheckCircle;
+  label: string;
+  textClassName: string;
+  badgeClassName: string;
+}
+
+export const permitStatusConfig: Record<PermitStatus, PermitStatusConfigItem> = {
+  'draft': {
+    icon: FileEdit,
+    label: 'Draft',
+    textClassName: 'text-muted-foreground',
+    badgeClassName: 'bg-muted text-muted-foreground border-muted',
+  },
+  'submitted': {
+    icon: Send,
+    label: 'Submitted',
+    textClassName: 'text-blue-400',
+    badgeClassName: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+  },
+  'under_review': {
+    icon: Eye,
+    label: 'Under Review',
+    textClassName: 'text-yellow-400',
+    badgeClassName: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+  },
+  'approved': {
+    icon: CheckCircle2,
+    label: 'Approved',
+    textClassName: 'text-green-400',
+    badgeClassName: 'bg-green-500/20 text-green-400 border-green-500/30',
+  },
+  'rejected': {
+    icon: XCircle,
+    label: 'Rejected',
+    textClassName: 'text-red-400',
+    badgeClassName: 'bg-red-500/20 text-red-400 border-red-500/30',
+  },
+};
+
+export const PROJECT_TYPES = [
+  { value: 'residential', label: 'Residential' },
+  { value: 'commercial', label: 'Commercial' },
+  { value: 'industrial', label: 'Industrial' },
+  { value: 'mixed_use', label: 'Mixed Use' },
+  { value: 'institutional', label: 'Institutional' },
+] as const;
