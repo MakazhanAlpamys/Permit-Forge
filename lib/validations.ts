@@ -145,7 +145,7 @@ export const projectTypeSchema = z.enum([
 ]);
 
 export const permitStatusSchema = z.enum([
-  'draft', 'submitted', 'under_review', 'approved', 'rejected'
+  'draft', 'submitted', 'under_review', 'approved', 'rejected', 'revision_requested'
 ]);
 
 export const buildingDetailsSchema = z.object({
@@ -201,7 +201,7 @@ export type UpdateComplianceRequirementsInput = z.infer<typeof updateComplianceR
 
 export const reviewPermitSchema = z.object({
   permitId: uuidSchema,
-  action: z.enum(['approve', 'reject']),
+  action: z.enum(['approve', 'reject', 'request_revision']),
   comments: z.string()
     .min(1, 'Review comments are required')
     .max(2000, 'Comments must be 2000 characters or less')
@@ -209,6 +209,17 @@ export const reviewPermitSchema = z.object({
 });
 
 export type ReviewPermitInput = z.infer<typeof reviewPermitSchema>;
+
+// -----------------------------------------------------------------------------
+// File Upload Validation
+// -----------------------------------------------------------------------------
+
+export const fileUploadSchema = z.object({
+  permitId: uuidSchema,
+  fileName: z.string().min(1).max(255),
+  fileSize: z.number().int().positive().max(10 * 1024 * 1024, 'File must be under 10MB'),
+  fileType: z.string().min(1),
+});
 
 // -----------------------------------------------------------------------------
 // Session Token Payload

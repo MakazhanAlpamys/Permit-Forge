@@ -233,7 +233,7 @@ export interface QueryClassification {
 // Permit Application Types
 // -----------------------------------------------------------------------------
 
-export type PermitStatus = 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected';
+export type PermitStatus = 'draft' | 'submitted' | 'under_review' | 'approved' | 'rejected' | 'revision_requested';
 
 export type ProjectType = 'residential' | 'commercial' | 'industrial' | 'mixed_use' | 'institutional';
 
@@ -294,6 +294,8 @@ export interface PermitApplication {
   reviewedAt?: string | null;
   reviewComments?: string | null;
   submittedAt?: string | null;
+  revisionCount: number;
+  revisionNotes?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -316,6 +318,58 @@ export interface PermitStats {
   underReviewCount: number;
   approvedCount: number;
   rejectedCount: number;
+  revisionRequestedCount: number;
   permitsToday: number;
+}
+
+// -----------------------------------------------------------------------------
+// Permit Attachment Types
+// -----------------------------------------------------------------------------
+
+export interface PermitAttachment {
+  id: string;
+  permitId: string;
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  storagePath: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  signedUrl?: string;
+}
+
+// -----------------------------------------------------------------------------
+// Notification Types
+// -----------------------------------------------------------------------------
+
+export type NotificationType =
+  | 'permit_submitted'
+  | 'permit_under_review'
+  | 'permit_approved'
+  | 'permit_rejected'
+  | 'permit_revision_requested';
+
+export interface Notification {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  data: Record<string, unknown>;
+  read: boolean;
+  createdAt: string;
+}
+
+// -----------------------------------------------------------------------------
+// Permit Certificate Types
+// -----------------------------------------------------------------------------
+
+export interface PermitCertificate {
+  id: string;
+  permitId: string;
+  certificateNumber: string;
+  generatedBy: string;
+  storagePath?: string;
+  generatedAt: string;
 }
 

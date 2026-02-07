@@ -65,6 +65,8 @@ function transformPermit(row: any): PermitApplication {
     reviewedAt: row.reviewed_at || null,
     reviewComments: row.review_comments || null,
     submittedAt: row.submitted_at || null,
+    revisionCount: row.revision_count || 0,
+    revisionNotes: row.revision_notes || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -263,7 +265,7 @@ export async function submitPermit(
     const supabase = createServerClient();
     const { data: permit } = await supabase
       .from('permit_applications')
-      .select('status, building_details, compliance_requirements')
+      .select('status, building_details, compliance_requirements, project_name, revision_count')
       .eq('id', permitId)
       .single();
 
@@ -271,8 +273,8 @@ export async function submitPermit(
       return { success: false, error: 'Permit not found' };
     }
 
-    if (permit.status !== 'draft') {
-      return { success: false, error: 'Can only submit draft permits' };
+    if (permit.status !== 'draft' && permit.status !== 'revision_requested') {
+      return { success: false, error: 'Can only submit draft or revision permits' };
     }
 
     // Check that building details and compliance requirements are filled
@@ -281,11 +283,15 @@ export async function submitPermit(
       return { success: false, error: 'Please complete building details before submitting' };
     }
 
+    const isResubmission = permit.status === 'revision_requested';
+
     const { error } = await supabase
       .from('permit_applications')
       .update({
         status: 'submitted',
         submitted_at: new Date().toISOString(),
+        revision_count: isResubmission ? (permit.revision_count || 0) + 1 : permit.revision_count || 0,
+        revision_notes: isResubmission ? null : undefined,
       })
       .eq('id', permitId)
       .eq('user_id', authCheck.user.id);
@@ -294,19 +300,31 @@ export async function submitPermit(
 
     await supabase.from('permit_status_history').insert({
       permit_id: permitId,
-      from_status: 'draft',
+      from_status: permit.status,
       to_status: 'submitted',
       changed_by: authCheck.user.id,
-      comment: 'Application submitted for review',
+      comment: isResubmission ? 'Application resubmitted after revision' : 'Application submitted for review',
     });
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({
       userId: authCheck.user.id,
       action: 'permit_submitted',
-      metadata: { permitId },
+      metadata: { permitId, isResubmission },
       ...metadata,
     });
+
+    // Send notification
+    try {
+      const { createNotification, getNotificationContent } = await import('@/lib/notifications');
+      const content = getNotificationContent('permit_submitted', permit.project_name);
+      await createNotification({
+        userId: authCheck.user.id,
+        type: 'permit_submitted',
+        ...content,
+        data: { permitId, permitName: permit.project_name },
+      });
+    } catch { /* notification failure should not break submit */ }
 
     return { success: true };
   } catch (error) {
@@ -482,6 +500,20 @@ export async function deletePermit(
       return { success: false, error: 'Can only delete draft permits' };
     }
 
+    // Delete attachments from storage first
+    const adminClient = createAdminClient();
+    const { data: attachments } = await supabase
+      .from('permit_attachments')
+      .select('storage_path')
+      .eq('permit_id', permitId);
+
+    if (attachments && attachments.length > 0) {
+      const paths = attachments.map((a: { storage_path: string }) => a.storage_path);
+      await adminClient.storage
+        .from('permit-attachments')
+        .remove(paths);
+    }
+
     const { error } = await supabase
       .from('permit_applications')
       .delete()
@@ -582,6 +614,81 @@ export async function runComplianceCheck(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to run compliance check',
+    };
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Revise Permit (Start editing after rejection/revision request)
+// -----------------------------------------------------------------------------
+
+export async function revisePermit(
+  permitId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const authCheck = await requireAuth();
+    if (!authCheck.success || !authCheck.user) {
+      return { success: false, error: authCheck.error };
+    }
+
+    const idValidation = uuidSchema.safeParse(permitId);
+    if (!idValidation.success) {
+      return { success: false, error: 'Invalid permit ID' };
+    }
+
+    const isOwner = await verifyPermitOwnership(permitId, authCheck.user.id);
+    if (!isOwner) {
+      return { success: false, error: 'Access denied' };
+    }
+
+    const supabase = createServerClient();
+    const { data: permit } = await supabase
+      .from('permit_applications')
+      .select('status')
+      .eq('id', permitId)
+      .single();
+
+    if (!permit) {
+      return { success: false, error: 'Permit not found' };
+    }
+
+    if (permit.status !== 'rejected' && permit.status !== 'revision_requested') {
+      return { success: false, error: 'Can only revise rejected or revision-requested permits' };
+    }
+
+    const { error } = await supabase
+      .from('permit_applications')
+      .update({
+        status: 'draft',
+        compliance_check_result: null,
+      })
+      .eq('id', permitId)
+      .eq('user_id', authCheck.user.id);
+
+    if (error) throw error;
+
+    await supabase.from('permit_status_history').insert({
+      permit_id: permitId,
+      from_status: permit.status,
+      to_status: 'draft',
+      changed_by: authCheck.user.id,
+      comment: 'Started revision',
+    });
+
+    const metadata = await getRequestMetadata();
+    await logAuditEvent({
+      userId: authCheck.user.id,
+      action: 'permit_revised',
+      metadata: { permitId, previousStatus: permit.status },
+      ...metadata,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('revisePermit error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to start revision',
     };
   }
 }

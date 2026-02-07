@@ -256,7 +256,12 @@ export type AuditAction =
   | 'permit_submitted'
   | 'permit_reviewed'
   | 'permit_deleted'
-  | 'permit_compliance_checked';
+  | 'permit_compliance_checked'
+  | 'permit_attachment_uploaded'
+  | 'permit_attachment_deleted'
+  | 'permit_revision_requested'
+  | 'permit_revised'
+  | 'permit_certificate_generated';
 
 interface AuditLogEntry {
   userId?: string;

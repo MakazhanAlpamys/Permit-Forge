@@ -2,7 +2,7 @@
 // Emirate Forge Constants & Configuration
 // ============================================================================
 
-import { CheckCircle, XCircle, Clock, FileEdit, Send, Eye, CheckCircle2 } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, FileEdit, Send, Eye, CheckCircle2, RotateCcw } from 'lucide-react';
 import type { ComplianceStatus, PermitStatus } from '@/types';
 
 // ============================================================================
@@ -107,6 +107,12 @@ export const permitStatusConfig: Record<PermitStatus, PermitStatusConfigItem> = 
     textClassName: 'text-red-400',
     badgeClassName: 'bg-red-500/20 text-red-400 border-red-500/30',
   },
+  'revision_requested': {
+    icon: RotateCcw,
+    label: 'Revision Requested',
+    textClassName: 'text-orange-400',
+    badgeClassName: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+  },
 };
 
 export const PROJECT_TYPES = [
@@ -116,3 +122,19 @@ export const PROJECT_TYPES = [
   { value: 'mixed_use', label: 'Mixed Use' },
   { value: 'institutional', label: 'Institutional' },
 ] as const;
+
+// ============================================================================
+// File Upload Configuration
+// ============================================================================
+
+export const FILE_UPLOAD_LIMITS = {
+  maxFileSize: 10 * 1024 * 1024,     // 10MB
+  maxFilesPerPermit: 10,
+  allowedExtensions: ['.pdf', '.png', '.jpg', '.jpeg', '.dwg', '.dxf'],
+  allowedMimeTypes: [
+    'application/pdf',
+    'image/png',
+    'image/jpeg',
+  ],
+  storageBucket: 'permit-attachments',
+} as const;

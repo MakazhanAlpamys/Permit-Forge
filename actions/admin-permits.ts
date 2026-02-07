@@ -30,6 +30,8 @@ function transformPermit(row: any): PermitApplication & { username?: string } {
     reviewedAt: row.reviewed_at || null,
     reviewComments: row.review_comments || null,
     submittedAt: row.submitted_at || null,
+    revisionCount: row.revision_count || 0,
+    revisionNotes: row.revision_notes || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     username: row.users?.username || undefined,
@@ -77,7 +79,7 @@ export async function getAdminPermits(
 }
 
 // -----------------------------------------------------------------------------
-// Review Permit (Approve/Reject)
+// Review Permit (Approve/Reject/Request Revision)
 // -----------------------------------------------------------------------------
 
 export async function reviewPermit(
@@ -95,14 +97,18 @@ export async function reviewPermit(
     }
 
     const { permitId, action, comments } = validation.data;
-    const newStatus = action === 'approve' ? 'approved' : 'rejected';
+    const newStatus = action === 'approve'
+      ? 'approved'
+      : action === 'request_revision'
+        ? 'revision_requested'
+        : 'rejected';
 
     const supabase = createAdminClient();
 
     // Verify permit exists and is reviewable
     const { data: permit } = await supabase
       .from('permit_applications')
-      .select('status')
+      .select('status, user_id, project_name')
       .eq('id', permitId)
       .single();
 
@@ -114,14 +120,23 @@ export async function reviewPermit(
       return { success: false, error: 'Permit is not in a reviewable state' };
     }
 
+    // Build update data
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updateData: any = {
+      status: newStatus,
+      reviewed_by: authCheck.user.id,
+      reviewed_at: new Date().toISOString(),
+      review_comments: comments,
+    };
+
+    // For revision requests, also store revision notes
+    if (action === 'request_revision') {
+      updateData.revision_notes = comments;
+    }
+
     const { error } = await supabase
       .from('permit_applications')
-      .update({
-        status: newStatus,
-        reviewed_by: authCheck.user.id,
-        reviewed_at: new Date().toISOString(),
-        review_comments: comments,
-      })
+      .update(updateData)
       .eq('id', permitId);
 
     if (error) throw error;
@@ -137,10 +152,28 @@ export async function reviewPermit(
     const metadata = await getRequestMetadata();
     await logAuditEvent({
       userId: authCheck.user.id,
-      action: 'permit_reviewed',
+      action: action === 'request_revision' ? 'permit_revision_requested' : 'permit_reviewed',
       metadata: { permitId, decision: action, comments },
       ...metadata,
     });
+
+    // Send notification to permit owner
+    try {
+      const { createNotification, getNotificationContent } = await import('@/lib/notifications');
+      const notifType = action === 'approve'
+        ? 'permit_approved' as const
+        : action === 'request_revision'
+          ? 'permit_revision_requested' as const
+          : 'permit_rejected' as const;
+
+      const content = getNotificationContent(notifType, permit.project_name, comments);
+      await createNotification({
+        userId: permit.user_id,
+        type: notifType,
+        ...content,
+        data: { permitId, permitName: permit.project_name },
+      });
+    } catch { /* notification failure should not break review */ }
 
     return { success: true };
   } catch (error) {
@@ -173,7 +206,7 @@ export async function setPermitUnderReview(
     const supabase = createAdminClient();
     const { data: permit } = await supabase
       .from('permit_applications')
-      .select('status')
+      .select('status, user_id, project_name')
       .eq('id', permitId)
       .single();
 
@@ -199,6 +232,18 @@ export async function setPermitUnderReview(
       changed_by: authCheck.user.id,
       comment: 'Review started',
     });
+
+    // Notify permit owner
+    try {
+      const { createNotification, getNotificationContent } = await import('@/lib/notifications');
+      const content = getNotificationContent('permit_under_review', permit.project_name);
+      await createNotification({
+        userId: permit.user_id,
+        type: 'permit_under_review',
+        ...content,
+        data: { permitId, permitName: permit.project_name },
+      });
+    } catch { /* notification failure should not break status change */ }
 
     return { success: true };
   } catch (error) {
@@ -239,6 +284,7 @@ export async function getPermitStats(): Promise<{ data: PermitStats | null; erro
         underReviewCount: Number(stats.under_review_count) || 0,
         approvedCount: Number(stats.approved_count) || 0,
         rejectedCount: Number(stats.rejected_count) || 0,
+        revisionRequestedCount: Number(stats.revision_requested_count) || 0,
         permitsToday: Number(stats.permits_today) || 0,
       },
     };

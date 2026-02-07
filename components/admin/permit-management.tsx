@@ -17,6 +17,7 @@ import {
   Eye,
   CheckCircle2,
   XCircle,
+  RotateCcw,
   Loader2,
   Building2,
   MapPin,
@@ -39,13 +40,14 @@ const STATUS_FILTERS = [
   { value: 'under_review', label: 'Under Review' },
   { value: 'approved', label: 'Approved' },
   { value: 'rejected', label: 'Rejected' },
+  { value: 'revision_requested', label: 'Revision Requested' },
   { value: 'draft', label: 'Drafts' },
 ];
 
 export function PermitManagement({ permits, stats, loading, onRefresh, onFilterStatus }: PermitManagementProps) {
   const [activeFilter, setActiveFilter] = useState('all');
   const [expandedPermit, setExpandedPermit] = useState<string | null>(null);
-  const [reviewDialog, setReviewDialog] = useState<{ permit: PermitApplication; action: 'approve' | 'reject' } | null>(null);
+  const [reviewDialog, setReviewDialog] = useState<{ permit: PermitApplication; action: 'approve' | 'reject' | 'request_revision' } | null>(null);
   const [reviewComments, setReviewComments] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState('');
@@ -93,13 +95,14 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
     <div className="space-y-6">
       {/* Stats row */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
           <StatMini label="Total" value={stats.totalPermits} />
           <StatMini label="Drafts" value={stats.draftCount} color="text-muted-foreground" />
           <StatMini label="Submitted" value={stats.submittedCount} color="text-blue-400" />
           <StatMini label="Under Review" value={stats.underReviewCount} color="text-yellow-400" />
           <StatMini label="Approved" value={stats.approvedCount} color="text-green-400" />
           <StatMini label="Rejected" value={stats.rejectedCount} color="text-red-400" />
+          <StatMini label="Revision" value={stats.revisionRequestedCount} color="text-orange-400" />
           <StatMini label="Today" value={stats.permitsToday} />
         </div>
       )}
@@ -209,6 +212,18 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                           <Button
                             variant="outline"
                             size="sm"
+                            className="text-orange-500 border-orange-500/30 hover:bg-orange-500/10"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setReviewDialog({ permit, action: 'request_revision' });
+                            }}
+                          >
+                            <RotateCcw className="h-3 w-3 mr-1" />
+                            Revise
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
                             className="text-red-500 border-red-500/30 hover:bg-red-500/10"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -283,12 +298,14 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {reviewDialog?.action === 'approve' ? 'Approve' : 'Reject'} Permit
+              {reviewDialog?.action === 'approve' ? 'Approve' : reviewDialog?.action === 'request_revision' ? 'Request Revision' : 'Reject'} Permit
             </DialogTitle>
             <DialogDescription>
               {reviewDialog?.action === 'approve'
                 ? `Approve "${reviewDialog.permit.projectName}"?`
-                : `Reject "${reviewDialog?.permit.projectName}"?`}
+                : reviewDialog?.action === 'request_revision'
+                  ? `Request revisions for "${reviewDialog?.permit.projectName}"?`
+                  : `Reject "${reviewDialog?.permit.projectName}"?`}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -306,14 +323,14 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
               Cancel
             </Button>
             <Button
-              variant={reviewDialog?.action === 'approve' ? 'default' : 'destructive'}
+              variant={reviewDialog?.action === 'approve' ? 'default' : reviewDialog?.action === 'request_revision' ? 'outline' : 'destructive'}
               onClick={handleReviewConfirm}
               disabled={!reviewComments.trim() || actionLoading !== null}
             >
               {actionLoading ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : null}
-              {reviewDialog?.action === 'approve' ? 'Approve' : 'Reject'}
+              {reviewDialog?.action === 'approve' ? 'Approve' : reviewDialog?.action === 'request_revision' ? 'Request Revision' : 'Reject'}
             </Button>
           </DialogFooter>
         </DialogContent>

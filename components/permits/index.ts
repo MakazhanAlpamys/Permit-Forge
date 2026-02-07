@@ -8,3 +8,5 @@ export { PermitStatusBadge } from './permit-status-badge';
 export { PermitDetailView } from './permit-detail-view';
 export { ComplianceCheckPanel } from './compliance-check-panel';
 export { PermitStatusTimeline } from './permit-status-timeline';
+export { FileUploadZone } from './file-upload-zone';
+export { AttachmentList } from './attachment-list';

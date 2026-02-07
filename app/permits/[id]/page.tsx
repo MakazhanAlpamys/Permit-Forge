@@ -11,12 +11,15 @@ import {
   PermitDetailView,
   ComplianceCheckPanel,
   PermitStatusTimeline,
+  FileUploadZone,
+  AttachmentList,
 } from '@/components/permits';
-import { getPermitById, getPermitHistory, runComplianceCheck, submitPermit, deletePermit } from '@/actions/permits';
+import { getPermitById, getPermitHistory, runComplianceCheck, submitPermit, deletePermit, revisePermit } from '@/actions/permits';
+import { getPermitAttachments } from '@/actions/permit-attachments';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { ArrowLeft, Send, ShieldCheck, Trash2, Loader2 } from 'lucide-react';
-import type { PermitApplication, PermitStatusHistoryEntry } from '@/types';
+import { ArrowLeft, Send, ShieldCheck, Trash2, Loader2, Download, RotateCcw } from 'lucide-react';
+import type { PermitApplication, PermitStatusHistoryEntry, PermitAttachment } from '@/types';
 
 export default function PermitDetailPage() {
   const params = useParams();
@@ -25,6 +28,7 @@ export default function PermitDetailPage() {
 
   const [permit, setPermit] = useState<PermitApplication | null>(null);
   const [history, setHistory] = useState<PermitStatusHistoryEntry[]>([]);
+  const [attachments, setAttachments] = useState<PermitAttachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -32,9 +36,10 @@ export default function PermitDetailPage() {
 
   const loadPermit = useCallback(async () => {
     setLoading(true);
-    const [permitResult, historyResult] = await Promise.all([
+    const [permitResult, historyResult, attachResult] = await Promise.all([
       getPermitById(permitId),
       getPermitHistory(permitId),
+      getPermitAttachments(permitId),
     ]);
 
     if (permitResult.data) {
@@ -44,6 +49,7 @@ export default function PermitDetailPage() {
     }
 
     setHistory(historyResult.data);
+    setAttachments(attachResult.data);
     setLoading(false);
   }, [permitId]);
 
@@ -87,6 +93,44 @@ export default function PermitDetailPage() {
     setDeleteDialogOpen(false);
   };
 
+  const handleRevise = async () => {
+    setActionLoading('revise');
+    setError('');
+    const result = await revisePermit(permitId);
+    setActionLoading(null);
+
+    if (result.success) {
+      await loadPermit();
+    } else {
+      setError(result.error || 'Failed to start revision');
+    }
+  };
+
+  const handleDownloadCertificate = async () => {
+    setActionLoading('certificate');
+    setError('');
+    try {
+      const response = await fetch(`/api/permits/${permitId}/certificate`);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to download certificate');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `permit-certificate-${permitId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to download certificate');
+    }
+    setActionLoading(null);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background">
@@ -115,6 +159,9 @@ export default function PermitDetailPage() {
     );
   }
 
+  const isDraft = permit.status === 'draft';
+  const canRevise = permit.status === 'rejected' || permit.status === 'revision_requested';
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -127,44 +174,88 @@ export default function PermitDetailPage() {
             Back to Permits
           </Button>
 
-          {permit.status === 'draft' && (
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            {/* Draft actions */}
+            {isDraft && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleRunCheck}
+                  disabled={actionLoading !== null}
+                >
+                  {actionLoading === 'check' ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="h-4 w-4 mr-2" />
+                  )}
+                  AI Check
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSubmit}
+                  disabled={actionLoading !== null}
+                >
+                  {actionLoading === 'submit' ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4 mr-2" />
+                  )}
+                  Submit
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setDeleteDialogOpen(true)}
+                  disabled={actionLoading !== null}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </>
+            )}
+
+            {/* Approved — Download Certificate */}
+            {permit.status === 'approved' && (
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleRunCheck}
+                onClick={handleDownloadCertificate}
                 disabled={actionLoading !== null}
               >
-                {actionLoading === 'check' ? (
+                {actionLoading === 'certificate' ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
-                  <ShieldCheck className="h-4 w-4 mr-2" />
+                  <Download className="h-4 w-4 mr-2" />
                 )}
-                AI Check
+                Download Certificate
               </Button>
+            )}
+
+            {/* Rejected/Revision Requested — Revise & Resubmit */}
+            {canRevise && (
               <Button
                 size="sm"
-                onClick={handleSubmit}
+                onClick={handleRevise}
                 disabled={actionLoading !== null}
               >
-                {actionLoading === 'submit' ? (
+                {actionLoading === 'revise' ? (
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 ) : (
-                  <Send className="h-4 w-4 mr-2" />
+                  <RotateCcw className="h-4 w-4 mr-2" />
                 )}
-                Submit
+                Revise & Resubmit
               </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={() => setDeleteDialogOpen(true)}
-                disabled={actionLoading !== null}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
+
+        {/* Revision Notes Banner */}
+        {permit.status === 'revision_requested' && permit.revisionNotes && (
+          <div className="mb-4 p-4 rounded-lg bg-orange-500/10 border border-orange-500/30">
+            <h4 className="text-sm font-semibold text-orange-400 mb-1">Revision Required</h4>
+            <p className="text-sm text-orange-300/90">{permit.revisionNotes}</p>
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 p-3 rounded-md bg-red-500/10 border border-red-500/30 text-red-500 text-sm">
@@ -180,6 +271,19 @@ export default function PermitDetailPage() {
             {permit.complianceCheckResult && (
               <ComplianceCheckPanel result={permit.complianceCheckResult} />
             )}
+
+            {/* Attachments Section */}
+            <div className="rounded-lg border border-border bg-card p-4">
+              {isDraft ? (
+                <FileUploadZone
+                  permitId={permitId}
+                  attachments={attachments}
+                  onUpdate={loadPermit}
+                />
+              ) : (
+                <AttachmentList attachments={attachments} />
+              )}
+            </div>
           </div>
 
           {/* Sidebar — Timeline */}

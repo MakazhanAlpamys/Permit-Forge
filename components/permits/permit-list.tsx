@@ -20,6 +20,7 @@ const STATUS_FILTERS: { value: PermitStatus | 'all'; label: string }[] = [
   { value: 'under_review', label: 'Under Review' },
   { value: 'approved', label: 'Approved' },
   { value: 'rejected', label: 'Rejected' },
+  { value: 'revision_requested', label: 'Revision Requested' },
 ];
 
 export function PermitList({ permits, loading, onView, onDelete }: PermitListProps) {

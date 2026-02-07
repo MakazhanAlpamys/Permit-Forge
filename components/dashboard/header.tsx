@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/button';
 import { logoutAction } from '@/actions/auth';
 import { useTheme } from '@/components/theme-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { 
+import { NotificationBell } from '@/components/notifications';
+import {
   Menu,
   LogOut
 } from 'lucide-react';
@@ -51,9 +52,12 @@ export function Header({ onMenuClick }: HeaderProps) {
 
         {/* Right Actions */}
         <div className="flex items-center gap-2">
+          {/* Notifications */}
+          <NotificationBell />
+
           {/* Theme Toggle Button */}
           <ThemeToggle />
-          
+
           {/* Logout Button */}
           <form action={logoutAction}>
             <Button variant="ghost" size="icon" className="text-muted-foreground" type="submit">
