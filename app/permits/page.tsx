@@ -11,7 +11,7 @@ import { PermitList } from '@/components/permits';
 import { getMyPermits, deletePermit } from '@/actions/permits';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Plus, RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw, ArrowLeft } from 'lucide-react';
 import type { PermitApplication } from '@/types';
 
 export default function PermitsPage() {
@@ -56,6 +56,17 @@ export default function PermitsPage() {
       <Header />
 
       <main className="max-w-4xl mx-auto px-4 py-6">
+        {/* Back button */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mb-4"
+          onClick={() => router.push('/')}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to Home
+        </Button>
+
         {/* Page header */}
         <div className="flex items-center justify-between mb-6">
           <div>
