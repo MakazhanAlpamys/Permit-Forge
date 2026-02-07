@@ -22,6 +22,15 @@ vi.mock('@/lib/gemini', () => ({
   },
 }));
 
+vi.mock('@/lib/document-registry', () => ({
+  getDocumentById: vi.fn((id: string) => id ? { displayName: 'Dubai Building Code 2021', shortName: 'DBC' } : undefined),
+  getAllDocuments: vi.fn(() => []),
+  getAllDocumentIds: vi.fn(() => ['dubai-building-code-2021']),
+  getDocumentByFileName: vi.fn(),
+  getDocumentPdfPath: vi.fn(),
+  getDocumentListForPrompt: vi.fn(() => ''),
+}));
+
 // Import after mocks
 import { hybridSearch, queryDubaiCode, multiQuerySearch } from '@/lib/rag';
 
@@ -58,6 +67,7 @@ describe('RAG Module', () => {
         keyword_weight: 0.3,
         vector_weight: 0.7,
         rrf_k: 60,
+        filter_document: null,
       });
 
       expect(results).toHaveLength(1);
@@ -115,7 +125,7 @@ describe('RAG Module', () => {
 
       expect(result.chunks).toHaveLength(2);
       expect(result.chunks[0].metadata.section).toBe('5.1');
-      expect(result.context).toContain('CONTEXT FROM DUBAI BUILDING CODE');
+      expect(result.context).toContain('CONTEXT FROM:');
     });
 
     it('should detect exact search patterns and include exact results', async () => {

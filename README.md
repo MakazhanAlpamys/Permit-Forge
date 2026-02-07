@@ -472,7 +472,6 @@ Emirate-Forge/
 ├── actions/                    # Server Actions
 │   ├── auth.ts                 #   Login / Logout
 │   ├── admin.ts                #   User CRUD, stats, audit logs
-│   ├── chat.ts                 #   (deprecated → /api/chat/stream)
 │   ├── chat-history.ts         #   Session & message management
 │   └── ingest-pdf.ts           #   PDF ingestion + status
 │

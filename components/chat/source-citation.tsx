@@ -211,12 +211,29 @@ function parseTableContent(text: string): string[][] {
   return rows.slice(0, 10); // Limit to 10 rows for display
 }
 
+// Document file mapping for "View in PDF" button
+const DOC_FILES: Record<string, string> = {
+  'dubai-building-code-2021': 'dubai-code.pdf',
+  'code-of-safety': 'code_of_safety_EN.pdf',
+  'al-safat-green-building': 'Al-Safat-–-Dubai-Green-Building-System-2nd-editionJan2023.pdf',
+  'universal-design-code': 'Dubai-Guide-for-Built-Environment-Universal-Design-1_compressed.pdf',
+  'sewerage-stormwater-guidelines': 'comp-DM_Sewerage-Guidelines-F.24.01.25.pdf',
+};
+
+const DOC_SHORT_NAMES: Record<string, { name: string; color: string }> = {
+  'dubai-building-code-2021': { name: 'DBC', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
+  'code-of-safety': { name: 'Safety', color: 'bg-red-500/20 text-red-400 border-red-500/30' },
+  'al-safat-green-building': { name: "Al Sa'fat", color: 'bg-green-500/20 text-green-400 border-green-500/30' },
+  'universal-design-code': { name: 'UDC', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
+  'sewerage-stormwater-guidelines': { name: 'Sewerage', color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' },
+};
+
 /**
  * Get PDF URL for "View in PDF" button
  */
-function getPdfUrl(page: number): string {
-  // Assuming the PDF is served from /dubai-code.pdf
-  return `/dubai-code.pdf#page=${page}`;
+function getPdfUrl(page: number, documentName?: string): string {
+  const fileName = documentName ? (DOC_FILES[documentName] || 'dubai-code.pdf') : 'dubai-code.pdf';
+  return `/${fileName}#page=${page}`;
 }
 
 // -----------------------------------------------------------------------------
@@ -236,6 +253,7 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
   const isPageRange = (citation.startPage ?? citation.page) !== (citation.endPage ?? citation.page);
   const confidenceInfo = getConfidenceLevel(citation.confidence);
   const contentTypeInfo = getContentTypeInfo(citation.contentType);
+  const docInfo = citation.documentName ? DOC_SHORT_NAMES[citation.documentName] : undefined;
 
   return (
     <div className="border border-border rounded-lg overflow-hidden bg-card/50">
@@ -248,6 +266,13 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
           <span className="flex items-center justify-center w-5 h-5 rounded-full bg-primary/20 text-primary text-xs font-medium shrink-0">
             {index + 1}
           </span>
+
+          {/* Document badge */}
+          {docInfo && (
+            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 shrink-0 ${docInfo.color}`}>
+              {docInfo.name}
+            </Badge>
+          )}
 
           {/* Icon */}
           <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -360,7 +385,7 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
 
             {/* View in PDF button */}
             <a
-              href={getPdfUrl(citation.startPage ?? citation.page)}
+              href={getPdfUrl(citation.startPage ?? citation.page, citation.documentName)}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors shrink-0"

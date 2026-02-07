@@ -3,7 +3,7 @@
 // Enhanced with Tree Reasoning for structure-aware search
 // ============================================================================
 
-import { queryDubaiCode, multiQuerySearch, queryDubaiCodeFiltered } from '@/lib/rag';
+import { queryDubaiCode, multiQuerySearch, queryDubaiCodeFiltered, diversifyChunks } from '@/lib/rag';
 import {
   expandQuery,
   rerankChunks,
@@ -13,8 +13,8 @@ import {
   treeReasoner,
   getPageRangesForNodes
 } from '@/lib/agents';
-import { createSmartCitations, getCitationStats } from '@/lib/citation-parser';
-import { getCachedDocumentTree } from '@/lib/tree-cache';
+import { createSmartCitations, getCitationStats, getConfidenceTier } from '@/lib/citation-parser';
+import { getAllCachedDocumentTrees } from '@/lib/tree-cache';
 import type {
   Citation,
   MatchedChunk,
@@ -34,15 +34,15 @@ export const CHAT_PIPELINE_CONFIG = {
   ENABLE_RERANKING: true,
   ENABLE_VERIFICATION: true,
   MAX_EXPANDED_QUERIES: 4,
-  RERANK_TOP_K: 7,
-  MIN_CITATION_CONFIDENCE: 30,
+  RERANK_TOP_K: 10,
+  MIN_CITATION_CONFIDENCE: 50,
   MATCH_THRESHOLD: 0.4,
-  INITIAL_MATCH_COUNT: 25,
-  MULTI_QUERY_MATCH_COUNT: 15,
+  INITIAL_MATCH_COUNT: 30,
+  MULTI_QUERY_MATCH_COUNT: 20,
 
   // Tree Reasoning settings
   ENABLE_TREE_REASONING: true,           // Enable structure-aware search
-  TREE_REASONING_MIN_CONFIDENCE: 60,     // Min confidence to use tree results
+  TREE_REASONING_MIN_CONFIDENCE: 45,     // Min confidence to use tree results
   TREE_REASONING_MAX_NODES: 5,           // Max nodes to select
   TREE_REASONING_FALLBACK: true,         // Fallback to standard search on failure
 } as const;
@@ -69,17 +69,16 @@ export interface RAGPipelineResult {
 // -----------------------------------------------------------------------------
 
 export const OFF_TOPIC_RESPONSE =
-  "I'm Emirate Forge, a Dubai Building Code 2021 assistant. I can help you with questions about building regulations, parking requirements, fire safety, structural requirements, and more. Feel free to ask me anything about the Dubai Building Code!";
+  "I'm Emirate Forge, your Dubai construction compliance assistant. I can help with questions about the Dubai Building Code 2021, Code of Safety, Al Sa'fat Green Building System, Universal Design Code, and Sewerage & Stormwater Guidelines. Ask me anything about building regulations in Dubai!";
 
 export const GREETING_RESPONSE =
-  "Hello! I'm Emirate Forge, your Dubai Building Code 2021 assistant. I can help you with:\n\n" +
-  "- **Parking requirements** for different building types\n" +
-  "- **Fire safety** regulations and exit requirements\n" +
-  "- **Building heights** and setback rules\n" +
-  "- **Structural requirements** and load specifications\n" +
-  "- **Accessibility** standards\n" +
-  "- **MEP systems** requirements\n\n" +
-  "Just ask me any question about the Dubai Building Code!";
+  "Hello! I'm Emirate Forge, your Dubai construction compliance assistant. I have access to multiple official documents:\n\n" +
+  "- **Dubai Building Code 2021** — building regulations, parking, heights, structural\n" +
+  "- **Code of Safety** — safety regulations for buildings\n" +
+  "- **Al Sa'fat Green Building System** — energy efficiency, green building ratings\n" +
+  "- **Universal Design Code** — accessibility, people of determination\n" +
+  "- **Sewerage & Stormwater Guidelines** — drainage, plumbing design\n\n" +
+  "I search across all documents to give you comprehensive answers with precise source citations!";
 
 // -----------------------------------------------------------------------------
 // RAG Pipeline (Search  Rerank) with Tree Reasoning
@@ -124,8 +123,9 @@ export async function executeRAGPipeline(query: string): Promise<MatchedChunk[]>
       const treeResult = await executeTreeReasoningPipeline(query);
 
       if (treeResult.chunks.length > 0 && treeResult.confidence >= TREE_REASONING_MIN_CONFIDENCE) {
-        console.log(`🌳 Tree Reasoning: Found ${treeResult.chunks.length} chunks with ${treeResult.confidence}% confidence`);
-        return treeResult.chunks;
+        const diverseChunks = diversifyChunks(treeResult.chunks, CHAT_PIPELINE_CONFIG.RERANK_TOP_K);
+        console.log(`🌳 Tree Reasoning: Found ${treeResult.chunks.length} chunks (${diverseChunks.length} after diversity) with ${treeResult.confidence}% confidence`);
+        return diverseChunks;
       }
 
       // Low confidence - fallback
@@ -142,8 +142,8 @@ export async function executeRAGPipeline(query: string): Promise<MatchedChunk[]>
 }
 
 /**
- * Tree Reasoning Pipeline
- * Uses document structure to narrow down search scope
+ * Tree Reasoning Pipeline — Multi-Document
+ * Searches across all document trees to find relevant sections
  */
 async function executeTreeReasoningPipeline(query: string): Promise<{
   chunks: MatchedChunk[];
@@ -156,57 +156,60 @@ async function executeTreeReasoningPipeline(query: string): Promise<{
     TREE_REASONING_MAX_NODES,
   } = CHAT_PIPELINE_CONFIG;
 
-  // Load document tree (TTL-cached via Supabase)
-  const tree = await getCachedDocumentTree();
+  // Load ALL document trees (TTL-cached via Supabase)
+  const allTrees = await getAllCachedDocumentTrees();
 
-  if (tree.length === 0) {
-    console.warn('No document tree available, cannot use Tree Reasoning');
-    return { chunks: [], confidence: 0, reasoning: 'No tree available' };
+  if (allTrees.size === 0) {
+    console.warn('No document trees available, cannot use Tree Reasoning');
+    return { chunks: [], confidence: 0, reasoning: 'No trees available' };
   }
 
-  // Step 1: Tree Reasoner selects relevant sections (deterministic, no LLM call)
-  const treeResult = treeReasoner(query, tree);
+  // Run tree reasoner on each document and collect best results
+  let bestConfidence = 0;
+  const allPageRanges: { startPage: number; endPage: number; section?: string }[] = [];
+  const allReasonings: string[] = [];
 
-  console.log(`🌳 Tree Reasoner selected ${treeResult.selectedNodes.length} nodes:`,
-    treeResult.selectedNodes.join(', '));
-  console.log(`   Reasoning: ${treeResult.reasoning}`);
-  console.log(`   Confidence: ${treeResult.confidence}%, Scope: ${treeResult.searchScope}`);
+  for (const [docName, tree] of allTrees) {
+    if (tree.length === 0) continue;
 
-  if (treeResult.selectedNodes.length === 0) {
-    return { chunks: [], confidence: 0, reasoning: treeResult.reasoning };
+    const treeResult = treeReasoner(query, tree);
+
+    console.log(`🌳 Tree Reasoner [${docName}]: ${treeResult.selectedNodes.length} nodes, ${treeResult.confidence}% confidence`);
+
+    if (treeResult.selectedNodes.length > 0 && treeResult.confidence >= CHAT_PIPELINE_CONFIG.TREE_REASONING_MIN_CONFIDENCE) {
+      const selectedNodes = treeResult.selectedNodes.slice(0, TREE_REASONING_MAX_NODES);
+      const pageRanges = getPageRangesForNodes(selectedNodes, tree);
+      allPageRanges.push(...pageRanges);
+      allReasonings.push(`[${docName}] ${treeResult.reasoning}`);
+      bestConfidence = Math.max(bestConfidence, treeResult.confidence);
+    }
   }
 
-  // Limit nodes
-  const selectedNodes = treeResult.selectedNodes.slice(0, TREE_REASONING_MAX_NODES);
-
-  // Step 2: Get page ranges for selected nodes
-  const pageRanges = getPageRangesForNodes(selectedNodes, tree);
-
-  if (pageRanges.length === 0) {
-    return { chunks: [], confidence: 0, reasoning: 'No valid page ranges' };
+  if (allPageRanges.length === 0) {
+    return { chunks: [], confidence: 0, reasoning: 'No matching sections found across documents' };
   }
 
-  console.log(`📄 Searching in page ranges:`,
-    pageRanges.map(r => `${r.startPage}-${r.endPage}`).join(', '));
+  console.log(`📄 Searching in ${allPageRanges.length} page ranges across documents`);
 
-  // Step 3: Filtered search within page ranges
+  // Filtered search within page ranges (across ALL documents)
   const filteredResult = await queryDubaiCodeFiltered({
     query,
-    pageRanges,
+    pageRanges: allPageRanges,
     matchCount: 25,
   });
 
   let chunks = filteredResult.chunks;
 
-  // Step 4: Re-ranking
+  // Re-ranking
   if (ENABLE_RERANKING && chunks.length > RERANK_TOP_K) {
     chunks = await rerankChunks(query, chunks, RERANK_TOP_K);
   }
+  chunks = diversifyChunks(chunks, RERANK_TOP_K);
 
   return {
     chunks,
-    confidence: treeResult.confidence,
-    reasoning: treeResult.reasoning,
+    confidence: bestConfidence,
+    reasoning: allReasonings.join('; '),
   };
 }
 
@@ -252,6 +255,9 @@ async function executeStandardRAGPipeline(query: string): Promise<MatchedChunk[]
   if (ENABLE_RERANKING && chunks.length > RERANK_TOP_K) {
     chunks = await rerankChunks(query, chunks, RERANK_TOP_K);
   }
+
+  // Step 5: Diversity filter for cross-document coverage
+  chunks = diversifyChunks(chunks, RERANK_TOP_K);
 
   return chunks;
 }
@@ -304,7 +310,7 @@ export async function generateCitations(
 
   // Log citation statistics
   const stats = getCitationStats(citations);
-  console.log(`📊 Citation stats: ${stats.verified} verified / ${stats.total} total, ${stats.uniquePages} pages, ${stats.uniqueSections} sections, verification confidence: ${verificationConfidence}`);
+  console.log(`📊 Citation stats: ${stats.verified} verified / ${stats.total} total, ${stats.uniquePages} pages, ${stats.uniqueSections} sections, verification confidence: ${verificationConfidence} (${getConfidenceTier(verificationConfidence)})`);
 
   return citations;
 }

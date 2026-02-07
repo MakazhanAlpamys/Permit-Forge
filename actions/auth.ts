@@ -6,7 +6,6 @@
 
 import { createServerClient, createAdminClient } from '@/lib/supabase-server';
 import { 
-  hashPassword, 
   verifyPassword, 
   createSession, 
   destroySession,

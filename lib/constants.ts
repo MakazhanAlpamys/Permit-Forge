@@ -32,6 +32,29 @@ export function getJWTSecret(): Uint8Array {
 export const MAX_MESSAGE_LENGTH = 500;
 
 // ============================================================================
+// RAG & AI Configuration
+// ============================================================================
+
+/** Maximum context length in characters (~3000 tokens) */
+export const MAX_CONTEXT_LENGTH = 12000;
+
+/** Document tree cache TTL in milliseconds (5 minutes) */
+export const TREE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+// ============================================================================
+// Rate Limiting Configuration
+// ============================================================================
+
+/** Rate limit window duration in seconds */
+export const RATE_LIMIT_WINDOW_SECONDS = 60;
+
+/** Maximum requests allowed per rate limit window */
+export const MAX_REQUESTS_PER_WINDOW = 10;
+
+/** Minimum interval between requests in milliseconds */
+export const MIN_REQUEST_INTERVAL_MS = 2000;
+
+// ============================================================================
 // Compliance Status Configuration
 // ============================================================================
 

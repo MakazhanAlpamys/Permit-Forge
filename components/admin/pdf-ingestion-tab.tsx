@@ -1,39 +1,37 @@
 'use client';
 
 // ============================================================================
-// PDF Ingestion Tab Component
+// PDF Ingestion Tab Component — Multi-Document Support
 // ============================================================================
 
 import { useState, useEffect } from 'react';
-import { clearChunks, getIngestionStatus, testRAGQuery } from '@/actions/ingest-pdf';
+import { clearDocumentChunks, getIngestionStatus, testRAGQuery } from '@/actions/ingest-pdf';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { 
-  FileText, 
-  Upload, 
-  Trash2, 
-  CheckCircle, 
-  XCircle, 
+import {
+  Upload,
+  Trash2,
+  CheckCircle,
+  XCircle,
   Loader2,
   Database,
   RefreshCw,
   AlertTriangle,
   Zap,
+  BookOpen,
 } from 'lucide-react';
+
+// Import document registry — pure data, safe for client
+import { getAllDocuments } from '@/lib/document-registry';
+
+const DOCUMENTS = getAllDocuments();
 
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
 
 type IngestionStatus = 'idle' | 'loading' | 'success' | 'error';
-
-interface StatusInfo {
-  ingestion: IngestionStatus;
-  clearing: IngestionStatus;
-  message: string;
-  chunksProcessed: number;
-}
 
 interface ProgressInfo {
   stage: string;
@@ -45,7 +43,8 @@ interface ProgressInfo {
 
 interface DiagnosticInfo {
   dbConnected: boolean;
-  chunkCount: number;
+  totalChunkCount: number;
+  documentStats: { document_name: string; chunk_count: number; min_page: number; max_page: number }[];
   rpcWorking: boolean;
   loading: boolean;
   error?: string;
@@ -56,33 +55,30 @@ interface DiagnosticInfo {
 // -----------------------------------------------------------------------------
 
 export function PdfIngestionTab() {
-  const [status, setStatus] = useState<StatusInfo>({
-    ingestion: 'idle',
-    clearing: 'idle',
-    message: '',
-    chunksProcessed: 0,
-  });
-  
+  const [ingestionStatus, setIngestionStatus] = useState<Record<string, IngestionStatus>>({});
+  const [ingestionMessages, setIngestionMessages] = useState<Record<string, string>>({});
+  const [activeProgress, setActiveProgress] = useState<Record<string, ProgressInfo>>({});
+
   const [diagnostic, setDiagnostic] = useState<DiagnosticInfo>({
     dbConnected: false,
-    chunkCount: 0,
+    totalChunkCount: 0,
+    documentStats: [],
     rpcWorking: false,
     loading: true,
   });
 
-  const [progress, setProgress] = useState<ProgressInfo | null>(null);
-
   // Run diagnostics
   const runDiagnostics = async () => {
     setDiagnostic(prev => ({ ...prev, loading: true }));
-    
+
     try {
       const dbStatus = await getIngestionStatus();
       const rpcStatus = await testRAGQuery();
-      
+
       setDiagnostic({
         dbConnected: dbStatus.dbConnected,
-        chunkCount: dbStatus.chunkCount,
+        totalChunkCount: dbStatus.chunkCount,
+        documentStats: dbStatus.documentStats || [],
         rpcWorking: rpcStatus.success,
         loading: false,
         error: dbStatus.error || rpcStatus.error,
@@ -90,7 +86,8 @@ export function PdfIngestionTab() {
     } catch (error) {
       setDiagnostic({
         dbConnected: false,
-        chunkCount: 0,
+        totalChunkCount: 0,
+        documentStats: [],
         rpcWorking: false,
         loading: false,
         error: error instanceof Error ? error.message : 'Diagnostic failed',
@@ -98,13 +95,16 @@ export function PdfIngestionTab() {
     }
   };
 
-  const handleIngestPDF = async () => {
-    setStatus(prev => ({ ...prev, ingestion: 'loading', message: 'Starting PDF ingestion...' }));
-    setProgress({ stage: 'starting', progress: 0, total: 100, message: 'Connecting...' });
-    
+  const handleIngestDocument = async (documentId: string, pdfPath: string) => {
+    setIngestionStatus(prev => ({ ...prev, [documentId]: 'loading' }));
+    setIngestionMessages(prev => ({ ...prev, [documentId]: 'Starting ingestion...' }));
+    setActiveProgress(prev => ({ ...prev, [documentId]: { stage: 'starting', progress: 0, total: 100, message: 'Connecting...' } }));
+
     try {
       const response = await fetch('/api/ingest', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentId, pdfPath }),
       });
 
       if (!response.ok) {
@@ -120,7 +120,6 @@ export function PdfIngestionTab() {
 
       while (true) {
         const { done, value } = await reader.read();
-        
         if (done) break;
 
         const text = decoder.decode(value);
@@ -130,96 +129,88 @@ export function PdfIngestionTab() {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
-              
-              setProgress({
-                stage: data.stage,
-                progress: data.progress,
-                total: data.total,
-                message: data.message,
-                chunksProcessed: data.chunksProcessed,
-              });
+
+              setActiveProgress(prev => ({
+                ...prev,
+                [documentId]: {
+                  stage: data.stage,
+                  progress: data.progress,
+                  total: data.total,
+                  message: data.message,
+                  chunksProcessed: data.chunksProcessed,
+                },
+              }));
 
               if (data.done) {
                 if (data.error) {
-                  setStatus({
-                    ingestion: 'error',
-                    clearing: 'idle',
-                    message: data.error,
-                    chunksProcessed: data.chunksProcessed || 0,
-                  });
+                  setIngestionStatus(prev => ({ ...prev, [documentId]: 'error' }));
+                  setIngestionMessages(prev => ({ ...prev, [documentId]: data.error }));
                 } else {
-                  setStatus({
-                    ingestion: 'success',
-                    clearing: 'idle',
-                    message: data.message,
-                    chunksProcessed: data.chunksProcessed || 0,
-                  });
+                  setIngestionStatus(prev => ({ ...prev, [documentId]: 'success' }));
+                  setIngestionMessages(prev => ({ ...prev, [documentId]: `${data.chunksProcessed || 0} chunks ingested` }));
                 }
-                setProgress(null);
+                setActiveProgress(prev => {
+                  const next = { ...prev };
+                  delete next[documentId];
+                  return next;
+                });
               }
             } catch {
-              // Ignore parse errors for incomplete chunks
+              // Ignore parse errors
             }
           }
         }
       }
     } catch (error) {
-      setStatus({
-        ingestion: 'error',
-        clearing: 'idle',
-        message: error instanceof Error ? error.message : 'Failed to ingest PDF',
-        chunksProcessed: 0,
+      setIngestionStatus(prev => ({ ...prev, [documentId]: 'error' }));
+      setIngestionMessages(prev => ({ ...prev, [documentId]: error instanceof Error ? error.message : 'Failed' }));
+      setActiveProgress(prev => {
+        const next = { ...prev };
+        delete next[documentId];
+        return next;
       });
-      setProgress(null);
     }
   };
 
-  const handleClearDatabase = async () => {
-    if (!confirm('Are you sure you want to clear all chunks from the database? This action cannot be undone.')) {
-      return;
-    }
+  const handleClearDocument = async (documentId: string) => {
+    const doc = DOCUMENTS.find(d => d.id === documentId);
+    if (!confirm(`Clear all chunks for "${doc?.displayName}"? This cannot be undone.`)) return;
 
-    setStatus(prev => ({ ...prev, clearing: 'loading', message: 'Clearing database...' }));
-    
+    setIngestionStatus(prev => ({ ...prev, [documentId]: 'loading' }));
+
     try {
-      const result = await clearChunks();
-      
+      const result = await clearDocumentChunks(documentId);
       if (result.success) {
-        setStatus({
-          ingestion: 'idle',
-          clearing: 'success',
-          message: 'Database cleared successfully',
-          chunksProcessed: 0,
-        });
+        setIngestionStatus(prev => ({ ...prev, [documentId]: 'idle' }));
+        setIngestionMessages(prev => ({ ...prev, [documentId]: `Cleared ${result.deletedCount || 0} chunks` }));
+        runDiagnostics();
       } else {
-        setStatus(prev => ({
-          ...prev,
-          clearing: 'error',
-          message: result.error || 'Failed to clear database',
-        }));
+        setIngestionStatus(prev => ({ ...prev, [documentId]: 'error' }));
+        setIngestionMessages(prev => ({ ...prev, [documentId]: result.error || 'Failed to clear' }));
       }
     } catch (error) {
-      setStatus(prev => ({
-        ...prev,
-        clearing: 'error',
-        message: error instanceof Error ? error.message : 'Failed to clear database',
-      }));
+      setIngestionStatus(prev => ({ ...prev, [documentId]: 'error' }));
+      setIngestionMessages(prev => ({ ...prev, [documentId]: error instanceof Error ? error.message : 'Failed' }));
     }
   };
 
-  // Initial load
   useEffect(() => {
     runDiagnostics();
   }, []);
 
+  const getDocChunkCount = (docId: string) => {
+    const stat = diagnostic.documentStats.find(s => s.document_name === docId);
+    return stat?.chunk_count || 0;
+  };
+
   return (
     <>
       <div className="mb-6">
-        <h2 className="text-2xl font-bold">PDF Ingestion Pipeline</h2>
-        <p className="text-muted-foreground">Manage Dubai Building Code document ingestion for RAG queries</p>
+        <h2 className="text-2xl font-bold">Multi-Document Ingestion Pipeline</h2>
+        <p className="text-muted-foreground">Manage document ingestion for RAG queries across multiple Dubai building codes</p>
       </div>
 
-      <div className="grid gap-6 max-w-2xl">
+      <div className="grid gap-6 max-w-3xl">
         {/* System Diagnostics Card */}
         <Card className={diagnostic.error ? 'border-yellow-500/50' : 'border-green-500/50'}>
           <CardHeader>
@@ -228,12 +219,7 @@ export function PdfIngestionTab() {
                 <Zap className="h-5 w-5 text-yellow-500" />
                 System Diagnostics
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={runDiagnostics}
-                disabled={diagnostic.loading}
-              >
+              <Button variant="ghost" size="sm" onClick={runDiagnostics} disabled={diagnostic.loading}>
                 <RefreshCw className={`h-4 w-4 ${diagnostic.loading ? 'animate-spin' : ''}`} />
               </Button>
             </CardTitle>
@@ -258,16 +244,16 @@ export function PdfIngestionTab() {
                     </Badge>
                   )}
                 </div>
-                
+
                 <div className="flex items-center justify-between">
-                  <span className="text-sm">Chunks in Database</span>
-                  <Badge variant={diagnostic.chunkCount > 0 ? 'default' : 'secondary'}>
-                    {diagnostic.chunkCount} chunks
+                  <span className="text-sm">Total Chunks</span>
+                  <Badge variant={diagnostic.totalChunkCount > 0 ? 'default' : 'secondary'}>
+                    {diagnostic.totalChunkCount} chunks
                   </Badge>
                 </div>
-                
+
                 <div className="flex items-center justify-between">
-                  <span className="text-sm">match_dubai_code RPC</span>
+                  <span className="text-sm">Hybrid Search RPC</span>
                   {diagnostic.rpcWorking ? (
                     <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
                       <CheckCircle className="h-3 w-3 mr-1" /> Working
@@ -278,7 +264,28 @@ export function PdfIngestionTab() {
                     </Badge>
                   )}
                 </div>
-                
+
+                {/* Per-document stats */}
+                {diagnostic.documentStats.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-border space-y-2">
+                    <span className="text-xs font-medium text-muted-foreground uppercase">Documents Ingested</span>
+                    {diagnostic.documentStats.map(stat => {
+                      const doc = DOCUMENTS.find(d => d.id === stat.document_name);
+                      return (
+                        <div key={stat.document_name} className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${doc?.badgeColor || ''}`}>
+                              {doc?.shortName || stat.document_name}
+                            </Badge>
+                            <span className="text-muted-foreground truncate max-w-[200px]">{doc?.displayName || stat.document_name}</span>
+                          </div>
+                          <span className="text-xs">{stat.chunk_count} chunks (pp. {stat.min_page}-{stat.max_page})</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {diagnostic.error && (
                   <div className="mt-3 p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
                     <div className="flex items-start gap-2">
@@ -295,136 +302,105 @@ export function PdfIngestionTab() {
           </CardContent>
         </Card>
 
-        {/* Ingestion Card */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
-              Ingest Dubai Building Code
-            </CardTitle>
-            <CardDescription>
-              Read the PDF file, split into chunks, generate embeddings, and store in Supabase.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Database className="h-4 w-4" />
-              <span>Chunk size: 800 chars | Overlap: 150 chars</span>
-            </div>
-            
-            {/* Progress Bar */}
-            {progress && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">{progress.message}</span>
-                  <span className="font-medium">{progress.progress}%</span>
-                </div>
-                <div className="h-3 w-full bg-muted rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-primary transition-all duration-300 ease-out"
-                    style={{ width: `${progress.progress}%` }}
-                  />
-                </div>
-                {progress.chunksProcessed !== undefined && progress.chunksProcessed > 0 && (
-                  <p className="text-xs text-muted-foreground text-center">
-                    {progress.chunksProcessed} chunks processed
-                  </p>
-                )}
-              </div>
-            )}
-            
-            <Button 
-              onClick={async () => {
-                await handleIngestPDF();
-                runDiagnostics();
-              }}
-              disabled={status.ingestion === 'loading' || !diagnostic.dbConnected}
-              className="w-full"
-              size="lg"
-            >
-              {status.ingestion === 'loading' ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {progress ? `${progress.progress}% - ${progress.stage}` : 'Processing...'}
-                </>
-              ) : (
-                <>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Ingest PDF
-                </>
-              )}
-            </Button>
-          </CardContent>
-        </Card>
+        {/* Document Ingestion Cards */}
+        {DOCUMENTS.map(doc => {
+          const chunkCount = getDocChunkCount(doc.id);
+          const status = ingestionStatus[doc.id] || 'idle';
+          const message = ingestionMessages[doc.id] || '';
+          const progress = activeProgress[doc.id];
+          const isIngested = chunkCount > 0;
 
-        {/* Clear Database Card */}
-        <Card className="border-destructive/50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-destructive">
-              <Trash2 className="h-5 w-5" />
-              Clear Database
-            </CardTitle>
-            <CardDescription>
-              Remove all chunks from the database. Use this before re-ingesting the PDF.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button 
-              onClick={async () => {
-                await handleClearDatabase();
-                runDiagnostics();
-              }}
-              disabled={status.clearing === 'loading'}
-              variant="destructive"
-              className="w-full"
-            >
-              {status.clearing === 'loading' ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Clearing...
-                </>
-              ) : (
-                <>
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Clear All Chunks
-                </>
-              )}
-            </Button>
-          </CardContent>
-        </Card>
+          return (
+            <Card key={doc.id} className={isIngested ? 'border-green-500/30' : ''}>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <BookOpen className="h-4 w-4 text-primary" />
+                  <span className="flex-1">{doc.displayName}</span>
+                  <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-5 ${doc.badgeColor}`}>
+                    {doc.shortName}
+                  </Badge>
+                  {isIngested && (
+                    <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-[10px]">
+                      {chunkCount} chunks
+                    </Badge>
+                  )}
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  <Database className="h-3 w-3 inline mr-1" />
+                  {doc.fileName}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Progress Bar */}
+                {progress && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground text-xs">{progress.message}</span>
+                      <span className="font-medium text-xs">{progress.progress}%</span>
+                    </div>
+                    <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all duration-300 ease-out"
+                        style={{ width: `${progress.progress}%` }}
+                      />
+                    </div>
+                    {progress.chunksProcessed !== undefined && progress.chunksProcessed > 0 && (
+                      <p className="text-[10px] text-muted-foreground text-center">
+                        {progress.chunksProcessed} chunks processed
+                      </p>
+                    )}
+                  </div>
+                )}
 
-        {/* Status Card */}
-        {status.message && (
-          <Card className={
-            status.ingestion === 'success' || status.clearing === 'success' 
-              ? 'border-green-500/50 bg-green-500/5' 
-              : status.ingestion === 'error' || status.clearing === 'error'
-              ? 'border-destructive/50 bg-destructive/5'
-              : 'border-primary/50 bg-primary/5'
-          }>
-            <CardContent className="pt-6">
-              <div className="flex items-start gap-3">
-                {(status.ingestion === 'success' || status.clearing === 'success') && (
-                  <CheckCircle className="h-5 w-5 text-green-500 mt-0.5" />
+                {/* Status message */}
+                {message && !progress && (
+                  <div className={`text-xs p-2 rounded ${status === 'success' ? 'bg-green-500/10 text-green-400' : status === 'error' ? 'bg-red-500/10 text-red-400' : 'text-muted-foreground'}`}>
+                    {status === 'success' && <CheckCircle className="h-3 w-3 inline mr-1" />}
+                    {status === 'error' && <XCircle className="h-3 w-3 inline mr-1" />}
+                    {message}
+                  </div>
                 )}
-                {(status.ingestion === 'error' || status.clearing === 'error') && (
-                  <XCircle className="h-5 w-5 text-destructive mt-0.5" />
-                )}
-                {(status.ingestion === 'loading' || status.clearing === 'loading') && (
-                  <Loader2 className="h-5 w-5 text-primary animate-spin mt-0.5" />
-                )}
-                <div>
-                  <p className="font-medium">{status.message}</p>
-                  {status.chunksProcessed > 0 && (
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Processed {status.chunksProcessed} chunks with embeddings
-                    </p>
+
+                {/* Action buttons */}
+                <div className="flex gap-2">
+                  <Button
+                    onClick={async () => {
+                      await handleIngestDocument(doc.id, `public/${doc.fileName}`);
+                      runDiagnostics();
+                    }}
+                    disabled={status === 'loading' || !diagnostic.dbConnected}
+                    size="sm"
+                    className="flex-1"
+                  >
+                    {status === 'loading' ? (
+                      <>
+                        <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                        {progress ? `${progress.progress}%` : 'Processing...'}
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="mr-1.5 h-3 w-3" />
+                        {isIngested ? 'Re-ingest' : 'Ingest'}
+                      </>
+                    )}
+                  </Button>
+
+                  {isIngested && (
+                    <Button
+                      onClick={() => handleClearDocument(doc.id)}
+                      disabled={status === 'loading'}
+                      variant="destructive"
+                      size="sm"
+                    >
+                      <Trash2 className="mr-1.5 h-3 w-3" />
+                      Clear
+                    </Button>
                   )}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </>
   );

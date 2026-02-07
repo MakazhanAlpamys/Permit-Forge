@@ -17,9 +17,6 @@ import type {
 import path from 'path';
 import fs from 'fs';
 
-// Document name constant
-const DOCUMENT_NAME = 'Dubai Building Code 2021';
-
 // -----------------------------------------------------------------------------
 // Configuration
 // -----------------------------------------------------------------------------
@@ -28,7 +25,6 @@ export const PDF_INGESTION_CONFIG = {
   CHUNK_SIZE: 800,         // Characters per chunk
   CHUNK_OVERLAP: 150,      // Overlap between chunks
   BATCH_SIZE: 5,           // Chunks per database batch (reduced to avoid rate limits)
-  PDF_PATH: 'public/dubai-code.pdf',
   MIN_CHUNK_LENGTH: 50,    // Minimum chunk length to include
   BATCH_DELAY_MS: 1000,    // Delay between batches (increased for rate limiting)
 } as const;
@@ -193,14 +189,24 @@ export function buildChunkMetadata(chunk: ChunkWithPageRange): ChunkMetadata {
 // Main Ingestion Pipeline
 // -----------------------------------------------------------------------------
 
+export interface IngestionOptions {
+  /** Document ID from the document registry */
+  documentId: string;
+  /** PDF file path relative to project root (e.g., 'public/dubai-code.pdf') */
+  pdfPath: string;
+  /** Optional callback for progress updates (for streaming) */
+  onProgress?: ProgressCallback;
+}
+
 /**
  * Main PDF ingestion pipeline
- * @param onProgress - Optional callback for progress updates (for streaming)
+ * @param options - Ingestion options including documentId and pdfPath
  */
 export async function runIngestionPipeline(
-  onProgress?: ProgressCallback
+  options: IngestionOptions
 ): Promise<IngestionResult> {
-  const { PDF_PATH, BATCH_SIZE, BATCH_DELAY_MS } = PDF_INGESTION_CONFIG;
+  const { documentId, pdfPath: relativePdfPath, onProgress } = options;
+  const { BATCH_SIZE, BATCH_DELAY_MS } = PDF_INGESTION_CONFIG;
   let parser: PDFParser | null = null;
 
   const sendProgress = async (progress: IngestionProgress) => {
@@ -210,7 +216,7 @@ export async function runIngestionPipeline(
   };
 
   try {
-    const pdfPath = path.join(process.cwd(), PDF_PATH);
+    const pdfPath = path.join(process.cwd(), relativePdfPath);
 
     if (!fs.existsSync(pdfPath)) {
       const error = `PDF file not found at ${pdfPath}`;
@@ -230,7 +236,7 @@ export async function runIngestionPipeline(
       stage: 'parsing',
       progress: 5,
       total: 100,
-      message: 'Loading PDF with PDF.js...',
+      message: `Loading PDF (${documentId})...`,
     });
 
     parser = await createPDFParser(pdfPath);
@@ -256,7 +262,7 @@ export async function runIngestionPipeline(
     });
 
     const treeNodes = convertTOCToTreeNodes(structure.flatTOC, parser.totalPages);
-    await saveDocumentTree(supabase, DOCUMENT_NAME, parser.totalPages, treeNodes);
+    await saveDocumentTree(supabase, documentId, parser.totalPages, treeNodes);
 
     // Stage 3: Extract text
     await sendProgress({
@@ -310,8 +316,9 @@ export async function runIngestionPipeline(
       // Prepare records
       const records = batch.map((chunk, idx) => ({
         content: chunk.content,
-        metadata: buildChunkMetadata(chunk),
+        metadata: { ...buildChunkMetadata(chunk), documentName: documentId },
         embedding: embeddings[idx],
+        document_name: documentId,
       }));
 
       // Insert to database
@@ -549,7 +556,7 @@ async function saveDocumentTreeDirect(
  * Load document tree from database
  */
 export async function loadDocumentTree(
-  documentName: string = DOCUMENT_NAME
+  documentName: string
 ): Promise<TreeNode[]> {
   const supabase = createAdminClient();
 

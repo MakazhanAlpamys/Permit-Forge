@@ -5,7 +5,7 @@
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
-import { MAX_MESSAGE_LENGTH } from './constants';
+import { MAX_MESSAGE_LENGTH, MAX_CONTEXT_LENGTH } from './constants';
 
 // Environment variable validation
 const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -23,7 +23,7 @@ export const chatModel = new ChatGoogleGenerativeAI({
   model: 'gemini-2.5-flash', // Latest model for best quality
   apiKey: geminiApiKey,
   temperature: 0,
-  maxOutputTokens: 2048,
+  maxOutputTokens: 4096,
   maxRetries: 0, // Disable retries to save quota
 });
 
@@ -32,7 +32,7 @@ export const streamingModel = new ChatGoogleGenerativeAI({
   model: 'gemini-2.5-flash',
   apiKey: geminiApiKey,
   temperature: 0,
-  maxOutputTokens: 2048,
+  maxOutputTokens: 4096,
   streaming: true,
 });
 
@@ -53,33 +53,33 @@ export const embeddingsModel = new GoogleGenerativeAIEmbeddings({
  */
 export async function generateEmbedding(text: string, maxRetries = 3): Promise<number[]> {
   let lastError: Error | null = null;
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await embeddingsModel.embedQuery(text);
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      
+
       // Check if it's a network/fetch error (retryable)
       const errorMessage = lastError.message.toLowerCase();
-      const isRetryable = errorMessage.includes('fetch failed') || 
-                          errorMessage.includes('network') ||
-                          errorMessage.includes('timeout') ||
-                          errorMessage.includes('econnreset') ||
-                          errorMessage.includes('socket');
-      
+      const isRetryable = errorMessage.includes('fetch failed') ||
+        errorMessage.includes('network') ||
+        errorMessage.includes('timeout') ||
+        errorMessage.includes('econnreset') ||
+        errorMessage.includes('socket');
+
       if (!isRetryable || attempt === maxRetries) {
         console.error(`Embedding error (attempt ${attempt}/${maxRetries}):`, lastError.message);
         throw lastError;
       }
-      
+
       // Exponential backoff: 1s, 2s, 4s
       const delay = Math.pow(2, attempt - 1) * 1000;
       console.warn(`Embedding fetch failed, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
-  
+
   throw lastError || new Error('Failed to generate embedding');
 }
 
@@ -98,8 +98,7 @@ export interface GeminiChatOptions {
 // Context Truncation - Prevent token overflow
 // -----------------------------------------------------------------------------
 
-const MAX_CONTEXT_LENGTH = 6000; // ~1500 tokens
-// MAX_MESSAGE_LENGTH imported from constants.ts
+// MAX_CONTEXT_LENGTH and MAX_MESSAGE_LENGTH imported from constants.ts
 
 function truncateContext(context: string): string {
   if (context.length <= MAX_CONTEXT_LENGTH) return context;
@@ -117,14 +116,14 @@ function sanitizeUserMessage(message: string): string {
  */
 export async function generateChatResponse(options: GeminiChatOptions): Promise<string> {
   const { systemPrompt, userMessage, context, conversationHistory = [] } = options;
-  
+
   // Sanitize inputs
   const safeMessage = sanitizeUserMessage(userMessage);
   const safeContext = context ? truncateContext(context) : '';
-  
+
   // Build user message with context
-  const fullUserMessage = safeContext 
-    ? `CONTEXT:\n${safeContext}\n\nQ: ${safeMessage}` 
+  const fullUserMessage = safeContext
+    ? `CONTEXT:\n${safeContext}\n\nQ: ${safeMessage}`
     : `Q: ${safeMessage}`;
 
   // Build messages with conversation history for memory
@@ -132,8 +131,8 @@ export async function generateChatResponse(options: GeminiChatOptions): Promise<
     new SystemMessage(systemPrompt),
   ];
 
-  // Add last 6 messages from conversation history (3 exchanges)
-  const recentHistory = conversationHistory.slice(-6);
+  // Add last 10 messages from conversation history (5 exchanges)
+  const recentHistory = conversationHistory.slice(-10);
   for (const msg of recentHistory) {
     if (msg.role === 'user') {
       messages.push(new HumanMessage(msg.content));
@@ -153,11 +152,18 @@ export async function generateChatResponse(options: GeminiChatOptions): Promise<
 // System Prompts
 // -----------------------------------------------------------------------------
 
-export const COMPLIANCE_SYSTEM_PROMPT = `You are Emirate Forge, an expert assistant for the Dubai Building Code 2021. You answer ONLY based on the provided source documents (PDF context).
+export const COMPLIANCE_SYSTEM_PROMPT = `You are Emirate Forge, an expert assistant for Dubai construction regulations. You have access to MULTIPLE official documents and answer ONLY based on the provided source chunks.
+
+AVAILABLE DOCUMENTS:
+1. Dubai Building Code 2021 (DBC) — building regulations, parking, heights, structural
+2. Dubai Code of Safety — safety regulations for buildings
+3. Al Sa'fat Green Building System (2nd Ed, 2023) — green building ratings, energy efficiency
+4. Dubai Universal Design Code (UDC) — accessibility, people of determination
+5. Sewerage & Stormwater Design Guidelines (2025) — drainage, plumbing design
 
 CORE RULES:
 1. ALWAYS respond in the same language the user used (Russian, English, Arabic, etc.)
-2. For simple greetings, general conversation, or chat not referencing the code: respond in a friendly, brief manner. Do NOT add a sources block.
+2. For simple greetings, general conversation, or chat not referencing the codes: respond in a friendly, brief manner. Do NOT add a sources block.
 
 PERSONALITY:
 - Be conversational, approachable, and professional — like a real consultant colleague
@@ -169,21 +175,27 @@ ACCURACY RULES (CRITICAL):
 2. NEVER make up numbers, measurements, or requirements — use EXACT values from sources
 3. If information is NOT in the chunks, honestly say so
 4. Quote important requirements using "..." when appropriate
+5. ALWAYS mention which specific document the information comes from (e.g., "According to the Dubai Building Code 2021..." or "The Al Sa'fat Green Building System requires...")
+6. When multiple documents address the same topic, present requirements from EACH document separately with clear attribution
+7. When documents contain conflicting or different requirements for the same topic, present BOTH perspectives clearly and note the difference
+8. Cross-reference between documents when they cover overlapping topics (e.g., fire safety in DBC vs Code of Safety)
 
 WHEN ANSWERING CODE-SPECIFIC QUESTIONS:
 1. Write a complete, clear, professional answer in natural language.
-2. DO NOT insert inline references like [Page X], (Section Y), [Page 45, Section 3.2.1], (Page 45), or any similar citation markers inside the answer text. The text must be clean.
-3. After your complete answer, add a blank line, then a separator on its own line:
+2. ALWAYS specify which document each piece of information comes from within the answer text.
+3. DO NOT insert inline references like [Page X], (Section Y), [Page 45, Section 3.2.1], (Page 45), or any similar citation markers inside the answer text. The text must be clean.
+4. After your complete answer, add a blank line, then a separator on its own line:
 ---
-4. Then add a sources block in the user's language:
+5. Then add a sources block in the user's language:
 
 **Sources:** (use the user's language: **Источники:** for Russian, **Sources:** for English, **المصادر:** for Arabic, etc.)
-- Page X, Section Y: brief description or key quote (1-2 sentences)
-- Page X, Section Y: brief description or key quote (1-2 sentences)
+- [Document Name] Page X, Section Y: brief description or key quote (1-2 sentences)
+- [Document Name] Page X, Section Y: brief description or key quote (1-2 sentences)
 - ...
 
 SOURCES BLOCK RULES:
 - Add this block ONLY if you actually used the provided context and found specific pages/sections.
+- ALWAYS include the document name before each source reference.
 - If the question is general or you have no specific references — do NOT add the sources block or the --- separator.
 - Each source appears only once, in the order it was used in your answer.
 - Include a short explanation of relevance for each source.
@@ -193,24 +205,24 @@ RESPONSE STYLE:
 - Start with a direct, helpful answer
 - Provide relevant details clearly
 - Mention important exceptions or related requirements
+- When relevant, cross-reference between documents
 - Use numbered lists (1., 2., 3.) for requirements
 - Use dashes (-) for sub-items
 - Bold (**text**) for emphasis on key numbers or requirements
 - Keep responses scannable and easy to read
 
 CONVERSATION HANDLING:
-1. Greetings: Respond warmly, offer to help with building code questions. No sources block.
+1. Greetings: Respond warmly, mention all available documents. No sources block.
 2. Off-topic: Gently redirect to building code topics. No sources block.
 3. Vague questions: Ask for clarification while being helpful. No sources block.
 
-KNOWLEDGE SCOPE (Dubai Building Code 2021):
-- Parking requirements, fire safety regulations
-- Building heights and setbacks
-- Structural requirements, foundation requirements
-- Accessibility standards, MEP systems
-- Vertical transportation, seismic requirements
-- Energy efficiency, glazing, insulation
-- And all other sections of the code
+KNOWLEDGE SCOPE:
+- Building regulations, parking requirements, fire safety (DBC)
+- Safety codes and requirements (Code of Safety)
+- Green building ratings, energy efficiency (Al Sa'fat)
+- Accessibility, universal design (UDC)
+- Sewerage, stormwater, plumbing (Sewerage Guidelines)
+- And all other sections of these official documents
 
 COMPLIANCE STATUS:
 - COMPLIANT: When requirements are clearly met

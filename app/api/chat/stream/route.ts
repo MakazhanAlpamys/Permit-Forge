@@ -3,7 +3,7 @@ import { createServerClient, checkRateLimit } from '@/lib/supabase-server';
 import { getQuickSession } from '@/lib/auth';
 import { chatMessageSchema } from '@/lib/validations';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
-import { COMPLIANCE_SYSTEM_PROMPT, streamingModel } from '@/lib/gemini';
+import { COMPLIANCE_SYSTEM_PROMPT, streamingModel, MAX_CONTEXT_LENGTH } from '@/lib/gemini';
 import {
   classifyUserTopic,
   executeRAGPipeline,
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
         .select('role, content')
         .eq('session_id', sessionId)
         .order('created_at', { ascending: true })
-        .limit(6);
+        .limit(10);
       
       if (messages) {
         conversationHistory = messages.map(m => ({
@@ -111,13 +111,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Build messages
-    const fullUserMessage = context 
-      ? `CONTEXT:\n${context.slice(0, 6000)}\n\nQ: ${trimmedMessage}` 
+    const fullUserMessage = context
+      ? `CONTEXT:\n${context.slice(0, MAX_CONTEXT_LENGTH)}\n\nQ: ${trimmedMessage}`
       : `Q: ${trimmedMessage}`;
 
     const langchainMessages = [
       new SystemMessage(COMPLIANCE_SYSTEM_PROMPT),
-      ...conversationHistory.slice(-6).map(msg => 
+      ...conversationHistory.slice(-10).map(msg => 
         msg.role === 'user' 
           ? new HumanMessage(msg.content) 
           : new AIMessage(msg.content)
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
           // Send smart citations at the end using centralized functions
           if (chunks.length > 0) {
             // Verification to get confidence score
-            let verificationConfidence = 50;
+            let verificationConfidence = 30;
             try {
               const { verificationResult } = await verifyAIResponse(fullContent, chunks, trimmedMessage);
               verificationConfidence = verificationResult.confidence;

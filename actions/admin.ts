@@ -13,12 +13,6 @@ import { requireAdmin } from '@/lib/security';
 // RPC Response Types (matching Supabase functions)
 // -----------------------------------------------------------------------------
 
-interface WeeklyActivityRow {
-  day: string;
-  messages: number;
-  users: number;
-}
-
 interface AuditLogRow {
   id: number;
   user_id: string | null;
@@ -42,99 +36,6 @@ interface AdminUserRow {
   last_login: string | null;
   session_count: number;
   message_count: number;
-}
-
-// -----------------------------------------------------------------------------
-// Dashboard Statistics
-// -----------------------------------------------------------------------------
-
-export interface DashboardStats {
-  totalUsers: number;
-  activeUsersToday: number;
-  totalSessions: number;
-  totalMessages: number;
-  messagesToday: number;
-  blockedUsers: number;
-}
-
-export async function getDashboardStats(): Promise<{ data: DashboardStats | null; error?: string }> {
-  try {
-    const authCheck = await requireAdmin();
-    if (!authCheck.success) {
-      return { data: null, error: authCheck.error };
-    }
-    
-    const supabase = createAdminClient();
-    const { data, error } = await supabase.rpc('get_admin_stats');
-    
-    if (error) {
-      console.error('getDashboardStats RPC error:', error);
-      throw error;
-    }
-    
-    const stats = data?.[0];
-    if (!stats) {
-      return { data: null, error: 'No stats available' };
-    }
-    
-    return {
-      data: {
-        totalUsers: Number(stats.total_users) || 0,
-        activeUsersToday: Number(stats.active_users_today) || 0,
-        totalSessions: Number(stats.total_sessions) || 0,
-        totalMessages: Number(stats.total_messages) || 0,
-        messagesToday: Number(stats.messages_today) || 0,
-        blockedUsers: Number(stats.blocked_users) || 0,
-      }
-    };
-  } catch (error) {
-    console.error('getDashboardStats error:', error);
-    return { 
-      data: null, 
-      error: error instanceof Error ? error.message : 'Failed to fetch stats' 
-    };
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Weekly Activity Chart
-// -----------------------------------------------------------------------------
-
-export interface WeeklyActivity {
-  day: string;
-  messages: number;
-  users: number;
-}
-
-export async function getWeeklyActivity(): Promise<{ data: WeeklyActivity[]; error?: string }> {
-  try {
-    const authCheck = await requireAdmin();
-    if (!authCheck.success) {
-      return { data: [], error: authCheck.error };
-    }
-    
-    const supabase = createAdminClient();
-    const { data, error } = await supabase.rpc('get_weekly_activity');
-    
-    if (error) {
-      console.error('getWeeklyActivity RPC error:', error);
-      throw error;
-    }
-    
-    return {
-      data: (data || []).map((item: WeeklyActivityRow) => ({
-        day: item.day,
-        messages: Number(item.messages) || 0,
-        users: Number(item.users) || 0,
-      }))
-    };
-  } catch (error) {
-    console.error('getWeeklyActivity error:', error);
-    return { 
-      data: [], 
-      error: error instanceof Error ? error.message : 'Failed to fetch activity' 
-    };
-  }
 }
 
 // -----------------------------------------------------------------------------

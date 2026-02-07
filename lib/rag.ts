@@ -4,6 +4,7 @@
 
 import { createServerClient } from '@/lib/supabase-server';
 import { embeddingsModel } from '@/lib/gemini';
+import { getDocumentById } from '@/lib/document-registry';
 import type { MatchedChunk, RAGQuery, RAGResult, ChunkMetadata, HybridSearchResult } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -11,7 +12,7 @@ import type { MatchedChunk, RAGQuery, RAGResult, ChunkMetadata, HybridSearchResu
 // -----------------------------------------------------------------------------
 
 const DEFAULT_MATCH_COUNT = 25;        // Get more chunks for reranking
-const FINAL_CHUNK_COUNT = 7;           // Return top 7 after processing
+const FINAL_CHUNK_COUNT = 10;          // Return top 10 after processing
 
 // -----------------------------------------------------------------------------
 // Hybrid Search Function (Vector + Keyword with RRF)
@@ -30,7 +31,7 @@ export async function hybridSearch(
   // Generate embedding for the query
   const queryEmbedding = await embeddingsModel.embedQuery(query);
 
-  // Call hybrid search RPC
+  // Call hybrid search RPC (search across ALL documents)
   const { data, error } = await supabase.rpc('match_dubai_code_hybrid', {
     query_text: query,
     query_embedding: queryEmbedding,
@@ -38,6 +39,7 @@ export async function hybridSearch(
     keyword_weight: 0.3,
     vector_weight: 0.7,
     rrf_k: 60,
+    filter_document: null,
   });
 
   if (error) {
@@ -226,7 +228,7 @@ export async function multiQuerySearch(
 // Context Building (Clean Format for LLM)
 // -----------------------------------------------------------------------------
 
-const MAX_CHUNK_LENGTH = 1000;
+const MAX_CHUNK_LENGTH = 1500;
 
 /**
  * Build context string for LLM consumption
@@ -237,22 +239,82 @@ export function buildContext(chunks: MatchedChunk[]): string {
     return '';
   }
 
-  // Build structured context with clear source attribution
+  // Build structured context with clear source attribution including document name
   const contextParts = chunks.map((chunk, index) => {
     const page = chunk.metadata.page || 'N/A';
     const section = chunk.metadata.section || '';
     const chapter = chunk.metadata.chapter || '';
+    const docId = chunk.metadata.documentName;
+    const docInfo = docId ? getDocumentById(docId) : undefined;
+    const docLabel = docInfo ? docInfo.displayName : 'Dubai Building Code 2021';
 
     const content = chunk.content.length > MAX_CHUNK_LENGTH
       ? chunk.content.slice(0, MAX_CHUNK_LENGTH) + '...'
       : chunk.content;
 
-    const header = `[SOURCE ${index + 1}] Page ${page}${section ? `, Section ${section}` : ''}${chapter ? `, ${chapter}` : ''}`;
+    const header = `[SOURCE ${index + 1}] Document: ${docLabel}, Page ${page}${section ? `, Section ${section}` : ''}${chapter ? `, ${chapter}` : ''}`;
 
     return `${header}\n${content}`;
   });
 
-  return `CONTEXT FROM DUBAI BUILDING CODE 2021:\n\n${contextParts.join('\n\n---\n\n')}`;
+  // Collect unique document names from chunks
+  const docNames = new Set(chunks.map(c => {
+    const docId = c.metadata.documentName;
+    const info = docId ? getDocumentById(docId) : undefined;
+    return info?.displayName || 'Dubai Building Code 2021';
+  }));
+  const docsHeader = `CONTEXT FROM: ${Array.from(docNames).join(', ')}`;
+
+  return `${docsHeader}:\n\n${contextParts.join('\n\n---\n\n')}`;
+}
+
+// -----------------------------------------------------------------------------
+// Chunk Diversity Filter (Multi-Document Awareness)
+// -----------------------------------------------------------------------------
+
+const MAX_CHUNKS_PER_DOCUMENT = 3;
+const MAX_CHUNKS_PER_PAGE_RANGE = 2;
+
+/**
+ * Ensure diversity in chunk selection across documents and page ranges.
+ * Prevents all chunks from coming from one document.
+ * Iterates through ranked chunks and enforces per-document/per-page limits.
+ */
+export function diversifyChunks(
+  chunks: MatchedChunk[],
+  maxTotal: number = 10
+): MatchedChunk[] {
+  if (chunks.length <= maxTotal) return chunks;
+
+  const docCounts = new Map<string, number>();
+  const pageRangeCounts = new Map<string, number>();
+  const selected: MatchedChunk[] = [];
+  const deferred: MatchedChunk[] = [];
+
+  for (const chunk of chunks) {
+    const docName = chunk.metadata.documentName || 'unknown';
+    const pageKey = `${docName}-${Math.floor((chunk.metadata.page || 0) / 10)}`;
+
+    const docCount = docCounts.get(docName) || 0;
+    const pageCount = pageRangeCounts.get(pageKey) || 0;
+
+    if (docCount < MAX_CHUNKS_PER_DOCUMENT && pageCount < MAX_CHUNKS_PER_PAGE_RANGE) {
+      selected.push(chunk);
+      docCounts.set(docName, docCount + 1);
+      pageRangeCounts.set(pageKey, pageCount + 1);
+    } else {
+      deferred.push(chunk);
+    }
+
+    if (selected.length >= maxTotal) break;
+  }
+
+  // Fill remaining slots with deferred chunks
+  while (selected.length < maxTotal && deferred.length > 0) {
+    selected.push(deferred.shift()!);
+  }
+
+  return selected;
 }
 
 // -----------------------------------------------------------------------------
@@ -291,6 +353,7 @@ export async function filteredHybridSearch(
     keyword_weight: 0.3,
     vector_weight: 0.7,
     rrf_k: 60,
+    filter_document: null,
   });
 
   if (error) {

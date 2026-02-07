@@ -6,28 +6,39 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  getDashboardStats,
-  getWeeklyActivity,
   getAuditLogs,
   getAllUsers,
-  type DashboardStats,
-  type WeeklyActivity,
   type AuditLogEntry,
   type AdminUser
 } from '@/actions/admin';
+import {
+  getAnalyticsDashboardStats,
+  getMessageActivity30d,
+  getDocumentUsageStats,
+  getPermitStatusBreakdown,
+  getTopActiveUsers,
+  type AnalyticsDashboardStats,
+  type MessageActivityDay,
+  type DocumentUsageStat,
+  type PermitStatusBreakdown,
+  type TopActiveUser,
+} from '@/actions/analytics';
 import { getAdminPermits, getPermitStats } from '@/actions/admin-permits';
 import { logoutAction } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/theme-toggle';
 import {
-  StatsCards,
-  ActivityChart,
   UserManagement,
   AuditLogs,
   CreateUserDialog,
   PdfIngestionTab,
   PermitManagement,
+  EnhancedStatsCards,
+  MessageActivityChart,
+  DocumentUsageChart,
+  PermitStatusChart,
+  TopUsersTable,
 } from '@/components/admin';
 import {
   FileText,
@@ -47,13 +58,18 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   
   // Dashboard data
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [weeklyActivity, setWeeklyActivity] = useState<WeeklyActivity[]>([]);
   const [auditLogs, setAuditLogsData] = useState<AuditLogEntry[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [permits, setPermits] = useState<(PermitApplication & { username?: string })[]>([]);
   const [permitStats, setPermitStatsData] = useState<PermitStats | null>(null);
   const [dataLoading, setDataLoading] = useState(true);
+
+  // Analytics data
+  const [analyticsStats, setAnalyticsStats] = useState<AnalyticsDashboardStats | null>(null);
+  const [messageActivity, setMessageActivity] = useState<MessageActivityDay[]>([]);
+  const [documentUsage, setDocumentUsage] = useState<DocumentUsageStat[]>([]);
+  const [permitBreakdown, setPermitBreakdown] = useState<PermitStatusBreakdown | null>(null);
+  const [topUsers, setTopUsers] = useState<TopActiveUser[]>([]);
 
   // User dialog
   const [createUserOpen, setCreateUserOpen] = useState(false);
@@ -61,17 +77,30 @@ export default function AdminPage() {
   // Load dashboard data
   const loadDashboardData = useCallback(async () => {
     setDataLoading(true);
-    
-    const [statsResult, activityResult, logsResult] = await Promise.all([
-      getDashboardStats(),
-      getWeeklyActivity(),
+
+    const [
+      logsResult,
+      analyticsResult,
+      msgActivityResult,
+      docUsageResult,
+      permitBreakdownResult,
+      topUsersResult,
+    ] = await Promise.all([
       getAuditLogs(50),
+      getAnalyticsDashboardStats(),
+      getMessageActivity30d(),
+      getDocumentUsageStats(),
+      getPermitStatusBreakdown(),
+      getTopActiveUsers(),
     ]);
-    
-    if (statsResult.data) setStats(statsResult.data);
-    setWeeklyActivity(activityResult.data);
+
     setAuditLogsData(logsResult.data);
-    
+    if (analyticsResult.data) setAnalyticsStats(analyticsResult.data);
+    setMessageActivity(msgActivityResult.data);
+    setDocumentUsage(docUsageResult.data);
+    if (permitBreakdownResult.data) setPermitBreakdown(permitBreakdownResult.data);
+    setTopUsers(topUsersResult.data);
+
     setDataLoading(false);
   }, []);
 
@@ -202,11 +231,24 @@ export default function AdminPage() {
                   <h2 className="text-2xl font-bold">Dashboard Overview</h2>
                   <p className="text-muted-foreground">Monitor system activity and performance</p>
                 </div>
-                
-                <StatsCards stats={stats} loading={dataLoading} />
-                
+
+                {/* Enhanced Stats Cards with Trends */}
+                <EnhancedStatsCards stats={analyticsStats} loading={dataLoading} />
+
+                {/* 30-Day Message Activity Chart */}
+                <div className="mt-6">
+                  <MessageActivityChart data={messageActivity} loading={dataLoading} />
+                </div>
+
+                {/* Document Usage + Permit Status (2-col) */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                  <ActivityChart data={weeklyActivity} loading={dataLoading} />
+                  <DocumentUsageChart data={documentUsage} loading={dataLoading} />
+                  <PermitStatusChart data={permitBreakdown} loading={dataLoading} />
+                </div>
+
+                {/* Top Users + Audit Logs (2-col) */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                  <TopUsersTable data={topUsers} loading={dataLoading} />
                   <AuditLogs logs={auditLogs.slice(0, 10)} loading={dataLoading} />
                 </div>
               </>

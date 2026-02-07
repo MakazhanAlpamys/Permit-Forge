@@ -6,6 +6,11 @@
 // ============================================================================
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import {
+  RATE_LIMIT_WINDOW_SECONDS,
+  MAX_REQUESTS_PER_WINDOW,
+  MIN_REQUEST_INTERVAL_MS,
+} from './constants';
 
 // -----------------------------------------------------------------------------
 // Environment Variables Validation (Server-side only)
@@ -81,9 +86,7 @@ interface RateLimitResult {
   currentCount?: number;
 }
 
-const RATE_LIMIT_WINDOW_SECONDS = 60;
-const MAX_REQUESTS_PER_WINDOW = 10;
-const MIN_REQUEST_INTERVAL_MS = 2000;
+// Rate limit constants imported from @/lib/constants
 
 export async function checkRateLimit(userId: string): Promise<RateLimitResult> {
   try {

@@ -197,11 +197,11 @@ function CertificateDocument({ data }: { data: CertificateData }) {
         ),
         data.plotNumber
           ? React.createElement(
-              View,
-              { style: styles.row },
-              React.createElement(Text, { style: styles.label }, 'Plot Number:'),
-              React.createElement(Text, { style: styles.value }, data.plotNumber),
-            )
+            View,
+            { style: styles.row },
+            React.createElement(Text, { style: styles.label }, 'Plot Number:'),
+            React.createElement(Text, { style: styles.value }, data.plotNumber),
+          )
           : null,
         React.createElement(
           View,
@@ -255,15 +255,15 @@ function CertificateDocument({ data }: { data: CertificateData }) {
       // Review Comments
       data.reviewComments
         ? React.createElement(
+          View,
+          { style: styles.section },
+          React.createElement(Text, { style: styles.sectionTitle }, 'Review Comments'),
+          React.createElement(
             View,
-            { style: styles.section },
-            React.createElement(Text, { style: styles.sectionTitle }, 'Review Comments'),
-            React.createElement(
-              View,
-              { style: styles.commentsBox },
-              React.createElement(Text, { style: styles.commentsText }, data.reviewComments),
-            ),
-          )
+            { style: styles.commentsBox },
+            React.createElement(Text, { style: styles.commentsText }, data.reviewComments),
+          ),
+        )
         : null,
       // Footer
       React.createElement(
@@ -284,8 +284,7 @@ function CertificateDocument({ data }: { data: CertificateData }) {
  * Generate a PDF certificate buffer for an approved permit
  */
 export async function generateCertificatePDF(data: CertificateData): Promise<Buffer> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const doc = React.createElement(CertificateDocument, { data }) as any;
+  const doc = React.createElement(CertificateDocument, { data }) as React.ReactElement;
   const buffer = await renderToBuffer(doc);
   return Buffer.from(buffer);
 }

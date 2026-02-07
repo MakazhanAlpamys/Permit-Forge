@@ -149,7 +149,7 @@ export async function expandQuery(userQuery: string): Promise<string[]> {
 // 2. RE-RANKING - Score chunks for relevance to specific question
 // -----------------------------------------------------------------------------
 
-const RERANK_PROMPT = `You are a relevance scoring expert for the Dubai Building Code 2021.
+const RERANK_PROMPT = `You are a relevance scoring expert for Dubai construction regulations across multiple official documents.
 
 Your task is to score how relevant each text chunk is to answering the user's question.
 
@@ -159,6 +159,10 @@ SCORING RULES:
 - Score 70-89: Contains relevant information that helps answer
 - Score 40-69: Tangentially related but not directly answering
 - Score 0-39: Not relevant to the question
+
+MULTI-DOCUMENT BONUS:
+- When chunks from DIFFERENT documents are relevant, give a +5 bonus to chunks from underrepresented documents
+- This ensures diverse cross-document coverage in the final answer
 
 OUTPUT FORMAT:
 Return ONLY a JSON array of objects with "id" and "score" fields.
@@ -189,7 +193,7 @@ export async function rerankChunks(
   try {
     // Format chunks for the prompt
     const chunksText = chunks.map((chunk, idx) =>
-      `[CHUNK ${idx + 1}] (Page ${chunk.metadata.page}, Section: ${chunk.metadata.section || 'N/A'}):\n${chunk.content.slice(0, 500)}...`
+      `[CHUNK ${idx + 1}] (Page ${chunk.metadata.page}, Section: ${chunk.metadata.section || 'N/A'}, Document: ${chunk.metadata.documentName || 'N/A'}):\n${chunk.content.slice(0, 1000)}...`
     ).join('\n\n');
 
     const prompt = RERANK_PROMPT
@@ -301,7 +305,7 @@ export async function verifyAnswer(
       const result = JSON.parse(jsonMatch[0]) as VerificationResult;
 
       // Build enhanced citations with exact quotes
-      const citations: EnhancedCitation[] = chunks.slice(0, 5).map((chunk) => ({
+      const citations: EnhancedCitation[] = chunks.slice(0, 8).map((chunk) => ({
         chunkId: chunk.id,
         page: chunk.metadata.page || 0,
         section: chunk.metadata.section,
@@ -326,17 +330,17 @@ export async function verifyAnswer(
     return {
       answer,
       isVerified: false,
-      confidence: 50,
+      confidence: 30,
       supportingQuotes: [],
       unsupportedClaims: [],
-      citations: chunks.slice(0, 5).map(chunk => ({
+      citations: chunks.slice(0, 8).map(chunk => ({
         chunkId: chunk.id,
         page: chunk.metadata.page || 0,
         section: chunk.metadata.section,
         exactQuote: chunk.content.slice(0, 200),
         context: chunk.content.slice(0, 300),
         similarity: chunk.similarity,
-        confidence: 50,
+        confidence: 30,
       })),
     };
   } catch (error) {

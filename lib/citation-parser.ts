@@ -135,6 +135,7 @@ export async function matchCitationsToChunks(
       isVerified: false,
       matchScore: 0,
       confidence: Math.round(chunk.similarity * 40), // Low confidence for fallback
+      documentName: chunk.metadata.documentName,
     }));
   }
 
@@ -189,6 +190,7 @@ export async function matchCitationsToChunks(
             matchScore: bestMatch.match_score,
             confidence: citationConfidence,
             contentType: bestMatch.metadata.contentType,
+            documentName: bestMatch.metadata.documentName,
           });
         }
       }
@@ -217,6 +219,7 @@ export async function matchCitationsToChunks(
     matchScore: 0,
     confidence: Math.round(chunk.similarity * 40), // Low confidence for fallback
     contentType: chunk.metadata.contentType,
+    documentName: chunk.metadata.documentName,
   }));
 }
 
@@ -286,6 +289,7 @@ export async function createSmartCitations(
         matchScore: Math.round(chunk.similarity * 50), // Lower score for supplemental
         confidence: supplementalConfidence,
         contentType: chunk.metadata.contentType,
+        documentName: chunk.metadata.documentName,
       });
     }
   }
@@ -343,4 +347,13 @@ export function getCitationStats(citations: Citation[]): {
     uniquePages: pages.size,
     uniqueSections: sections.size,
   };
+}
+
+/**
+ * Get confidence tier label for display/logging
+ */
+export function getConfidenceTier(confidence: number): 'high' | 'medium' | 'low' {
+  if (confidence >= 70) return 'high';
+  if (confidence >= 50) return 'medium';
+  return 'low';
 }

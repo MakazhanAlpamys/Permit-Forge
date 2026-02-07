@@ -1,5 +1,5 @@
 // ============================================================================
-// PDF Ingestion API Route with Progress Streaming
+// PDF Ingestion API Route with Progress Streaming — Multi-Document
 // ============================================================================
 
 import { NextRequest } from 'next/server';
@@ -10,12 +10,34 @@ import { runIngestionPipeline, type IngestionProgress } from '@/lib/pdf-ingestio
 // Streaming API Route
 // -----------------------------------------------------------------------------
 
-export async function POST(_request: NextRequest) {
+export async function POST(request: NextRequest) {
   // Check authentication
   const user = await getQuickSession();
   if (!user || user.role !== 'admin') {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Parse request body for document info
+  let documentId: string;
+  let pdfPath: string;
+
+  try {
+    const body = await request.json();
+    documentId = body.documentId;
+    pdfPath = body.pdfPath;
+
+    if (!documentId || !pdfPath) {
+      return new Response(JSON.stringify({ error: 'Missing documentId or pdfPath' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid request body' }), {
+      status: 400,
       headers: { 'Content-Type': 'application/json' },
     });
   }
@@ -38,11 +60,15 @@ export async function POST(_request: NextRequest) {
         stage: 'reading',
         progress: 0,
         total: 100,
-        message: 'Reading PDF file...',
+        message: `Reading PDF for ${documentId}...`,
       });
 
-      // Run the centralized ingestion pipeline with progress callback
-      await runIngestionPipeline(sendProgress);
+      // Run the centralized ingestion pipeline with document info
+      await runIngestionPipeline({
+        documentId,
+        pdfPath,
+        onProgress: sendProgress,
+      });
     } catch (error) {
       await sendProgress({
         stage: 'error',

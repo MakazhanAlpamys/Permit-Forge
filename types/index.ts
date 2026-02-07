@@ -18,6 +18,7 @@ export interface ChunkMetadata {
   tableName?: string;
   isTable?: boolean;
   contentType?: 'text' | 'table' | 'list' | 'heading';
+  documentName?: string;     // Source document ID (e.g., "dubai-building-code-2021")
 }
 
 export interface MatchedChunk {
@@ -67,6 +68,7 @@ export interface Citation {
   isVerified?: boolean;     // Was this citation actually used in the answer?
   confidence?: number;      // Verification confidence (0-100)
   contentType?: 'text' | 'table' | 'list' | 'heading';  // Type of content
+  documentName?: string;    // Source document ID for multi-document RAG
 }
 
 export type ComplianceStatus = 'compliant' | 'non-compliant' | 'pending';
