@@ -3,7 +3,8 @@ import { createServerClient, checkRateLimit } from '@/lib/supabase-server';
 import { getQuickSession } from '@/lib/auth';
 import { chatMessageSchema } from '@/lib/validations';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
-import { COMPLIANCE_SYSTEM_PROMPT, streamingModel, MAX_CONTEXT_LENGTH } from '@/lib/gemini';
+import { COMPLIANCE_SYSTEM_PROMPT, streamingModel } from '@/lib/gemini';
+import { MAX_CONTEXT_LENGTH } from '@/lib/constants';
 import {
   classifyUserTopic,
   executeRAGPipeline,
