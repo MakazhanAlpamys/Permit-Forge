@@ -57,9 +57,9 @@ export const embeddingsModel = {
 /**
  * Generate embeddings using Gemini gemini-embedding-001
  * Returns a 768-dimensional vector (matching database VECTOR(768) columns)
- * Includes retry logic for transient network errors
+ * Includes retry logic for network errors and rate limits (429)
  */
-export async function generateEmbedding(text: string, maxRetries = 3): Promise<number[]> {
+export async function generateEmbedding(text: string, maxRetries = 5): Promise<number[]> {
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -72,23 +72,37 @@ export async function generateEmbedding(text: string, maxRetries = 3): Promise<n
       return result.embeddings?.[0]?.values ?? [];
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-
-      // Check if it's a network/fetch error (retryable)
       const errorMessage = lastError.message.toLowerCase();
-      const isRetryable = errorMessage.includes('fetch failed') ||
+
+      // Check if it's a rate limit error (429 / RESOURCE_EXHAUSTED)
+      const isRateLimit = errorMessage.includes('429') ||
+        errorMessage.includes('resource_exhausted') ||
+        errorMessage.includes('quota');
+
+      // Check if it's a network error
+      const isNetworkError = errorMessage.includes('fetch failed') ||
         errorMessage.includes('network') ||
         errorMessage.includes('timeout') ||
         errorMessage.includes('econnreset') ||
         errorMessage.includes('socket');
+
+      const isRetryable = isRateLimit || isNetworkError;
 
       if (!isRetryable || attempt === maxRetries) {
         console.error(`Embedding error (attempt ${attempt}/${maxRetries}):`, lastError.message);
         throw lastError;
       }
 
-      // Exponential backoff: 1s, 2s, 4s
-      const delay = Math.pow(2, attempt - 1) * 1000;
-      console.warn(`Embedding fetch failed, retrying in ${delay}ms (attempt ${attempt}/${maxRetries})...`);
+      // For rate limits: parse retryDelay from error or use longer backoff
+      let delay: number;
+      if (isRateLimit) {
+        const retryMatch = lastError.message.match(/retry\s*(?:in|after|delay)?\s*[":]*\s*(\d+)/i);
+        delay = retryMatch ? (parseInt(retryMatch[1]) + 5) * 1000 : 30000;
+      } else {
+        delay = Math.pow(2, attempt - 1) * 1000;
+      }
+
+      console.warn(`Embedding ${isRateLimit ? 'rate limited' : 'fetch failed'}, retrying in ${Math.round(delay / 1000)}s (attempt ${attempt}/${maxRetries})...`);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }

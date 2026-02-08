@@ -24,9 +24,9 @@ import fs from 'fs';
 export const PDF_INGESTION_CONFIG = {
   CHUNK_SIZE: 800,         // Characters per chunk
   CHUNK_OVERLAP: 150,      // Overlap between chunks
-  BATCH_SIZE: 5,           // Chunks per database batch (reduced to avoid rate limits)
+  BATCH_SIZE: 5,           // Chunks per database batch
   MIN_CHUNK_LENGTH: 50,    // Minimum chunk length to include
-  BATCH_DELAY_MS: 1000,    // Delay between batches (increased for rate limiting)
+  BATCH_DELAY_MS: 3500,    // Delay between batches (free tier: 100 embed req/min → 5 per 3.5s ≈ 85/min)
 } as const;
 
 // -----------------------------------------------------------------------------
