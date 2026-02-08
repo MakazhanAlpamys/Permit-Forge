@@ -149,7 +149,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
         `}
       >
         <ScrollArea className="h-full py-4">
-          <div className="px-3 space-y-6">
+          <div className="px-3 space-y-6 pb-20">
             {/* Main Navigation */}
             <div>
               <h3 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
