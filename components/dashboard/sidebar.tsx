@@ -276,13 +276,73 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
                   className="w-full justify-start gap-3 h-auto py-2 px-3 text-muted-foreground hover:text-foreground"
                   asChild
                 >
-                  <a 
-                    href="https://dm.gov.ae/wp-content/uploads/2021/12/Dubai%20Building%20Code_English_2021%20Edition_compressed.pdf" 
-                    target="_blank" 
+                  <a
+                    href="https://dm.gov.ae/wp-content/uploads/2021/12/Dubai%20Building%20Code_English_2021%20Edition_compressed.pdf"
+                    target="_blank"
                     rel="noopener noreferrer"
                   >
                     <BookOpen className="h-4 w-4" />
                     <span className="text-sm flex-1">Dubai Building Code</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start gap-3 h-auto py-2 px-3 text-muted-foreground hover:text-foreground"
+                  asChild
+                >
+                  <a
+                    href="https://www.dm.gov.ae/wp-content/uploads/2022/04/code_of_safety_EN.pdf"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <BookOpen className="h-4 w-4" />
+                    <span className="text-sm flex-1">Code of Safety</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start gap-3 h-auto py-2 px-3 text-muted-foreground hover:text-foreground"
+                  asChild
+                >
+                  <a
+                    href="https://www.dm.gov.ae/wp-content/uploads/2023/01/Al-Safat-%E2%80%93-Dubai-Green-Building-System-2nd-editionJan2023.pdf"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <BookOpen className="h-4 w-4" />
+                    <span className="text-sm flex-1">Al Sa&apos;fat Green Building</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start gap-3 h-auto py-2 px-3 text-muted-foreground hover:text-foreground"
+                  asChild
+                >
+                  <a
+                    href="https://www.dm.gov.ae/wp-content/uploads/2020/11/Dubai-Guide-for-Built-Environment-Universal-Design-1_compressed.pdf"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <BookOpen className="h-4 w-4" />
+                    <span className="text-sm flex-1">Universal Design Code</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start gap-3 h-auto py-2 px-3 text-muted-foreground hover:text-foreground"
+                  asChild
+                >
+                  <a
+                    href="https://www.dm.gov.ae/wp-content/uploads/2025/01/comp-DM_Sewerage-Guidelines-F.24.01.25.pdf"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <BookOpen className="h-4 w-4" />
+                    <span className="text-sm flex-1">Sewerage Guidelines</span>
                     <ExternalLink className="h-3 w-3" />
                   </a>
                 </Button>
@@ -293,7 +353,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
           {/* Footer */}
           <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border bg-card">
             <div className="text-xs text-muted-foreground">
-              <p>Dubai Building Code 2021</p>
+              <p>Dubai Building Codes</p>
               <p className="mt-1">Powered by Gemini AI</p>
             </div>
           </div>

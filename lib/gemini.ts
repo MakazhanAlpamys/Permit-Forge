@@ -3,8 +3,8 @@
 // ============================================================================
 
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
-import { GoogleGenerativeAIEmbeddings } from '@langchain/google-genai';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
+import { GoogleGenAI } from '@google/genai';
 import { MAX_MESSAGE_LENGTH, MAX_CONTEXT_LENGTH } from './constants';
 
 // Environment variable validation
@@ -36,19 +36,27 @@ export const streamingModel = new ChatGoogleGenerativeAI({
   streaming: true,
 });
 
-// Embedding model for vector generation (768 dimensions)
-export const embeddingsModel = new GoogleGenerativeAIEmbeddings({
-  model: 'text-embedding-004',
-  apiKey: geminiApiKey,
-});
+// New Google GenAI client for embeddings (gemini-embedding-001)
+const genaiClient = new GoogleGenAI({ apiKey: geminiApiKey });
+
+// Legacy LangChain embeddings model — kept for backward compatibility import
+// Use generateEmbedding() or embedQuery() instead
+export const embeddingsModel = {
+  async embedQuery(text: string): Promise<number[]> {
+    return generateEmbedding(text);
+  },
+  async embedDocuments(documents: string[]): Promise<number[][]> {
+    return Promise.all(documents.map(doc => generateEmbedding(doc)));
+  },
+};
 
 // -----------------------------------------------------------------------------
-// Embedding Generation (LangChain wrapper with retry logic)
+// Embedding Generation (@google/genai SDK — gemini-embedding-001, 768 dims)
 // -----------------------------------------------------------------------------
 
 /**
- * Generate embeddings for a single text using Gemini text-embedding-004
- * Returns a 768-dimensional vector
+ * Generate embeddings using Gemini gemini-embedding-001
+ * Returns a 768-dimensional vector (matching database VECTOR(768) columns)
  * Includes retry logic for transient network errors
  */
 export async function generateEmbedding(text: string, maxRetries = 3): Promise<number[]> {
@@ -56,7 +64,12 @@ export async function generateEmbedding(text: string, maxRetries = 3): Promise<n
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      return await embeddingsModel.embedQuery(text);
+      const result = await genaiClient.models.embedContent({
+        model: 'gemini-embedding-001',
+        contents: text,
+        config: { outputDimensionality: 768 },
+      });
+      return result.embeddings?.[0]?.values ?? [];
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
 
