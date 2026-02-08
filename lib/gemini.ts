@@ -55,11 +55,22 @@ export const embeddingsModel = {
 // -----------------------------------------------------------------------------
 
 /**
+ * Custom error class for daily quota exhaustion — not retryable within the session.
+ */
+export class DailyQuotaExhaustedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DailyQuotaExhaustedError';
+  }
+}
+
+/**
  * Generate embeddings using Gemini gemini-embedding-001
  * Returns a 768-dimensional vector (matching database VECTOR(768) columns)
- * Includes retry logic for network errors and rate limits (429)
+ * Includes retry logic for network errors and per-minute rate limits (429).
+ * Throws DailyQuotaExhaustedError immediately when daily quota is hit.
  */
-export async function generateEmbedding(text: string, maxRetries = 5): Promise<number[]> {
+export async function generateEmbedding(text: string, maxRetries = 7): Promise<number[]> {
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -72,32 +83,42 @@ export async function generateEmbedding(text: string, maxRetries = 5): Promise<n
       return result.embeddings?.[0]?.values ?? [];
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      const errorMessage = lastError.message.toLowerCase();
+      const errorMessage = lastError.message;
+      const errorLower = errorMessage.toLowerCase();
 
       // Check if it's a rate limit error (429 / RESOURCE_EXHAUSTED)
-      const isRateLimit = errorMessage.includes('429') ||
-        errorMessage.includes('resource_exhausted') ||
-        errorMessage.includes('quota');
+      const isRateLimit = errorLower.includes('429') ||
+        errorLower.includes('resource_exhausted') ||
+        errorLower.includes('quota');
+
+      // Detect DAILY quota exhaustion (not retryable within this session)
+      if (isRateLimit && errorLower.includes('perday')) {
+        throw new DailyQuotaExhaustedError(
+          `Daily embedding quota exhausted (free tier: 1000 requests/day). ` +
+          `${attempt > 1 ? `Failed after ${attempt} attempts. ` : ''}` +
+          `Please wait until tomorrow or upgrade your Gemini API plan.`
+        );
+      }
 
       // Check if it's a network error
-      const isNetworkError = errorMessage.includes('fetch failed') ||
-        errorMessage.includes('network') ||
-        errorMessage.includes('timeout') ||
-        errorMessage.includes('econnreset') ||
-        errorMessage.includes('socket');
+      const isNetworkError = errorLower.includes('fetch failed') ||
+        errorLower.includes('network') ||
+        errorLower.includes('timeout') ||
+        errorLower.includes('econnreset') ||
+        errorLower.includes('socket');
 
       const isRetryable = isRateLimit || isNetworkError;
 
       if (!isRetryable || attempt === maxRetries) {
-        console.error(`Embedding error (attempt ${attempt}/${maxRetries}):`, lastError.message);
+        console.error(`Embedding error (attempt ${attempt}/${maxRetries}):`, errorMessage);
         throw lastError;
       }
 
-      // For rate limits: parse retryDelay from error or use longer backoff
+      // For per-minute rate limits: parse retryDelay from error or use longer backoff
       let delay: number;
       if (isRateLimit) {
-        const retryMatch = lastError.message.match(/retry\s*(?:in|after|delay)?\s*[":]*\s*(\d+)/i);
-        delay = retryMatch ? (parseInt(retryMatch[1]) + 5) * 1000 : 30000;
+        const retryMatch = errorMessage.match(/retry\s*(?:in|after|delay)?\s*[":]*\s*(\d+)/i);
+        delay = retryMatch ? (parseInt(retryMatch[1]) + 5) * 1000 : 60000;
       } else {
         delay = Math.pow(2, attempt - 1) * 1000;
       }

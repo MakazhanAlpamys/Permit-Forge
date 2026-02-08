@@ -4,7 +4,7 @@
 
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { createAdminClient } from '@/lib/supabase-server';
-import { generateEmbedding } from '@/lib/gemini';
+import { generateEmbedding, DailyQuotaExhaustedError } from '@/lib/gemini';
 import { createPDFParser, PDFParser } from '@/lib/pdf-parser';
 import type {
   ChunkMetadata,
@@ -24,9 +24,10 @@ import fs from 'fs';
 export const PDF_INGESTION_CONFIG = {
   CHUNK_SIZE: 800,         // Characters per chunk
   CHUNK_OVERLAP: 150,      // Overlap between chunks
-  BATCH_SIZE: 5,           // Chunks per database batch
+  BATCH_SIZE: 3,           // Chunks per database batch (sequential embedding — lower is safer for free tier)
   MIN_CHUNK_LENGTH: 50,    // Minimum chunk length to include
-  BATCH_DELAY_MS: 3500,    // Delay between batches (free tier: 100 embed req/min → 5 per 3.5s ≈ 85/min)
+  BATCH_DELAY_MS: 2000,    // Delay between batches (each chunk embedded sequentially, ~3 per 2s gap)
+  EMBED_DELAY_MS: 350,     // Delay between individual embedding requests within a batch
 } as const;
 
 // -----------------------------------------------------------------------------
@@ -285,19 +286,55 @@ export async function runIngestionPipeline(
     const chunksWithPages = await splitWithPageTracking(pages, parser);
     const totalChunks = chunksWithPages.length;
 
-    // Stage 5: Generate embeddings and store
+    // Stage 5: Check for existing chunks (resume support)
+    const { count: existingCount } = await supabase
+      .from('dubai_code_chunks')
+      .select('id', { count: 'exact', head: true })
+      .eq('document_name', documentId);
+
+    const alreadyIngested = existingCount ?? 0;
+    const chunksToProcess = alreadyIngested > 0
+      ? chunksWithPages.slice(alreadyIngested)
+      : chunksWithPages;
+
+    if (alreadyIngested > 0 && chunksToProcess.length > 0) {
+      await sendProgress({
+        stage: 'embedding',
+        progress: 20,
+        total: 100,
+        message: `Resuming: ${alreadyIngested} chunks already ingested, ${chunksToProcess.length} remaining...`,
+      });
+    } else if (chunksToProcess.length === 0) {
+      await sendProgress({
+        stage: 'complete',
+        progress: 100,
+        total: 100,
+        message: `All ${totalChunks} chunks already ingested — nothing to do!`,
+        done: true,
+        chunksProcessed: totalChunks,
+      });
+      return {
+        success: true,
+        chunksProcessed: totalChunks,
+        pagesProcessed: parser.totalPages,
+        tocExtracted: structure.flatTOC.length > 0,
+      };
+    }
+
+    // Stage 6: Generate embeddings and store (sequential to avoid wasting quota)
     await sendProgress({
       stage: 'embedding',
       progress: 20,
       total: 100,
-      message: `Processing ${totalChunks} chunks (TOC: ${structure.flatTOC.length} entries)...`,
+      message: `Processing ${chunksToProcess.length} chunks (TOC: ${structure.flatTOC.length} entries)...`,
     });
 
-    let processedCount = 0;
-    const totalBatches = Math.ceil(totalChunks / BATCH_SIZE);
+    let processedCount = alreadyIngested;
+    const totalBatches = Math.ceil(chunksToProcess.length / BATCH_SIZE);
+    const { EMBED_DELAY_MS } = PDF_INGESTION_CONFIG;
 
-    for (let i = 0; i < chunksWithPages.length; i += BATCH_SIZE) {
-      const batch = chunksWithPages.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < chunksToProcess.length; i += BATCH_SIZE) {
+      const batch = chunksToProcess.slice(i, i + BATCH_SIZE);
       const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
       const progressPercent = 20 + Math.round((batchNumber / totalBatches) * 80);
 
@@ -305,13 +342,38 @@ export async function runIngestionPipeline(
         stage: 'embedding',
         progress: progressPercent,
         total: 100,
-        message: `Batch ${batchNumber}/${totalBatches}: Generating embeddings...`,
+        message: `Batch ${batchNumber}/${totalBatches}: Generating embeddings (${processedCount}/${totalChunks})...`,
         chunksProcessed: processedCount,
       });
 
-      // Generate embeddings for batch
-      const embeddingsPromises = batch.map(chunk => generateEmbedding(chunk.content));
-      const embeddings = await Promise.all(embeddingsPromises);
+      // Generate embeddings SEQUENTIALLY to avoid wasting quota on parallel failures
+      const embeddings: number[][] = [];
+      for (let j = 0; j < batch.length; j++) {
+        try {
+          const embedding = await generateEmbedding(batch[j].content);
+          embeddings.push(embedding);
+          // Small delay between individual requests to stay under per-minute limits
+          if (j < batch.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, EMBED_DELAY_MS));
+          }
+        } catch (error) {
+          // Daily quota exhaustion — stop immediately with clear message
+          if (error instanceof DailyQuotaExhaustedError) {
+            const errorMsg = `${error.message} (${processedCount}/${totalChunks} chunks saved — will resume on next attempt)`;
+            await sendProgress({
+              stage: 'error',
+              progress: progressPercent,
+              total: 100,
+              message: errorMsg,
+              done: true,
+              error: errorMsg,
+              chunksProcessed: processedCount,
+            });
+            return { success: false, chunksProcessed: processedCount, error: errorMsg };
+          }
+          throw error;
+        }
+      }
 
       // Prepare records
       const records = batch.map((chunk, idx) => ({
@@ -342,8 +404,8 @@ export async function runIngestionPipeline(
 
       processedCount += batch.length;
 
-      // Rate limiting delay
-      if (i + BATCH_SIZE < chunksWithPages.length) {
+      // Rate limiting delay between batches
+      if (i + BATCH_SIZE < chunksToProcess.length) {
         await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
       }
     }
