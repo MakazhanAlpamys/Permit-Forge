@@ -4,7 +4,7 @@
 // Common security functions for Server Actions and API Routes
 // ============================================================================
 
-import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
+import { getQuickSession, logAuditEvent, getRequestMetadata, validateCSRFToken } from '@/lib/auth';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -94,4 +94,25 @@ export async function requireAdmin(): Promise<SecurityCheckResult> {
   }
   
   return authResult;
+}
+
+// -----------------------------------------------------------------------------
+// CSRF Validation
+// -----------------------------------------------------------------------------
+
+/**
+ * Validate CSRF token from client.
+ * Returns { valid: true } or { valid: false, error: string }
+ */
+export async function requireCSRF(token: string | undefined | null): Promise<{ valid: boolean; error?: string }> {
+  if (!token) {
+    return { valid: false, error: 'CSRF token missing' };
+  }
+
+  const isValid = await validateCSRFToken(token);
+  if (!isValid) {
+    return { valid: false, error: 'CSRF token invalid' };
+  }
+
+  return { valid: true };
 }

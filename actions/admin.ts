@@ -7,7 +7,7 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { logAuditEvent, hashPassword, getRequestMetadata } from '@/lib/auth';
 import { uuidSchema, createUserSchema } from '@/lib/validations';
-import { requireAdmin } from '@/lib/security';
+import { requireAdmin, requireCSRF } from '@/lib/security';
 
 // -----------------------------------------------------------------------------
 // RPC Response Types (matching Supabase functions)
@@ -168,14 +168,20 @@ export async function getAllUsers(
 export async function blockUser(
   userId: string,
   blocked: boolean,
-  reason?: string
+  reason?: string,
+  csrfToken?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAdmin();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
-    
+
+    if (csrfToken) {
+      const csrf = await requireCSRF(csrfToken);
+      if (!csrf.valid) return { success: false, error: csrf.error };
+    }
+
     // Validate userId
     const validation = uuidSchema.safeParse(userId);
     if (!validation.success) {
@@ -268,13 +274,18 @@ export async function adminCreateUser(data: {
   password: string;
   full_name?: string;
   role?: 'admin' | 'user';
-}): Promise<{ success: boolean; userId?: string; error?: string }> {
+}, csrfToken?: string): Promise<{ success: boolean; userId?: string; error?: string }> {
   try {
     const authCheck = await requireAdmin();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
-    
+
+    if (csrfToken) {
+      const csrf = await requireCSRF(csrfToken);
+      if (!csrf.valid) return { success: false, error: csrf.error };
+    }
+
     // Validate input
     const validation = createUserSchema.safeParse(data);
     if (!validation.success) {

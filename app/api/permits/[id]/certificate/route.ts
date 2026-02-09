@@ -5,7 +5,7 @@
 import { NextRequest } from 'next/server';
 import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { uuidSchema } from '@/lib/validations';
-import { createServerClient, createAdminClient } from '@/lib/supabase-server';
+import { createServerClient, createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 import { generateCertificateNumber, generateCertificatePDF, type CertificateData } from '@/lib/permit-certificate';
 
 export async function GET(
@@ -16,6 +16,15 @@ export async function GET(
     const user = await getQuickSession();
     if (!user) {
       return Response.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
+    // Rate limiting
+    const rateLimitResult = await checkRateLimit(user.id);
+    if (!rateLimitResult.allowed) {
+      return Response.json(
+        { error: 'Rate limited', retryAfter: rateLimitResult.retryAfterMs },
+        { status: 429 }
+      );
     }
 
     const { id: permitId } = await params;

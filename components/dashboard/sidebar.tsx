@@ -4,13 +4,14 @@
 // Sidebar Component with Chat History
 // ============================================================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { getChatSessions, deleteChatSession } from '@/actions/chat-history';
+import { getChatSessions, deleteChatSession, searchChatHistory } from '@/actions/chat-history';
+import { Input } from '@/components/ui/input';
 import type { ChatSession } from '@/types';
 import {
   MessageSquare,
@@ -19,7 +20,9 @@ import {
   ExternalLink,
   Trash2,
   Plus,
-  ClipboardList
+  ClipboardList,
+  Search,
+  X
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -73,6 +76,10 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Array<{ sessionId: string; sessionTitle: string; snippet: string }>>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pathname = usePathname();
 
   // Load chat sessions
@@ -117,6 +124,31 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
   const cancelDelete = () => {
     setDeleteDialogOpen(false);
     setSessionToDelete(null);
+  };
+
+  // Debounced search
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
+    if (!value.trim()) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      const { results } = await searchChatHistory(value);
+      setSearchResults(results);
+      setIsSearching(false);
+    }, 300);
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setIsSearching(false);
   };
 
   const handleNewChat = () => {
@@ -204,8 +236,53 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
 
             <Separator />
 
+            {/* Chat Search */}
+            <div className="px-3">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search chats..."
+                  value={searchQuery}
+                  onChange={e => handleSearchChange(e.target.value)}
+                  className="h-8 pl-8 pr-8 text-xs"
+                />
+                {searchQuery && (
+                  <button onClick={clearSearch} className="absolute right-2.5 top-2.5">
+                    <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Search Results */}
+            {searchQuery && (
+              <div className="flex-1 min-h-0">
+                <h3 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  Search Results
+                </h3>
+                {isSearching ? (
+                  <div className="px-3 py-2 text-xs text-muted-foreground">Searching...</div>
+                ) : searchResults.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-muted-foreground">No results found</div>
+                ) : (
+                  <nav className="space-y-1 px-3">
+                    {searchResults.map(r => (
+                      <div
+                        key={r.sessionId}
+                        className="flex flex-col px-3 py-2 rounded-lg text-sm cursor-pointer text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                        onClick={() => handleSelectSession(r.sessionId)}
+                      >
+                        <p className="font-medium text-xs truncate">{r.sessionTitle}</p>
+                        <p className="text-xs text-muted-foreground truncate">{r.snippet}</p>
+                      </div>
+                    ))}
+                  </nav>
+                )}
+              </div>
+            )}
+
             {/* Chat History */}
-            <div className="flex-1 min-h-0">
+            {!searchQuery && <div className="flex-1 min-h-0">
               <h3 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                 Chat History
               </h3>
@@ -261,7 +338,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
                   </nav>
                 </ScrollArea>
               )}
-            </div>
+            </div>}
 
             <Separator />
 

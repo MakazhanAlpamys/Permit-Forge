@@ -4,7 +4,7 @@
 // Permit Attachment Server Actions
 // ============================================================================
 
-import { createServerClient, createAdminClient } from '@/lib/supabase-server';
+import { createServerClient, createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { requireAuth } from '@/lib/security';
 import { uuidSchema } from '@/lib/validations';
@@ -38,6 +38,12 @@ export async function uploadPermitAttachment(
     const authCheck = await requireAuth();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
+    }
+
+    // Rate limiting
+    const rateLimitResult = await checkRateLimit(authCheck.user.id);
+    if (!rateLimitResult.allowed) {
+      return { success: false, error: 'Too many requests. Please wait before uploading again.' };
     }
 
     const idValidation = uuidSchema.safeParse(permitId);

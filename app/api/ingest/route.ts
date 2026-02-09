@@ -4,6 +4,7 @@
 
 import { NextRequest } from 'next/server';
 import { getQuickSession } from '@/lib/auth';
+import { checkRateLimit } from '@/lib/supabase-server';
 import { runIngestionPipeline, type IngestionProgress } from '@/lib/pdf-ingestion';
 
 // -----------------------------------------------------------------------------
@@ -16,6 +17,18 @@ export async function POST(request: NextRequest) {
   if (!user || user.role !== 'admin') {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Rate limiting
+  const rateLimitResult = await checkRateLimit(user.id);
+  if (!rateLimitResult.allowed) {
+    return new Response(JSON.stringify({
+      error: 'Rate limited',
+      retryAfter: rateLimitResult.retryAfterMs,
+    }), {
+      status: 429,
       headers: { 'Content-Type': 'application/json' },
     });
   }

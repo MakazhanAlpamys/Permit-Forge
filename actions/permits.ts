@@ -6,7 +6,7 @@
 
 import { createServerClient, createAdminClient } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
-import { requireAuth } from '@/lib/security';
+import { requireAuth, requireCSRF } from '@/lib/security';
 import {
   uuidSchema,
   createPermitSchema,
@@ -77,12 +77,18 @@ function transformPermit(row: any): PermitApplication {
 // -----------------------------------------------------------------------------
 
 export async function createPermit(
-  data: CreatePermitInput
+  data: CreatePermitInput,
+  csrfToken?: string
 ): Promise<{ success: boolean; permitId?: string; error?: string }> {
   try {
     const authCheck = await requireAuth();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
+    }
+
+    if (csrfToken) {
+      const csrf = await requireCSRF(csrfToken);
+      if (!csrf.valid) return { success: false, error: csrf.error };
     }
 
     const validation = createPermitSchema.safeParse(data);
@@ -244,12 +250,18 @@ export async function updatePermitComplianceRequirements(
 // -----------------------------------------------------------------------------
 
 export async function submitPermit(
-  permitId: string
+  permitId: string,
+  csrfToken?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAuth();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
+    }
+
+    if (csrfToken) {
+      const csrf = await requireCSRF(csrfToken);
+      if (!csrf.valid) return { success: false, error: csrf.error };
     }
 
     const idValidation = uuidSchema.safeParse(permitId);

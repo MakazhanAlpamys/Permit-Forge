@@ -4,7 +4,7 @@
 // Authentication Server Actions (with JWT, CSRF, and Audit Logging)
 // ============================================================================
 
-import { createServerClient, createAdminClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-server';
 import { 
   verifyPassword, 
   createSession, 
@@ -15,7 +15,7 @@ import {
 } from '@/lib/auth';
 import { loginSchema } from '@/lib/validations';
 import { redirect } from 'next/navigation';
-import { getRequestMetadata } from '@/lib/auth';
+import { getRequestMetadata, getCSRFToken } from '@/lib/auth';
 
 // -----------------------------------------------------------------------------
 // Login Action
@@ -120,7 +120,7 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
 export async function logoutAction(): Promise<void> {
   const user = await getQuickSession();
   const metadata = await getRequestMetadata();
-  
+
   if (user) {
     await logAuditEvent({
       userId: user.id,
@@ -128,7 +128,17 @@ export async function logoutAction(): Promise<void> {
       ...metadata,
     });
   }
-  
+
   await destroySession();
   redirect('/login');
+}
+
+// -----------------------------------------------------------------------------
+// Get CSRF Token (for client-side forms and API calls)
+// -----------------------------------------------------------------------------
+
+export async function getCSRFTokenAction(): Promise<string | null> {
+  const user = await getQuickSession();
+  if (!user) return null;
+  return getCSRFToken();
 }

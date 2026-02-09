@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { createServerClient, checkRateLimit } from '@/lib/supabase-server';
-import { getQuickSession } from '@/lib/auth';
+import { getQuickSession, validateCSRFToken } from '@/lib/auth';
 import { chatMessageSchema } from '@/lib/validations';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
 import { COMPLIANCE_SYSTEM_PROMPT, streamingModel } from '@/lib/gemini';
@@ -25,6 +25,20 @@ export async function POST(request: NextRequest) {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
+    }
+
+    // =========================================================================
+    // SECURITY: CSRF validation
+    // =========================================================================
+    const csrfToken = request.headers.get('x-csrf-token');
+    if (csrfToken) {
+      const csrfValid = await validateCSRFToken(csrfToken);
+      if (!csrfValid) {
+        return new Response(JSON.stringify({ error: 'Invalid CSRF token' }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
     }
 
     // =========================================================================
@@ -164,7 +178,15 @@ export async function POST(request: NextRequest) {
           controller.close();
         } catch (error) {
           console.error('Streaming error:', error);
-          controller.error(error);
+          const errorMsg = error instanceof Error ? error.message : 'Stream processing failed';
+          try {
+            controller.enqueue(encoder.encode(
+              `\n\n__ERROR__${JSON.stringify({ code: 'STREAM_ERROR', message: errorMsg })}`
+            ));
+            controller.close();
+          } catch {
+            controller.error(error);
+          }
         }
       },
     });
@@ -178,6 +200,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Chat stream error:', error);
-    return new Response('Internal error', { status: 500 });
+    return new Response(JSON.stringify({
+      error: 'Internal server error',
+      code: 'INTERNAL_ERROR',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 }

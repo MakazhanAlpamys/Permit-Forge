@@ -6,15 +6,19 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createChatSession, saveMessageToSession, getSessionMessages } from '@/actions/chat-history';
+import { getCSRFTokenAction } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MessageBubble, LoadingMessage, StreamingMessage } from './message-bubble';
 import { 
-  Send, 
+  Send,
   Sparkles,
   RotateCcw,
-  Square
+  Square,
+  ChevronUp,
+  Loader2,
+  Download
 } from 'lucide-react';
 import type { ChatMessage, Citation } from '@/types';
 import { MAX_MESSAGE_LENGTH } from '@/lib/constants';
@@ -43,12 +47,16 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
   const [cooldown, setCooldown] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isVerifyingSources, setIsVerifyingSources] = useState(false);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [messageCursor, setMessageCursor] = useState<string | undefined>(undefined);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastRequestRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
   const isCancelledRef = useRef(false);
+  const csrfTokenRef = useRef<string | null>(null);
 
   // Load messages when session changes
   useEffect(() => {
@@ -58,13 +66,46 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     } else {
       setMessages([]);
       setCurrentSessionId(null);
+      setHasMoreMessages(false);
+      setMessageCursor(undefined);
     }
   }, [sessionId]);
 
   const loadSessionMessages = async (sid: string) => {
-    const { messages: loadedMessages } = await getSessionMessages(sid);
-    setMessages(loadedMessages);
+    const result = await getSessionMessages(sid);
+    setMessages(result.messages);
+    setHasMoreMessages(result.hasMore);
+    setMessageCursor(result.nextCursor);
   };
+
+  const loadEarlierMessages = async () => {
+    if (!currentSessionId || !hasMoreMessages || isLoadingMore) return;
+    setIsLoadingMore(true);
+
+    // Save scroll position to restore after prepending
+    const scrollContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    const prevScrollHeight = scrollContainer?.scrollHeight || 0;
+
+    const result = await getSessionMessages(currentSessionId, messageCursor);
+    if (result.messages.length > 0) {
+      setMessages(prev => [...result.messages, ...prev]);
+      setHasMoreMessages(result.hasMore);
+      setMessageCursor(result.nextCursor);
+
+      // Restore scroll position so view doesn't jump
+      requestAnimationFrame(() => {
+        if (scrollContainer) {
+          scrollContainer.scrollTop = scrollContainer.scrollHeight - prevScrollHeight;
+        }
+      });
+    }
+    setIsLoadingMore(false);
+  };
+
+  // Fetch CSRF token on mount
+  useEffect(() => {
+    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+  }, []);
 
   // Cleanup on unmount - properly abort any pending requests
   useEffect(() => {
@@ -162,10 +203,15 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
 
     try {
       // Use streaming API with the current controller's signal
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (csrfTokenRef.current) {
+        headers['x-csrf-token'] = csrfTokenRef.current;
+      }
+
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        headers,
+        body: JSON.stringify({
           message: text,
           sessionId: activeSessionId,
         }),
@@ -173,7 +219,12 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        let errorDetail = `HTTP ${response.status}`;
+        try {
+          const errJson = await response.json();
+          errorDetail = errJson.message || errJson.error || errorDetail;
+        } catch { /* not JSON */ }
+        throw new Error(errorDetail);
       }
 
       // Switch to streaming mode
@@ -196,6 +247,19 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
           const chunk = decoder.decode(value, { stream: true });
           rawContent += chunk;
           
+          // Check for stream error marker
+          const errorMarkerIdx = rawContent.indexOf('__ERROR__');
+          if (errorMarkerIdx !== -1) {
+            const errorJson = rawContent.slice(errorMarkerIdx + '__ERROR__'.length);
+            try {
+              const streamErr = JSON.parse(errorJson);
+              throw new Error(streamErr.message || 'Stream error');
+            } catch (e) {
+              if (e instanceof SyntaxError) throw new Error('Stream processing failed');
+              throw e;
+            }
+          }
+
           // Extract display text (everything before __CITATIONS__ marker)
           const citationMarkerIdx = rawContent.indexOf('__CITATIONS__');
           if (citationMarkerIdx !== -1) {
@@ -334,6 +398,24 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
           <EmptyState onSelectQuestion={handleSelectQuestion} />
         ) : (
           <div className="space-y-6 max-w-3xl mx-auto">
+            {hasMoreMessages && (
+              <div className="flex justify-center pt-2 pb-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={loadEarlierMessages}
+                  disabled={isLoadingMore}
+                  className="text-xs text-muted-foreground"
+                >
+                  {isLoadingMore ? (
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                  ) : (
+                    <ChevronUp className="h-3 w-3 mr-1" />
+                  )}
+                  Load earlier messages
+                </Button>
+              </div>
+            )}
             {messages.map(message => (
               <MessageBubble key={message.id} message={message} />
             ))}
@@ -357,18 +439,31 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       {/* Input Area */}
       <div className="border-t border-border bg-card/50 p-4">
         <div className="max-w-3xl mx-auto">
-          {/* Clear Chat Button (when messages exist) */}
+          {/* Action Buttons (when messages exist) */}
           {messages.length > 0 && !isLoading && !isStreaming && (
-            <div className="flex justify-center mb-3">
-              <Button 
-                variant="ghost" 
-                size="sm" 
+            <div className="flex justify-center gap-2 mb-3">
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={handleClearChat}
                 className="text-xs text-muted-foreground"
               >
                 <RotateCcw className="h-3 w-3 mr-1" />
                 Clear Chat
               </Button>
+              {currentSessionId && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    window.open(`/api/chat/export?sessionId=${currentSessionId}`, '_blank');
+                  }}
+                  className="text-xs text-muted-foreground"
+                >
+                  <Download className="h-3 w-3 mr-1" />
+                  Export
+                </Button>
+              )}
             </div>
           )}
 
