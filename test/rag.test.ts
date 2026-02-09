@@ -137,7 +137,7 @@ describe('RAG Module', () => {
         })
         .mockResolvedValueOnce({ data: [], error: null }); // Hybrid search
 
-      const result = await queryDubaiCode({
+      const _result = await queryDubaiCode({
         query: 'section 3.2.1 requirements',
         matchCount: 10,
       });

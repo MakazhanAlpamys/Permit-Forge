@@ -15,7 +15,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![Tailwind](https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Zod](https://img.shields.io/badge/Zod-4-3E67B1?style=flat-square&logo=zod&logoColor=white)](https://zod.dev/)
-[![Tests](https://img.shields.io/badge/Tests-157_passing-22c55e?style=flat-square)](./test)
+[![Tests](https://img.shields.io/badge/Tests-158_passing-22c55e?style=flat-square)](./test)
 [![License](https://img.shields.io/badge/License-MIT-eab308?style=flat-square)](./LICENSE)
 
 <br />
@@ -656,7 +656,7 @@ Generated for approved permits via `GET /api/permits/[id]/certificate`:
 
 ## 🧪 Testing
 
-**157 tests** across **11 test suites** with comprehensive coverage of all critical systems.
+**158 tests** across **11 test suites** with comprehensive coverage of all critical systems.
 
 ```bash
 npm test              # Run all tests (watch mode)
@@ -756,7 +756,7 @@ Emirate-Forge/
 │   └── utils.ts                       #   Utilities (cn, etc.)
 │
 ├── types/index.ts                     # Shared TypeScript definitions
-├── test/                              # Vitest test suites (11 files, 157 tests)
+├── test/                              # Vitest test suites (11 files, 158 tests)
 ├── supabase/migrations/               # Database schema (6 migration files)
 ├── middleware.ts                       # Edge auth + block check + security headers
 └── public/                            # Static assets

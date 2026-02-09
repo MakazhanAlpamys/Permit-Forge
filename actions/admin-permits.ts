@@ -4,7 +4,7 @@
 // Admin Permit Server Actions
 // ============================================================================
 
-import { createAdminClient, createServerClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-server';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { requireAdmin } from '@/lib/security';
 import { uuidSchema, reviewPermitSchema, type ReviewPermitInput } from '@/lib/validations';
