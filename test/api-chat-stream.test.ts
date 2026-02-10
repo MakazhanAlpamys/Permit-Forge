@@ -1,0 +1,197 @@
+// ============================================================================
+// Chat Stream API Route Tests
+// ============================================================================
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// Mock auth
+const mockGetQuickSession = vi.fn();
+const mockValidateCSRFToken = vi.fn();
+vi.mock('@/lib/auth', () => ({
+  getQuickSession: (...args: unknown[]) => mockGetQuickSession(...args),
+  validateCSRFToken: (...args: unknown[]) => mockValidateCSRFToken(...args),
+}));
+
+// Mock rate limiting
+const mockCheckRateLimit = vi.fn();
+vi.mock('@/lib/supabase-server', () => {
+  const mockFrom = vi.fn(() => ({
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    single: vi.fn().mockResolvedValue({ data: null, error: null }),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+  }));
+
+  return {
+    createServerClient: vi.fn(() => ({ from: mockFrom })),
+    createAdminClient: vi.fn(() => ({ from: mockFrom })),
+    checkRateLimit: (...args: unknown[]) => mockCheckRateLimit(...args),
+  };
+});
+
+// Mock chat pipeline
+vi.mock('@/lib/chat-pipeline', () => ({
+  classifyUserTopic: vi.fn().mockResolvedValue({ isOnTopic: false, shouldUseRAG: false }),
+  executeRAGPipeline: vi.fn().mockResolvedValue([]),
+  verifyAIResponse: vi.fn().mockResolvedValue({ verificationResult: { isVerified: true, confidence: 80 } }),
+  generateCitations: vi.fn().mockResolvedValue([]),
+}));
+
+// Mock rag
+vi.mock('@/lib/rag', () => ({
+  buildContext: vi.fn().mockReturnValue(''),
+}));
+
+// Mock gemini
+vi.mock('@/lib/gemini', () => ({
+  COMPLIANCE_SYSTEM_PROMPT: 'Test system prompt',
+  streamingModel: {
+    stream: vi.fn().mockResolvedValue({
+      [Symbol.asyncIterator]: async function* () {
+        yield { content: 'Test response' };
+      },
+    }),
+  },
+}));
+
+// Mock langchain messages
+vi.mock('@langchain/core/messages', () => ({
+  HumanMessage: class { constructor(public content: string) {} },
+  SystemMessage: class { constructor(public content: string) {} },
+  AIMessage: class { constructor(public content: string) {} },
+}));
+
+// Mock constants
+vi.mock('@/lib/constants', () => ({
+  MAX_CONTEXT_LENGTH: 10000,
+}));
+
+import { NextRequest } from 'next/server';
+import { POST } from '@/app/api/chat/stream/route';
+
+function createRequest(body: object, headers: Record<string, string> = {}): NextRequest {
+  return new NextRequest('http://localhost:3000/api/chat/stream', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+      ...headers,
+    },
+  });
+}
+
+describe('POST /api/chat/stream', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCheckRateLimit.mockResolvedValue({ allowed: true });
+    mockValidateCSRFToken.mockResolvedValue(true);
+  });
+
+  it('should return 401 when unauthenticated', async () => {
+    mockGetQuickSession.mockResolvedValue(null);
+
+    const request = createRequest({ message: 'Hello' });
+    const response = await POST(request);
+
+    expect(response.status).toBe(401);
+    const data = await response.json();
+    expect(data.error).toBe('Unauthorized');
+  });
+
+  it('should return 429 when rate limited', async () => {
+    mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+    mockCheckRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 5000 });
+
+    const request = createRequest({ message: 'Hello' });
+    const response = await POST(request);
+
+    expect(response.status).toBe(429);
+    const data = await response.json();
+    expect(data.error).toBe('Rate limited');
+    expect(data.retryAfter).toBe(5000);
+  });
+
+  it('should return 400 on invalid input (empty message)', async () => {
+    mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+
+    const request = createRequest({ message: '' });
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    const data = await response.json();
+    expect(data.error).toBe('Invalid input');
+  });
+
+  it('should return 400 on missing message field', async () => {
+    mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+
+    const request = createRequest({});
+    const response = await POST(request);
+
+    expect(response.status).toBe(400);
+    const data = await response.json();
+    expect(data.error).toBe('Invalid input');
+  });
+
+  it('should return 403 on session ownership violation', async () => {
+    mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+
+    // The mock supabase client returns { data: null, error: null } for session lookup
+    // which means session not found → access denied
+    const request = createRequest({
+      message: 'Hello',
+      sessionId: '550e8400-e29b-41d4-a716-446655440000',
+    });
+    const response = await POST(request);
+
+    expect(response.status).toBe(403);
+    const data = await response.json();
+    expect(data.error).toBe('Access denied');
+  });
+
+  it('should return 403 on invalid CSRF token', async () => {
+    mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+    mockValidateCSRFToken.mockResolvedValue(false);
+
+    const request = createRequest(
+      { message: 'Hello' },
+      { 'x-csrf-token': 'invalid-token' }
+    );
+    const response = await POST(request);
+
+    expect(response.status).toBe(403);
+    const data = await response.json();
+    expect(data.error).toBe('Invalid CSRF token');
+  });
+
+  it('should return streaming response for valid request without session', async () => {
+    mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+
+    const request = createRequest({ message: 'Hello world' });
+    const response = await POST(request);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+  });
+
+  it('should call checkRateLimit with user ID', async () => {
+    mockGetQuickSession.mockResolvedValue({ id: 'user-123', role: 'user' });
+
+    const request = createRequest({ message: 'Hello' });
+    await POST(request);
+
+    expect(mockCheckRateLimit).toHaveBeenCalledWith('user-123');
+  });
+
+  it('should skip CSRF validation when no token provided', async () => {
+    mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+
+    const request = createRequest({ message: 'Hello world' });
+    const response = await POST(request);
+
+    // Should not call validateCSRFToken at all
+    expect(mockValidateCSRFToken).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+  });
+});
