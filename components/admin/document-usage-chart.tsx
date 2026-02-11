@@ -27,7 +27,7 @@ interface DocumentUsageChartProps {
 const DOCUMENT_COLORS: Record<string, string> = {
   'dubai-building-code-2021': '#3b82f6',
   'code-of-safety': '#ef4444',
-  'al-safat-green-building': '#22c55e',
+  'al-safat-green-building': '#7c3aed',
   'universal-design-code': '#a855f7',
   'sewerage-stormwater-guidelines': '#06b6d4',
 };

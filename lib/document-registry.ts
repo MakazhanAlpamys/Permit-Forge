@@ -54,7 +54,7 @@ export const DOCUMENT_REGISTRY: Record<string, DocumentInfo> = {
     sourceUrl: 'https://www.dm.gov.ae/wp-content/uploads/2023/01/Al-Safat-%E2%80%93-Dubai-Green-Building-System-2nd-editionJan2023.pdf',
     authority: 'Dubai Municipality',
     description: 'Mandatory green building rating system with Silver, Gold, and Platinum tiers',
-    badgeColor: 'bg-green-500/20 text-green-400 border-green-500/30',
+    badgeColor: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
   },
   'universal-design-code': {
     id: 'universal-design-code',

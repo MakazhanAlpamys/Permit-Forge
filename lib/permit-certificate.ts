@@ -107,14 +107,14 @@ const styles = StyleSheet.create({
   statusBadge: {
     textAlign: 'center' as const,
     padding: '8px 16px',
-    backgroundColor: '#c6f6d5',
+    backgroundColor: '#e9d5ff',
     borderRadius: 4,
     marginVertical: 16,
   },
   statusText: {
     fontSize: 14,
     fontFamily: 'Helvetica-Bold',
-    color: '#22543d',
+    color: '#4c1d95',
   },
   commentsBox: {
     backgroundColor: '#f7fafc',

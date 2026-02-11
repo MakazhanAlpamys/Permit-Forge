@@ -62,8 +62,8 @@ export function MessageActivityChart({ data, loading }: MessageActivityChartProp
                   <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="colorAI" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#22c55e" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#22c55e" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#7c3aed" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#7c3aed" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
@@ -97,7 +97,7 @@ export function MessageActivityChart({ data, loading }: MessageActivityChartProp
               <Area
                 type="monotone"
                 dataKey="AI Responses"
-                stroke="#22c55e"
+                stroke="#7c3aed"
                 fill="url(#colorAI)"
                 strokeWidth={2}
               />

@@ -42,12 +42,12 @@ const actionIcons: Record<string, React.ComponentType<{ className?: string }>> =
 };
 
 const actionColors: Record<string, string> = {
-  login_success: 'text-green-500 bg-green-500/10',
+  login_success: 'text-violet-500 bg-violet-500/10',
   login_failed: 'text-red-500 bg-red-500/10',
   logout: 'text-gray-500 bg-gray-500/10',
   user_created: 'text-blue-500 bg-blue-500/10',
   user_blocked: 'text-red-500 bg-red-500/10',
-  user_unblocked: 'text-green-500 bg-green-500/10',
+  user_unblocked: 'text-violet-500 bg-violet-500/10',
   role_changed: 'text-purple-500 bg-purple-500/10',
   password_reset: 'text-orange-500 bg-orange-500/10',
   pdf_ingested: 'text-cyan-500 bg-cyan-500/10',

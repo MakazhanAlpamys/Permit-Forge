@@ -212,7 +212,7 @@ export function PdfIngestionTab() {
 
       <div className="grid gap-6 max-w-3xl">
         {/* System Diagnostics Card */}
-        <Card className={diagnostic.error ? 'border-yellow-500/50' : 'border-green-500/50'}>
+        <Card className={diagnostic.error ? 'border-yellow-500/50' : 'border-violet-500/50'}>
           <CardHeader>
             <CardTitle className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -235,7 +235,7 @@ export function PdfIngestionTab() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Database Connection</span>
                   {diagnostic.dbConnected ? (
-                    <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                    <Badge className="bg-violet-500/20 text-violet-400 border-violet-500/30">
                       <CheckCircle className="h-3 w-3 mr-1" /> Connected
                     </Badge>
                   ) : (
@@ -255,7 +255,7 @@ export function PdfIngestionTab() {
                 <div className="flex items-center justify-between">
                   <span className="text-sm">Hybrid Search RPC</span>
                   {diagnostic.rpcWorking ? (
-                    <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                    <Badge className="bg-violet-500/20 text-violet-400 border-violet-500/30">
                       <CheckCircle className="h-3 w-3 mr-1" /> Working
                     </Badge>
                   ) : (
@@ -311,7 +311,7 @@ export function PdfIngestionTab() {
           const isIngested = chunkCount > 0;
 
           return (
-            <Card key={doc.id} className={isIngested ? 'border-green-500/30' : ''}>
+            <Card key={doc.id} className={isIngested ? 'border-violet-500/30' : ''}>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center gap-2 text-base">
                   <BookOpen className="h-4 w-4 text-primary" />
@@ -320,7 +320,7 @@ export function PdfIngestionTab() {
                     {doc.shortName}
                   </Badge>
                   {isIngested && (
-                    <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-[10px]">
+                    <Badge className="bg-violet-500/20 text-violet-400 border-violet-500/30 text-[10px]">
                       {chunkCount} chunks
                     </Badge>
                   )}
@@ -354,7 +354,7 @@ export function PdfIngestionTab() {
 
                 {/* Status message */}
                 {message && !progress && (
-                  <div className={`text-xs p-2 rounded ${status === 'success' ? 'bg-green-500/10 text-green-400' : status === 'error' ? 'bg-red-500/10 text-red-400' : 'text-muted-foreground'}`}>
+                  <div className={`text-xs p-2 rounded ${status === 'success' ? 'bg-violet-500/10 text-violet-400' : status === 'error' ? 'bg-red-500/10 text-red-400' : 'text-muted-foreground'}`}>
                     {status === 'success' && <CheckCircle className="h-3 w-3 inline mr-1" />}
                     {status === 'error' && <XCircle className="h-3 w-3 inline mr-1" />}
                     {message}

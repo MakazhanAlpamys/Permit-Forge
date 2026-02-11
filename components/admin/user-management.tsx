@@ -306,7 +306,7 @@ export function UserManagement({
                             Blocked
                           </Badge>
                         ) : (
-                          <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                          <Badge className="bg-violet-500/20 text-violet-400 border-violet-500/30">
                             <CheckCircle className="h-3 w-3 mr-1" />
                             Active
                           </Badge>
@@ -346,7 +346,7 @@ export function UserManagement({
                                 title={user.blocked ? 'Unblock user' : 'Block user'}
                               >
                                 {user.blocked ? (
-                                  <CheckCircle className="h-4 w-4 text-green-500" />
+                                  <CheckCircle className="h-4 w-4 text-violet-500" />
                                 ) : (
                                   <Ban className="h-4 w-4 text-red-500" />
                                 )}
@@ -529,7 +529,7 @@ export function UserManagement({
       <Dialog open={modal.type === 'success'} onOpenChange={(open) => !open && closeModal()}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-green-500">
+            <DialogTitle className="flex items-center gap-2 text-violet-500">
               <CheckCircle className="h-5 w-5" />
               Success
             </DialogTitle>

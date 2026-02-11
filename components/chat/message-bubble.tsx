@@ -84,8 +84,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   return (
     <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       {/* Avatar */}
-      <Avatar className={`h-8 w-8 shrink-0 ${isUser ? 'bg-primary' : 'bg-emerald-600'}`}>
-        <AvatarFallback className={isUser ? 'bg-primary text-primary-foreground' : 'bg-emerald-600 text-white'}>
+      <Avatar className={`h-8 w-8 shrink-0 ${isUser ? 'bg-primary' : 'bg-violet-600'}`}>
+        <AvatarFallback className={isUser ? 'bg-primary text-primary-foreground' : 'bg-violet-600 text-white'}>
           {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
         </AvatarFallback>
       </Avatar>
@@ -158,8 +158,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               >
                 {copied ? (
                   <>
-                    <Check className="h-3.5 w-3.5 text-emerald-500" />
-                    <span className="text-emerald-500">Copied!</span>
+                    <Check className="h-3.5 w-3.5 text-violet-500" />
+                    <span className="text-violet-500">Copied!</span>
                   </>
                 ) : (
                   <>
@@ -205,8 +205,8 @@ function formatTimestamp(date: Date): string {
 export function LoadingMessage() {
   return (
     <div className="flex gap-3">
-      <Avatar className="h-8 w-8 shrink-0 bg-emerald-600">
-        <AvatarFallback className="bg-emerald-600 text-white">
+      <Avatar className="h-8 w-8 shrink-0 bg-violet-600">
+        <AvatarFallback className="bg-violet-600 text-white">
           <Bot className="h-4 w-4" />
         </AvatarFallback>
       </Avatar>
@@ -234,8 +234,8 @@ export function LoadingMessage() {
           {/* Status indicator */}
           <div className="flex items-center gap-2 pt-2 border-t border-muted-foreground/10">
             <div className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
             </div>
             <span className="text-xs text-muted-foreground">Analyzing Dubai Building Code...</span>
           </div>
@@ -260,8 +260,8 @@ export function StreamingMessage({ content, isComplete }: StreamingMessageProps)
 
   return (
     <div className="flex gap-3">
-      <Avatar className="h-8 w-8 shrink-0 bg-emerald-600">
-        <AvatarFallback className="bg-emerald-600 text-white">
+      <Avatar className="h-8 w-8 shrink-0 bg-violet-600">
+        <AvatarFallback className="bg-violet-600 text-white">
           <Bot className="h-4 w-4" />
         </AvatarFallback>
       </Avatar>
@@ -281,7 +281,7 @@ export function StreamingMessage({ content, isComplete }: StreamingMessageProps)
               {displayContent}
             </ReactMarkdown>
             {!isComplete && (
-              <span className="inline-block w-2 h-4 bg-emerald-500 animate-pulse ml-0.5 align-middle" />
+              <span className="inline-block w-2 h-4 bg-violet-500 animate-pulse ml-0.5 align-middle" />
             )}
           </div>
         </div>

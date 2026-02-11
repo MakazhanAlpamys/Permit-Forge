@@ -71,8 +71,8 @@ export const complianceStatusConfig: Record<ComplianceStatus, StatusConfigItem> 
   'compliant': {
     icon: CheckCircle,
     label: 'Compliant',
-    textClassName: 'text-green-400',
-    badgeClassName: 'bg-green-500/20 text-green-400 border-green-500/30',
+    textClassName: 'text-violet-400',
+    badgeClassName: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
   },
   'non-compliant': {
     icon: XCircle,
@@ -121,8 +121,8 @@ export const permitStatusConfig: Record<PermitStatus, PermitStatusConfigItem> = 
   'approved': {
     icon: CheckCircle2,
     label: 'Approved',
-    textClassName: 'text-green-400',
-    badgeClassName: 'bg-green-500/20 text-green-400 border-green-500/30',
+    textClassName: 'text-violet-400',
+    badgeClassName: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
   },
   'rejected': {
     icon: XCircle,

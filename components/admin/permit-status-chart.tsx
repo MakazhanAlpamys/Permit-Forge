@@ -25,7 +25,7 @@ const STATUS_CONFIG = [
   { key: 'draft', label: 'Draft', color: '#6b7280' },
   { key: 'submitted', label: 'Submitted', color: '#eab308' },
   { key: 'underReview', label: 'Under Review', color: '#3b82f6' },
-  { key: 'approved', label: 'Approved', color: '#22c55e' },
+  { key: 'approved', label: 'Approved', color: '#7c3aed' },
   { key: 'rejected', label: 'Rejected', color: '#ef4444' },
   { key: 'revisionRequested', label: 'Revision', color: '#f97316' },
 ] as const;

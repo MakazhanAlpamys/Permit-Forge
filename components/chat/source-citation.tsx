@@ -73,9 +73,9 @@ function getConfidenceLevel(confidence: number | undefined): {
     return {
       level: 'high',
       label: 'High',
-      color: 'text-green-600',
-      bgColor: 'bg-green-500/10',
-      borderColor: 'border-green-500/20',
+      color: 'text-violet-600',
+      bgColor: 'bg-violet-500/10',
+      borderColor: 'border-violet-500/20',
     };
   } else if (conf >= 40) {
     return {
@@ -223,7 +223,7 @@ const DOC_FILES: Record<string, string> = {
 const DOC_SHORT_NAMES: Record<string, { name: string; color: string }> = {
   'dubai-building-code-2021': { name: 'DBC', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
   'code-of-safety': { name: 'Safety', color: 'bg-red-500/20 text-red-400 border-red-500/30' },
-  'al-safat-green-building': { name: "Al Sa'fat", color: 'bg-green-500/20 text-green-400 border-green-500/30' },
+  'al-safat-green-building': { name: "Al Sa'fat", color: 'bg-violet-500/20 text-violet-400 border-violet-500/30' },
   'universal-design-code': { name: 'UDC', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
   'sewerage-stormwater-guidelines': { name: 'Sewerage', color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' },
 };
@@ -307,7 +307,7 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
 
           {/* Verified badge */}
           {citation.isVerified && (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-green-500/10 text-green-600 border-green-500/20 shrink-0">
+            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-violet-500/10 text-violet-600 border-violet-500/20 shrink-0">
               <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />
               verified
             </Badge>
@@ -363,7 +363,7 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
                   </span>
                   <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden max-w-[100px]">
                     <div
-                      className={`h-full rounded-full transition-all ${citation.confidence >= 70 ? 'bg-green-500' :
+                      className={`h-full rounded-full transition-all ${citation.confidence >= 70 ? 'bg-violet-500' :
                           citation.confidence >= 40 ? 'bg-yellow-500' : 'bg-orange-500'
                         }`}
                       style={{ width: `${citation.confidence}%` }}
@@ -438,15 +438,15 @@ export function CitationsList({ citations }: CitationsListProps) {
     <div className="mt-3 space-y-2">
       {/* Sources Header with border */}
       <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-card/80 border border-border/60">
-        <div className="flex items-center justify-center w-5 h-5 rounded-md bg-emerald-500/15">
-          <BookOpen className="h-3 w-3 text-emerald-500" />
+        <div className="flex items-center justify-center w-5 h-5 rounded-md bg-violet-500/15">
+          <BookOpen className="h-3 w-3 text-violet-500" />
         </div>
         <span className="text-xs font-medium text-foreground">Sources</span>
         <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-muted text-muted-foreground border-border">
           {citations.length}
         </Badge>
         {verifiedCount > 0 && (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-green-500/10 text-green-600 border-green-500/20 ml-auto">
+          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-violet-500/10 text-violet-600 border-violet-500/20 ml-auto">
             <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />
             {verifiedCount} verified
           </Badge>

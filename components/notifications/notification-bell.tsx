@@ -18,7 +18,7 @@ const NOTIFICATION_ICONS: Record<NotificationType, string> = {
 const NOTIFICATION_COLORS: Record<NotificationType, string> = {
   permit_submitted: 'text-blue-400',
   permit_under_review: 'text-yellow-400',
-  permit_approved: 'text-green-400',
+  permit_approved: 'text-violet-400',
   permit_rejected: 'text-red-400',
   permit_revision_requested: 'text-orange-400',
 };

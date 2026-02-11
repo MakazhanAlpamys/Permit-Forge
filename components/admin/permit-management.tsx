@@ -100,7 +100,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
           <StatMini label="Drafts" value={stats.draftCount} color="text-muted-foreground" />
           <StatMini label="Submitted" value={stats.submittedCount} color="text-blue-400" />
           <StatMini label="Under Review" value={stats.underReviewCount} color="text-yellow-400" />
-          <StatMini label="Approved" value={stats.approvedCount} color="text-green-400" />
+          <StatMini label="Approved" value={stats.approvedCount} color="text-violet-400" />
           <StatMini label="Rejected" value={stats.rejectedCount} color="text-red-400" />
           <StatMini label="Revision" value={stats.revisionRequestedCount} color="text-orange-400" />
           <StatMini label="Today" value={stats.permitsToday} />
@@ -200,7 +200,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                           <Button
                             variant="outline"
                             size="sm"
-                            className="text-green-500 border-green-500/30 hover:bg-green-500/10"
+                            className="text-violet-500 border-violet-500/30 hover:bg-violet-500/10"
                             onClick={(e) => {
                               e.stopPropagation();
                               setReviewDialog({ permit, action: 'approve' });
@@ -269,7 +269,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                       <div className="mt-3 p-3 rounded-lg bg-muted/50">
                         <p className="text-xs font-medium">AI Compliance: {' '}
                           <span className={
-                            permit.complianceCheckResult.overallStatus === 'compliant' ? 'text-green-400' :
+                            permit.complianceCheckResult.overallStatus === 'compliant' ? 'text-violet-400' :
                             permit.complianceCheckResult.overallStatus === 'non_compliant' ? 'text-red-400' :
                             'text-yellow-400'
                           }>

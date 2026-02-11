@@ -14,8 +14,8 @@ const statusConfig = {
   compliant: {
     icon: ShieldCheck,
     label: 'Compliant',
-    badgeClass: 'bg-green-500/20 text-green-400 border-green-500/30',
-    borderClass: 'border-green-500/30',
+    badgeClass: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
+    borderClass: 'border-violet-500/30',
   },
   non_compliant: {
     icon: ShieldAlert,

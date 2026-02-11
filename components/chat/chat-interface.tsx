@@ -426,8 +426,8 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
             {isVerifyingSources && (
               <div className="flex items-center gap-2 px-4 py-2 text-xs text-muted-foreground animate-pulse">
                 <div className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
                 </div>
                 Verifying sources...
               </div>
@@ -553,8 +553,8 @@ function EmptyState({ onSelectQuestion }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center px-4">
       {/* Logo/Icon */}
-      <div className="mb-6 p-4 rounded-full bg-gradient-to-br from-emerald-500/20 to-blue-500/20 border border-emerald-500/20">
-        <Sparkles className="h-8 w-8 text-emerald-500" />
+      <div className="mb-6 p-4 rounded-full bg-gradient-to-br from-violet-500/20 to-blue-500/20 border border-violet-500/20">
+        <Sparkles className="h-8 w-8 text-violet-500" />
       </div>
 
       {/* Title */}
@@ -574,11 +574,11 @@ function EmptyState({ onSelectQuestion }: EmptyStateProps) {
             <button
               key={index}
               onClick={() => onSelectQuestion(item.question)}
-              className="group flex items-start gap-3 p-4 rounded-xl border border-border bg-card/50 hover:bg-card hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/5 transition-all duration-200 text-left"
+              className="group flex items-start gap-3 p-4 rounded-xl border border-border bg-card/50 hover:bg-card hover:border-violet-500/50 hover:shadow-lg hover:shadow-violet-500/5 transition-all duration-200 text-left"
             >
               <span className="text-2xl">{item.icon}</span>
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm text-foreground group-hover:text-emerald-500 transition-colors">
+                <p className="font-medium text-sm text-foreground group-hover:text-violet-500 transition-colors">
                   {item.title}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1 line-clamp-2">

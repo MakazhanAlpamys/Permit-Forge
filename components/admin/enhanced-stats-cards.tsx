@@ -47,7 +47,7 @@ function TrendBadge({ today, yesterday }: { today: number; yesterday: number }) 
 
   if (direction === 'up') {
     return (
-      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 text-green-500 border-green-500/30 bg-green-500/10">
+      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5 text-violet-500 border-violet-500/30 bg-violet-500/10">
         <TrendingUp className="h-3 w-3 mr-0.5" />
         +{percent}%
       </Badge>
@@ -76,8 +76,8 @@ export function EnhancedStatsCards({ stats, loading }: EnhancedStatsCardsProps) 
       title: 'Active Today',
       value: stats?.activeUsersToday ?? 0,
       icon: Activity,
-      color: 'text-green-500',
-      bgColor: 'bg-green-500/10',
+      color: 'text-violet-500',
+      bgColor: 'bg-violet-500/10',
       hasTrend: true,
       today: stats?.activeUsersToday ?? 0,
       yesterday: stats?.activeUsersYesterday ?? 0,

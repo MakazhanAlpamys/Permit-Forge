@@ -121,7 +121,7 @@ function getEmailHtml(
   const statusColors: Record<NotificationType, string> = {
     permit_submitted: '#3b82f6',
     permit_under_review: '#eab308',
-    permit_approved: '#22c55e',
+    permit_approved: '#7c3aed',
     permit_rejected: '#ef4444',
     permit_revision_requested: '#f97316',
   };
