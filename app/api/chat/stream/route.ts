@@ -28,17 +28,21 @@ export async function POST(request: NextRequest) {
     }
 
     // =========================================================================
-    // SECURITY: CSRF validation
+    // SECURITY: CSRF validation (mandatory)
     // =========================================================================
     const csrfToken = request.headers.get('x-csrf-token');
-    if (csrfToken) {
-      const csrfValid = await validateCSRFToken(csrfToken);
-      if (!csrfValid) {
-        return new Response(JSON.stringify({ error: 'Invalid CSRF token' }), {
-          status: 403,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
+    if (!csrfToken) {
+      return new Response(JSON.stringify({ error: 'CSRF token required' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    const csrfValid = await validateCSRFToken(csrfToken);
+    if (!csrfValid) {
+      return new Response(JSON.stringify({ error: 'Invalid CSRF token' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
     // =========================================================================
@@ -203,7 +207,6 @@ export async function POST(request: NextRequest) {
     return new Response(JSON.stringify({
       error: 'Internal server error',
       code: 'INTERNAL_ERROR',
-      message: error instanceof Error ? error.message : 'Unknown error',
     }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

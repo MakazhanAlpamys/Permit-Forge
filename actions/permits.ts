@@ -78,7 +78,7 @@ function transformPermit(row: any): PermitApplication {
 
 export async function createPermit(
   data: CreatePermitInput,
-  csrfToken?: string
+  csrfToken: string
 ): Promise<{ success: boolean; permitId?: string; error?: string }> {
   try {
     const authCheck = await requireAuth();
@@ -86,10 +86,8 @@ export async function createPermit(
       return { success: false, error: authCheck.error };
     }
 
-    if (csrfToken) {
-      const csrf = await requireCSRF(csrfToken);
-      if (!csrf.valid) return { success: false, error: csrf.error };
-    }
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     const validation = createPermitSchema.safeParse(data);
     if (!validation.success) {
@@ -135,7 +133,7 @@ export async function createPermit(
     console.error('createPermit error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to create permit',
+      error: 'Failed to create permit',
     };
   }
 }
@@ -145,13 +143,17 @@ export async function createPermit(
 // -----------------------------------------------------------------------------
 
 export async function updatePermitBuildingDetails(
-  data: UpdateBuildingDetailsInput
+  data: UpdateBuildingDetailsInput,
+  csrfToken: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAuth();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     const validation = updateBuildingDetailsSchema.safeParse(data);
     if (!validation.success) {
@@ -188,7 +190,7 @@ export async function updatePermitBuildingDetails(
     console.error('updatePermitBuildingDetails error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to update building details',
+      error: 'Failed to update building details',
     };
   }
 }
@@ -198,13 +200,17 @@ export async function updatePermitBuildingDetails(
 // -----------------------------------------------------------------------------
 
 export async function updatePermitComplianceRequirements(
-  data: UpdateComplianceRequirementsInput
+  data: UpdateComplianceRequirementsInput,
+  csrfToken: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAuth();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     const validation = updateComplianceRequirementsSchema.safeParse(data);
     if (!validation.success) {
@@ -240,7 +246,7 @@ export async function updatePermitComplianceRequirements(
     console.error('updatePermitComplianceRequirements error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to update compliance requirements',
+      error: 'Failed to update compliance requirements',
     };
   }
 }
@@ -251,7 +257,7 @@ export async function updatePermitComplianceRequirements(
 
 export async function submitPermit(
   permitId: string,
-  csrfToken?: string
+  csrfToken: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAuth();
@@ -259,10 +265,8 @@ export async function submitPermit(
       return { success: false, error: authCheck.error };
     }
 
-    if (csrfToken) {
-      const csrf = await requireCSRF(csrfToken);
-      if (!csrf.valid) return { success: false, error: csrf.error };
-    }
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     const idValidation = uuidSchema.safeParse(permitId);
     if (!idValidation.success) {
@@ -343,7 +347,7 @@ export async function submitPermit(
     console.error('submitPermit error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to submit permit',
+      error: 'Failed to submit permit',
     };
   }
 }
@@ -373,7 +377,7 @@ export async function getMyPermits(): Promise<{ data: PermitApplication[]; error
     console.error('getMyPermits error:', error);
     return {
       data: [],
-      error: error instanceof Error ? error.message : 'Failed to fetch permits',
+      error: 'Failed to fetch permits',
     };
   }
 }
@@ -419,7 +423,7 @@ export async function getPermitById(
     console.error('getPermitById error:', error);
     return {
       data: null,
-      error: error instanceof Error ? error.message : 'Failed to fetch permit',
+      error: 'Failed to fetch permit',
     };
   }
 }
@@ -473,7 +477,7 @@ export async function getPermitHistory(
     console.error('getPermitHistory error:', error);
     return {
       data: [],
-      error: error instanceof Error ? error.message : 'Failed to fetch history',
+      error: 'Failed to fetch history',
     };
   }
 }
@@ -483,13 +487,17 @@ export async function getPermitHistory(
 // -----------------------------------------------------------------------------
 
 export async function deletePermit(
-  permitId: string
+  permitId: string,
+  csrfToken: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAuth();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     const idValidation = uuidSchema.safeParse(permitId);
     if (!idValidation.success) {
@@ -547,7 +555,7 @@ export async function deletePermit(
     console.error('deletePermit error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to delete permit',
+      error: 'Failed to delete permit',
     };
   }
 }
@@ -625,7 +633,7 @@ export async function runComplianceCheck(
     console.error('runComplianceCheck error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to run compliance check',
+      error: 'Failed to run compliance check',
     };
   }
 }
@@ -635,13 +643,17 @@ export async function runComplianceCheck(
 // -----------------------------------------------------------------------------
 
 export async function revisePermit(
-  permitId: string
+  permitId: string,
+  csrfToken: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAuth();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     const idValidation = uuidSchema.safeParse(permitId);
     if (!idValidation.success) {
@@ -700,7 +712,7 @@ export async function revisePermit(
     console.error('revisePermit error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to start revision',
+      error: 'Failed to start revision',
     };
   }
 }

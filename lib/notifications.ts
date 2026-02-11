@@ -112,6 +112,16 @@ export function getNotificationContent(
 /**
  * Generate email HTML for notification
  */
+/** Escape HTML special characters to prevent injection in emails */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 function getEmailHtml(
   type: NotificationType,
   title: string,
@@ -127,7 +137,10 @@ function getEmailHtml(
   };
 
   const color = statusColors[type] || '#6b7280';
-  const permitName = (data.permitName as string) || 'your permit';
+  // SECURITY: Escape all user-controlled values to prevent HTML injection in emails
+  const safeTitle = escapeHtml(title);
+  const safeBody = escapeHtml(body);
+  const permitName = escapeHtml((data.permitName as string) || 'your permit');
 
   return `
     <!DOCTYPE html>
@@ -140,11 +153,11 @@ function getEmailHtml(
           <p style="color: #6b7280; margin: 4px 0 0;">Dubai Building Code Compliance</p>
         </div>
         <div style="border-left: 4px solid ${color}; padding-left: 16px; margin: 24px 0;">
-          <h2 style="font-size: 18px; color: #111827; margin: 0 0 8px;">${title}</h2>
-          <p style="color: #374151; margin: 0; line-height: 1.6;">${body}</p>
+          <h2 style="font-size: 18px; color: #111827; margin: 0 0 8px;">${safeTitle}</h2>
+          <p style="color: #374151; margin: 0; line-height: 1.6;">${safeBody}</p>
         </div>
         <p style="color: #6b7280; font-size: 14px; margin-top: 24px; text-align: center;">
-          Log in to Emirate Forge to view details about "${permitName}".
+          Log in to Emirate Forge to view details about &quot;${permitName}&quot;.
         </p>
       </div>
       <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 16px;">

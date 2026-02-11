@@ -14,6 +14,7 @@ import {
   getQuickSession
 } from '@/lib/auth';
 import { loginSchema } from '@/lib/validations';
+import { checkRateLimit } from '@/lib/supabase-server';
 import { redirect } from 'next/navigation';
 import { getRequestMetadata, getCSRFToken } from '@/lib/auth';
 
@@ -25,6 +26,13 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
   const metadata = await getRequestMetadata();
   
   try {
+    // Rate limit by IP to prevent brute force attacks
+    const rateLimitKey = `login:${metadata.ipAddress}`;
+    const rateLimitResult = await checkRateLimit(rateLimitKey);
+    if (!rateLimitResult.allowed) {
+      return { error: 'Too many login attempts. Please try again later.' };
+    }
+
     const username = formData.get('username') as string;
     const password = formData.get('password') as string;
 
@@ -107,7 +115,8 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'An error occurred during login';
-    return { error: `Login failed: ${errorMessage}` };
+    console.error('Login error:', errorMessage);
+    return { error: 'Login failed. Please try again.' };
   }
 
   redirect('/');

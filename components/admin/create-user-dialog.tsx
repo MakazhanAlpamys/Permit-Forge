@@ -4,7 +4,7 @@
 // Admin Dashboard - Create User Dialog
 // ============================================================================
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -15,6 +15,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { adminCreateUser } from '@/actions/admin';
+import { getCSRFTokenAction } from '@/actions/auth';
 
 interface CreateUserDialogProps {
   isOpen: boolean;
@@ -26,12 +27,19 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const csrfTokenRef = useRef<string | null>(null);
   const [formData, setFormData] = useState({
     username: '',
     password: '',
     full_name: '',
     role: 'user' as 'admin' | 'user',
   });
+
+  useEffect(() => {
+    if (isOpen) {
+      getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -40,7 +48,7 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
     setError('');
     setLoading(true);
 
-    const result = await adminCreateUser(formData);
+    const result = await adminCreateUser(formData, csrfTokenRef.current || undefined);
     
     setLoading(false);
     

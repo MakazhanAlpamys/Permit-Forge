@@ -139,7 +139,7 @@ export async function uploadPermitAttachment(
     console.error('uploadPermitAttachment error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to upload attachment',
+      error: 'Failed to upload attachment',
     };
   }
 }
@@ -211,7 +211,7 @@ export async function deletePermitAttachment(
     console.error('deletePermitAttachment error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to delete attachment',
+      error: 'Failed to delete attachment',
     };
   }
 }
@@ -257,7 +257,12 @@ export async function getPermitAttachments(
 
     if (error) throw error;
 
-    // Generate signed URLs
+    // OPTIMIZATION NOTE: Signed URLs cannot be batched via Supabase API,
+    // so we must call createSignedUrl for each attachment.
+    // This is a known limitation of the Supabase Storage API.
+    // In production, consider: (1) serving through a proxy endpoint that generates
+    // signed URLs on-the-fly, or (2) pre-generating signed URLs with longer TTLs
+    // and caching them with the attachment record.
     const adminClient = createAdminClient();
     const attachments: PermitAttachment[] = [];
 
@@ -277,7 +282,7 @@ export async function getPermitAttachments(
     console.error('getPermitAttachments error:', error);
     return {
       data: [],
-      error: error instanceof Error ? error.message : 'Failed to fetch attachments',
+      error: 'Failed to fetch attachments',
     };
   }
 }

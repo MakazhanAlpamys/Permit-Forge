@@ -287,22 +287,24 @@ export async function runIngestionPipeline(
     const totalChunks = chunksWithPages.length;
 
     // Stage 5: Check for existing chunks (resume support)
-    const { count: existingCount } = await supabase
+    // SECURITY FIX: Instead of trusting the count, check which chunks actually exist
+    // based on content hash to handle partial batch failures safely
+    const { data: existingChunks } = await supabase
       .from('dubai_code_chunks')
-      .select('id', { count: 'exact', head: true })
+      .select('content')
       .eq('document_name', documentId);
 
-    const alreadyIngested = existingCount ?? 0;
-    const chunksToProcess = alreadyIngested > 0
-      ? chunksWithPages.slice(alreadyIngested)
-      : chunksWithPages;
+    const existingContents = new Set((existingChunks || []).map(c => c.content));
+    const chunksToProcess = chunksWithPages.filter(
+      chunk => !existingContents.has(chunk.content)
+    );
 
-    if (alreadyIngested > 0 && chunksToProcess.length > 0) {
+    if (existingContents.size > 0 && chunksToProcess.length > 0) {
       await sendProgress({
         stage: 'embedding',
         progress: 20,
         total: 100,
-        message: `Resuming: ${alreadyIngested} chunks already ingested, ${chunksToProcess.length} remaining...`,
+        message: `Resuming: ${existingContents.size} chunks already ingested, ${chunksToProcess.length} remaining...`,
       });
     } else if (chunksToProcess.length === 0) {
       await sendProgress({
@@ -329,7 +331,7 @@ export async function runIngestionPipeline(
       message: `Processing ${chunksToProcess.length} chunks (TOC: ${structure.flatTOC.length} entries)...`,
     });
 
-    let processedCount = alreadyIngested;
+    let processedCount = existingContents.size;
     const totalBatches = Math.ceil(chunksToProcess.length / BATCH_SIZE);
     const { EMBED_DELAY_MS } = PDF_INGESTION_CONFIG;
 

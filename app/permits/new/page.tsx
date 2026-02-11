@@ -4,7 +4,7 @@
 // New Permit Application — Multi-Step Form
 // ============================================================================
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Header } from '@/components/dashboard';
 import { PermitFormStepper, PermitFormStep1, PermitFormStep2, PermitFormStep3, ComplianceCheckPanel } from '@/components/permits';
@@ -15,6 +15,7 @@ import {
   submitPermit,
   runComplianceCheck,
 } from '@/actions/permits';
+import { getCSRFTokenAction } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
 import type { BuildingDetails, ComplianceRequirements, ComplianceCheckResult } from '@/types';
@@ -50,6 +51,11 @@ export default function NewPermitPage() {
   const [error, setError] = useState('');
   const [permitId, setPermitId] = useState<string | null>(null);
   const [complianceResult, setComplianceResult] = useState<ComplianceCheckResult | null>(null);
+  const [csrfToken, setCsrfToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    getCSRFTokenAction().then(setCsrfToken);
+  }, []);
 
   // Form data
   const [step1Data, setStep1Data] = useState({
@@ -74,7 +80,7 @@ export default function NewPermitPage() {
       projectAddress: step1Data.projectAddress,
       plotNumber: step1Data.plotNumber || undefined,
       projectDescription: step1Data.projectDescription || undefined,
-    });
+    }, csrfToken || '');
 
     setLoading(false);
 
@@ -95,7 +101,7 @@ export default function NewPermitPage() {
     const result = await updatePermitBuildingDetails({
       permitId,
       buildingDetails: step2Data,
-    });
+    }, csrfToken || '');
 
     setLoading(false);
 
@@ -115,7 +121,7 @@ export default function NewPermitPage() {
     const result = await updatePermitComplianceRequirements({
       permitId,
       complianceRequirements: step3Data,
-    });
+    }, csrfToken || '');
 
     setLoading(false);
 
@@ -135,7 +141,7 @@ export default function NewPermitPage() {
     const saveResult = await updatePermitComplianceRequirements({
       permitId,
       complianceRequirements: step3Data,
-    });
+    }, csrfToken || '');
 
     if (!saveResult.success) {
       setLoading(false);
@@ -144,7 +150,7 @@ export default function NewPermitPage() {
     }
 
     // Then submit
-    const submitResult = await submitPermit(permitId);
+    const submitResult = await submitPermit(permitId, csrfToken || '');
     setLoading(false);
 
     if (submitResult.success) {
@@ -163,7 +169,7 @@ export default function NewPermitPage() {
     await updatePermitComplianceRequirements({
       permitId,
       complianceRequirements: step3Data,
-    });
+    }, csrfToken || '');
 
     const result = await runComplianceCheck(permitId);
     setCheckLoading(false);

@@ -245,6 +245,7 @@ export type AuditAction =
   | 'logout'
   | 'user_created'
   | 'user_updated'
+  | 'user_deleted'
   | 'user_blocked'
   | 'user_unblocked'
   | 'role_changed'
@@ -262,7 +263,8 @@ export type AuditAction =
   | 'permit_attachment_deleted'
   | 'permit_revision_requested'
   | 'permit_revised'
-  | 'permit_certificate_generated';
+  | 'permit_certificate_generated'
+  | 'database_cleanup';
 
 interface AuditLogEntry {
   userId?: string;

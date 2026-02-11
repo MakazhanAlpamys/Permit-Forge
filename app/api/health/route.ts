@@ -21,7 +21,8 @@ export async function GET() {
 
   const missingVars = requiredEnvVars.filter(v => !process.env[v]);
   if (missingVars.length > 0) {
-    checks.env = { status: 'fail', message: `Missing: ${missingVars.join(', ')}` };
+    // SECURITY: Don't reveal env variable names to unauthenticated users
+    checks.env = { status: 'fail', message: `${missingVars.length} required variable(s) not configured` };
     healthy = false;
   } else {
     checks.env = { status: 'ok' };
@@ -32,15 +33,17 @@ export async function GET() {
     const supabase = createAdminClient();
     const { error } = await supabase.from('users').select('id').limit(1);
     if (error) {
-      checks.database = { status: 'fail', message: error.message };
+      console.error('Health check DB error:', error.message);
+      checks.database = { status: 'fail', message: 'Database connection failed' };
       healthy = false;
     } else {
       checks.database = { status: 'ok' };
     }
   } catch (error) {
+    console.error('Health check DB error:', error instanceof Error ? error.message : error);
     checks.database = {
       status: 'fail',
-      message: error instanceof Error ? error.message : 'Connection failed',
+      message: 'Database connection failed',
     };
     healthy = false;
   }

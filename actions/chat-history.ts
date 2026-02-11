@@ -61,7 +61,7 @@ export async function createChatSession(title?: string): Promise<{ sessionId: st
   } catch (error) {
     return { 
       sessionId: null, 
-      error: error instanceof Error ? error.message : 'Failed to create session' 
+      error: 'Failed to create session' 
     };
   }
 }
@@ -125,7 +125,7 @@ export async function saveMessageToSession(params: {
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : 'Failed to save message' 
+      error: 'Failed to save message' 
     };
   }
 }
@@ -196,7 +196,7 @@ export async function getChatSessions(
     return { 
       sessions: [], 
       hasMore: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch sessions' 
+      error: 'Failed to fetch sessions' 
     };
   }
 }
@@ -285,7 +285,7 @@ export async function getSessionMessages(
     return {
       messages: [],
       hasMore: false,
-      error: error instanceof Error ? error.message : 'Failed to fetch messages'
+      error: 'Failed to fetch messages'
     };
   }
 }
@@ -335,7 +335,7 @@ export async function deleteChatSession(sessionId: string): Promise<{ success: b
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : 'Failed to delete session' 
+      error: 'Failed to delete session' 
     };
   }
 }
@@ -381,7 +381,7 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
   } catch (error) {
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to update title'
+      error: 'Failed to update title'
     };
   }
 }
@@ -411,6 +411,10 @@ export async function searchChatHistory(
       return { results: [] };
     }
 
+    // SECURITY: Escape wildcard characters in the query to prevent LIKE injection
+    const escapedQuery = trimmedQuery.replace(/[%_]/g, '\\$&');
+    const searchPattern = `%${escapedQuery}%`;
+
     const supabase = createServerClient();
 
     // Search session titles first
@@ -418,7 +422,7 @@ export async function searchChatHistory(
       .from('chat_sessions')
       .select('id, title, updated_at')
       .eq('user_id', user.id)
-      .ilike('title', `%${trimmedQuery}%`)
+      .ilike('title', searchPattern)
       .order('updated_at', { ascending: false })
       .limit(10);
 
@@ -427,7 +431,7 @@ export async function searchChatHistory(
       .from('chat_messages')
       .select('session_id, content, chat_sessions!inner(title, user_id, updated_at)')
       .eq('chat_sessions.user_id', user.id)
-      .ilike('content', `%${trimmedQuery}%`)
+      .ilike('content', searchPattern)
       .order('created_at', { ascending: false })
       .limit(20);
 
@@ -471,7 +475,7 @@ export async function searchChatHistory(
   } catch (error) {
     return {
       results: [],
-      error: error instanceof Error ? error.message : 'Search failed',
+      error: 'Search failed',
     };
   }
 }

@@ -65,7 +65,7 @@ export async function getNotifications(
     return {
       data: [],
       unreadCount: 0,
-      error: error instanceof Error ? error.message : 'Failed to fetch notifications',
+      error: 'Failed to fetch notifications',
     };
   }
 }
@@ -102,7 +102,7 @@ export async function markNotificationRead(
     console.error('markNotificationRead error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to mark notification as read',
+      error: 'Failed to mark notification as read',
     };
   }
 }
@@ -132,7 +132,7 @@ export async function markAllNotificationsRead(): Promise<{ success: boolean; er
     console.error('markAllNotificationsRead error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to mark notifications as read',
+      error: 'Failed to mark notifications as read',
     };
   }
 }

@@ -115,6 +115,7 @@ export function parseCitationsFromResponse(responseText: string): ParsedCitation
 /**
  * Match parsed citations to actual chunks in the database
  * Uses the match_citation RPC function for efficient matching
+ * OPTIMIZATION: Batch process citations to reduce N+1 queries
  */
 export async function matchCitationsToChunks(
   parsedCitations: ParsedCitation[],
@@ -143,8 +144,16 @@ export async function matchCitationsToChunks(
   const matchedCitations: MatchedCitation[] = [];
   const seenChunkIds = new Set<number>();
 
-  // Match each parsed citation
-  for (const citation of parsedCitations) {
+  // OPTIMIZATION: Limit RPC calls by deduplicating citations first
+  // and only calling RPC for unique page/section combinations (max 10 RPCs)
+  const uniqueCitations = Array.from(
+    new Map(
+      parsedCitations.map(c => [`${c.page}-${c.section || ''}`, c])
+    ).values()
+  ).slice(0, 10); // Limit to first 10 unique citations to avoid excessive RPC calls
+
+  // Match each unique citation
+  for (const citation of uniqueCitations) {
     try {
       const { data, error } = await supabase.rpc('match_citation', {
         citation_page: citation.page,

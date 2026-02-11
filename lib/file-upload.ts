@@ -4,6 +4,16 @@
 
 import { FILE_UPLOAD_LIMITS } from './constants';
 
+// Map of allowed extensions to their expected MIME types
+const ALLOWED_MIME_TYPES: Record<string, string[]> = {
+  '.pdf': ['application/pdf'],
+  '.png': ['image/png'],
+  '.jpg': ['image/jpeg'],
+  '.jpeg': ['image/jpeg'],
+  '.dwg': ['application/acad', 'application/x-acad', 'application/x-autocad', 'application/dwg', 'image/vnd.dwg'],
+  '.dxf': ['application/dxf', 'application/x-dxf', 'image/vnd.dxf', 'image/x-dxf'],
+};
+
 /**
  * Validate a file for permit attachment upload
  */
@@ -30,6 +40,18 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
       valid: false,
       error: `File type not allowed. Accepted: ${FILE_UPLOAD_LIMITS.allowedExtensions.join(', ')}`,
     };
+  }
+
+  // SECURITY: Validate MIME type matches extension to prevent disguised files
+  if (file.type) {
+    const ext = '.' + fileName.split('.').pop();
+    const allowedMimes = ALLOWED_MIME_TYPES[ext];
+    if (allowedMimes && !allowedMimes.includes(file.type)) {
+      return {
+        valid: false,
+        error: `File MIME type (${file.type}) does not match extension (${ext})`,
+      };
+    }
   }
 
   return { valid: true };

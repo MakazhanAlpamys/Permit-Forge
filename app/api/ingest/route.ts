@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server';
 import { getQuickSession } from '@/lib/auth';
 import { checkRateLimit } from '@/lib/supabase-server';
 import { runIngestionPipeline, type IngestionProgress } from '@/lib/pdf-ingestion';
+import { getDocumentById, getDocumentPdfPath } from '@/lib/document-registry';
 
 // -----------------------------------------------------------------------------
 // Streaming API Route
@@ -40,14 +41,25 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     documentId = body.documentId;
-    pdfPath = body.pdfPath;
 
-    if (!documentId || !pdfPath) {
-      return new Response(JSON.stringify({ error: 'Missing documentId or pdfPath' }), {
+    if (!documentId) {
+      return new Response(JSON.stringify({ error: 'Missing documentId' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
     }
+
+    // SECURITY: Validate documentId against registry — prevents path traversal
+    const docInfo = getDocumentById(documentId);
+    if (!docInfo) {
+      return new Response(JSON.stringify({ error: 'Unknown document ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Derive pdfPath from the trusted registry instead of user input
+    pdfPath = getDocumentPdfPath(documentId);
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid request body' }), {
       status: 400,

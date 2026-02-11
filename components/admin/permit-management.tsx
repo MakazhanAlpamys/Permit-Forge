@@ -4,7 +4,7 @@
 // Admin Permit Management Component
 // ============================================================================
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { PermitStatusBadge } from '@/components/permits/permit-status-badge';
 import { PROJECT_TYPES } from '@/lib/constants';
 import { reviewPermit, setPermitUnderReview } from '@/actions/admin-permits';
+import { getCSRFTokenAction } from '@/actions/auth';
 import {
   ClipboardCheck,
   Eye,
@@ -52,6 +53,11 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState('');
 
+  const csrfTokenRef = useRef<string | null>(null);
+  useEffect(() => {
+    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+  }, []);
+
   const handleFilter = (status: string) => {
     setActiveFilter(status);
     onFilterStatus(status);
@@ -60,7 +66,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
   const handleStartReview = async (permit: PermitApplication) => {
     if (permit.status !== 'submitted') return;
     setActionLoading(permit.id);
-    const result = await setPermitUnderReview(permit.id);
+    const result = await setPermitUnderReview(permit.id, csrfTokenRef.current || undefined);
     setActionLoading(null);
     if (result.success) {
       onRefresh();
@@ -78,7 +84,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
       permitId: reviewDialog.permit.id,
       action: reviewDialog.action,
       comments: reviewComments,
-    });
+    }, csrfTokenRef.current || undefined);
 
     setActionLoading(null);
 

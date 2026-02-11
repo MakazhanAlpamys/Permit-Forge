@@ -170,7 +170,7 @@ function CertificateDocument({ data }: { data: CertificateData }) {
       React.createElement(
         View,
         { style: styles.statusBadge },
-        React.createElement(Text, { style: styles.statusText }, 'APPROVED'),
+        React.createElement(Text, { style: styles.statusText }, data.complianceStatus.toUpperCase()),
       ),
       // Project Information
       React.createElement(

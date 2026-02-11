@@ -225,12 +225,17 @@ LOG_LEVEL=info                           # debug | info | warn | error
 ### 3. Set Up Database
 
 1. Create a project in [Supabase Dashboard](https://supabase.com/dashboard)
-2. Open **SQL Editor** and run all migration files from `supabase/migrations/` **in order** (001 → 006):
+2. Open **SQL Editor** and run the migrations.
+
+**Option A — Single file (recommended for fresh setup):**
+Run `000_full_setup.sql` — it contains everything from 001–005 merged into one idempotent script.
+
+**Option B — Incremental migrations (001 → 006):**
 
 | Migration | Purpose |
 |-----------|---------|
 | `001_complete_setup.sql` | Core tables, extensions (pgvector, pg_trgm, pgcrypto), RLS, RPC functions, seed admin user |
-| `002_permit_system.sql` | Permit applications and status history tables |
+| `002_permit_applications.sql` | Permit applications and status history tables |
 | `003_permit_enhancements.sql` | Attachments, notifications, certificates, revision support |
 | `004_multi_document_support.sql` | Multi-document search & document registry |
 | `005_analytics_functions.sql` | Analytics RPCs and materialized views |
@@ -431,17 +436,19 @@ User Query
 │  username (UNIQUE)  │          │  content (TEXT)      │
 │  email              │          │  metadata (JSONB)    │
 │  password_hash      │          │  embedding (VECTOR)  │ ◄── pgvector
-│  role (admin/user)  │          │  fts (TSVECTOR)      │ ◄── GIN index
-│  blocked (BOOL)     │          │  document_name       │
-│  blocked_reason     │          └──────────────────────┘
+│  full_name          │          │  fts (TSVECTOR)      │ ◄── GIN index
+│  role (admin/user)  │          │  document_name       │
+│  blocked (BOOL)     │          └──────────────────────┘
+│  blocked_reason     │
+│  last_login         │
 │  created_at         │
 └──────────┬──────────┘          ┌──────────────────────┐
            │ 1:N                 │  document_trees      │
            ▼                     │ ──────────────────── │
 ┌─────────────────────┐          │  id (UUID, PK)       │
 │   chat_sessions     │          │  document_name       │
-│ ─────────────────── │          │  tree_data (JSONB)   │
-│  id (UUID, PK)      │          │  metadata (JSONB)    │
+│ ─────────────────── │          │  total_pages (INT)   │
+│  id (UUID, PK)      │          │  tree_data (JSONB)   │
 │  user_id (FK)       │          │  updated_at          │
 │  title              │          └──────────────────────┘
 │  created_at         │
@@ -452,11 +459,11 @@ User Query
 ┌─────────────────────┐          │  user_id (FK)        │
 │   chat_messages     │          │  project_name        │
 │ ─────────────────── │          │  project_type        │
-│  id (UUID, PK)      │          │  building_details    │ ◄── JSONB
-│  session_id (FK)    │          │  compliance_reqs     │ ◄── JSONB
-│  role               │          │  compliance_result   │ ◄── JSONB
-│  content (TEXT)     │          │  status (6 states)   │
-│  citations (JSONB)  │          │  review_comments     │
+│  id (UUID, PK)      │          │  project_address     │
+│  session_id (FK)    │          │  building_details    │ ◄── JSONB
+│  role               │          │  compliance_reqs     │ ◄── JSONB
+│  content (TEXT)     │          │  compliance_result   │ ◄── JSONB
+│  citations (JSONB)  │          │  status (6 states)   │
 │  created_at         │          │  reviewed_by (FK)    │
 └─────────────────────┘          │  revision_count      │
                                  │  revision_notes      │
@@ -466,9 +473,10 @@ User Query
 │  id (UUID, PK)      │          │ permit_status_history│
 │  user_id (FK)       │          │ ──────────────────── │
 │  action (12 types)  │          │  id, permit_id (FK)  │
-│  details (JSONB)    │          │  old_status          │
-│  ip_address         │          │  new_status          │
-│  user_agent         │          │  changed_by (FK)     │
+│  target_user_id(FK) │          │  from_status         │
+│  metadata (JSONB)   │          │  to_status           │
+│  ip_address         │          │  changed_by (FK)     │
+│  user_agent         │          │  comment             │
 │  created_at         │          │  created_at          │
 └─────────────────────┘          └──────────────────────┘
 
@@ -478,19 +486,20 @@ User Query
 │  id (UUID, PK)      │          │  id (UUID, PK)       │
 │  permit_id (FK)     │          │  permit_id (FK)      │
 │  file_name          │          │  certificate_number  │ ◄── UNIQUE
-│  file_size          │          │  generated_at        │
-│  file_type          │          └──────────────────────┘
-│  storage_path       │
+│  file_size          │          │  generated_by (FK)   │
+│  file_type          │          │  generated_at        │
+│  storage_path       │          └──────────────────────┘
+│  uploaded_by (FK)   │
 └─────────────────────┘          ┌──────────────────────┐
                                  │   notifications      │
 ┌─────────────────────┐          │ ──────────────────── │
 │   rate_limits       │          │  id (UUID, PK)       │
 │ ─────────────────── │          │  user_id (FK)        │
-│  user_id (FK)       │          │  type (5 types)      │
-│  endpoint           │          │  title, body         │
-│  request_count      │          │  data (JSONB)        │
-│  window_start       │          │  read (BOOL)         │
-└─────────────────────┘          │  created_at          │
+│  id (BIGINT, PK)    │          │  type (5 types)      │
+│  user_id (FK)       │          │  title, body         │
+│  request_timestamp  │          │  data (JSONB)        │
+└─────────────────────┘          │  read (BOOL)         │
+                                 │  created_at          │
                                  └──────────────────────┘
 ```
 
@@ -616,8 +625,8 @@ data: {"type":"complete","chunksProcessed":1250}
 ### Multi-Step Application Form
 
 1. **Project Info** — name, description, location, project type (residential / commercial / industrial / mixed_use / institutional)
-2. **Building Details** — floors, built-up area, plot area, height, units, parking spaces, occupancy type, construction type, structural system
-3. **Compliance Requirements** — fire safety, accessibility features, environmental requirements, special conditions
+2. **Building Details** — floors, built-up area, plot area, height, units, parking spaces, occupancy type, construction type
+3. **Compliance Requirements** — fire safety, accessibility, parking compliance, structural safety, MEP systems, energy efficiency, additional notes
 
 ### AI Compliance Check
 

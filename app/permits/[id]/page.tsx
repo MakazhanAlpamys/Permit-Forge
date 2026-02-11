@@ -15,6 +15,7 @@ import {
   AttachmentList,
 } from '@/components/permits';
 import { getPermitById, getPermitHistory, runComplianceCheck, submitPermit, deletePermit, revisePermit } from '@/actions/permits';
+import { getCSRFTokenAction } from '@/actions/auth';
 import { getPermitAttachments } from '@/actions/permit-attachments';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
@@ -33,6 +34,7 @@ export default function PermitDetailPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [error, setError] = useState('');
+  const [csrfToken, setCsrfToken] = useState<string | null>(null);
 
   const loadPermit = useCallback(async () => {
     setLoading(true);
@@ -55,6 +57,7 @@ export default function PermitDetailPage() {
 
   useEffect(() => {
     loadPermit();
+    getCSRFTokenAction().then(setCsrfToken);
   }, [loadPermit]);
 
   const handleRunCheck = async () => {
@@ -73,7 +76,7 @@ export default function PermitDetailPage() {
   const handleSubmit = async () => {
     setActionLoading('submit');
     setError('');
-    const result = await submitPermit(permitId);
+    const result = await submitPermit(permitId, csrfToken || '');
     setActionLoading(null);
 
     if (result.success) {
@@ -84,7 +87,7 @@ export default function PermitDetailPage() {
   };
 
   const handleDelete = async () => {
-    const result = await deletePermit(permitId);
+    const result = await deletePermit(permitId, csrfToken || '');
     if (result.success) {
       router.push('/permits');
     } else {
@@ -96,7 +99,7 @@ export default function PermitDetailPage() {
   const handleRevise = async () => {
     setActionLoading('revise');
     setError('');
-    const result = await revisePermit(permitId);
+    const result = await revisePermit(permitId, csrfToken || '');
     setActionLoading(null);
 
     if (result.success) {

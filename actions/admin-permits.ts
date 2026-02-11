@@ -6,7 +6,7 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
-import { requireAdmin } from '@/lib/security';
+import { requireAdmin, requireCSRF } from '@/lib/security';
 import { uuidSchema, reviewPermitSchema, type ReviewPermitInput } from '@/lib/validations';
 import type { PermitApplication, PermitStats } from '@/types';
 
@@ -73,7 +73,7 @@ export async function getAdminPermits(
     console.error('getAdminPermits error:', error);
     return {
       data: [],
-      error: error instanceof Error ? error.message : 'Failed to fetch permits',
+      error: 'Failed to fetch permits',
     };
   }
 }
@@ -83,13 +83,17 @@ export async function getAdminPermits(
 // -----------------------------------------------------------------------------
 
 export async function reviewPermit(
-  data: ReviewPermitInput
+  data: ReviewPermitInput,
+  csrfToken?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAdmin();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     const validation = reviewPermitSchema.safeParse(data);
     if (!validation.success) {
@@ -180,7 +184,7 @@ export async function reviewPermit(
     console.error('reviewPermit error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to review permit',
+      error: 'Failed to review permit',
     };
   }
 }
@@ -190,13 +194,17 @@ export async function reviewPermit(
 // -----------------------------------------------------------------------------
 
 export async function setPermitUnderReview(
-  permitId: string
+  permitId: string,
+  csrfToken?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAdmin();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     const idValidation = uuidSchema.safeParse(permitId);
     if (!idValidation.success) {
@@ -250,7 +258,7 @@ export async function setPermitUnderReview(
     console.error('setPermitUnderReview error:', error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to update permit status',
+      error: 'Failed to update permit status',
     };
   }
 }
@@ -292,7 +300,7 @@ export async function getPermitStats(): Promise<{ data: PermitStats | null; erro
     console.error('getPermitStats error:', error);
     return {
       data: null,
-      error: error instanceof Error ? error.message : 'Failed to fetch permit stats',
+      error: 'Failed to fetch permit stats',
     };
   }
 }

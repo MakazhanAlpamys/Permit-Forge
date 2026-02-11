@@ -103,7 +103,7 @@ describe('POST /api/chat/stream', () => {
     mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
     mockCheckRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 5000 });
 
-    const request = createRequest({ message: 'Hello' });
+    const request = createRequest({ message: 'Hello' }, { 'x-csrf-token': 'valid-token' });
     const response = await POST(request);
 
     expect(response.status).toBe(429);
@@ -115,7 +115,7 @@ describe('POST /api/chat/stream', () => {
   it('should return 400 on invalid input (empty message)', async () => {
     mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
 
-    const request = createRequest({ message: '' });
+    const request = createRequest({ message: '' }, { 'x-csrf-token': 'valid-token' });
     const response = await POST(request);
 
     expect(response.status).toBe(400);
@@ -126,7 +126,7 @@ describe('POST /api/chat/stream', () => {
   it('should return 400 on missing message field', async () => {
     mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
 
-    const request = createRequest({});
+    const request = createRequest({}, { 'x-csrf-token': 'valid-token' });
     const response = await POST(request);
 
     expect(response.status).toBe(400);
@@ -142,7 +142,7 @@ describe('POST /api/chat/stream', () => {
     const request = createRequest({
       message: 'Hello',
       sessionId: '550e8400-e29b-41d4-a716-446655440000',
-    });
+    }, { 'x-csrf-token': 'valid-token' });
     const response = await POST(request);
 
     expect(response.status).toBe(403);
@@ -168,7 +168,7 @@ describe('POST /api/chat/stream', () => {
   it('should return streaming response for valid request without session', async () => {
     mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
 
-    const request = createRequest({ message: 'Hello world' });
+    const request = createRequest({ message: 'Hello world' }, { 'x-csrf-token': 'valid-token' });
     const response = await POST(request);
 
     expect(response.status).toBe(200);
@@ -178,20 +178,21 @@ describe('POST /api/chat/stream', () => {
   it('should call checkRateLimit with user ID', async () => {
     mockGetQuickSession.mockResolvedValue({ id: 'user-123', role: 'user' });
 
-    const request = createRequest({ message: 'Hello' });
+    const request = createRequest({ message: 'Hello' }, { 'x-csrf-token': 'valid-token' });
     await POST(request);
 
     expect(mockCheckRateLimit).toHaveBeenCalledWith('user-123');
   });
 
-  it('should skip CSRF validation when no token provided', async () => {
+  it('should return 403 when no CSRF token provided', async () => {
     mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
 
     const request = createRequest({ message: 'Hello world' });
     const response = await POST(request);
 
-    // Should not call validateCSRFToken at all
-    expect(mockValidateCSRFToken).not.toHaveBeenCalled();
-    expect(response.status).toBe(200);
+    // CSRF is now mandatory — missing token should return 403
+    expect(response.status).toBe(403);
+    const data = await response.json();
+    expect(data.error).toBe('CSRF token required');
   });
 });

@@ -9,6 +9,7 @@ import { requireAdmin } from '@/lib/security';
 import { runIngestionPipeline } from '@/lib/pdf-ingestion';
 import { clearDocumentTreeCache } from '@/lib/tree-cache';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
+import { getDocumentById, getDocumentPdfPath } from '@/lib/document-registry';
 import type { ChunkMetadata, IngestionResult } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -16,8 +17,7 @@ import type { ChunkMetadata, IngestionResult } from '@/types';
 // -----------------------------------------------------------------------------
 
 export async function ingestPDF(
-  documentId: string,
-  pdfPath: string
+  documentId: string
 ): Promise<IngestionResult> {
   // SECURITY: Verify admin role
   const authCheck = await requireAdmin();
@@ -29,13 +29,25 @@ export async function ingestPDF(
     };
   }
 
-  if (!documentId || !pdfPath) {
+  if (!documentId) {
     return {
       success: false,
       chunksProcessed: 0,
-      error: 'Missing documentId or pdfPath',
+      error: 'Missing documentId',
     };
   }
+
+  // SECURITY: Validate documentId against registry — prevents path traversal
+  const docInfo = getDocumentById(documentId);
+  if (!docInfo) {
+    return {
+      success: false,
+      chunksProcessed: 0,
+      error: 'Unknown document ID',
+    };
+  }
+
+  const pdfPath = getDocumentPdfPath(documentId);
 
   console.log(`📄 Starting PDF ingestion for document: ${documentId}...`);
 

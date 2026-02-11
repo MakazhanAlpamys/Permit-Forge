@@ -92,7 +92,7 @@ export async function getAnalyticsDashboardStats(): Promise<{
     console.error('getAnalyticsDashboardStats error:', error);
     return {
       data: null,
-      error: error instanceof Error ? error.message : 'Failed to fetch analytics stats',
+      error: 'Failed to fetch analytics stats',
     };
   }
 }
@@ -132,7 +132,7 @@ export async function getMessageActivity30d(): Promise<{
     console.error('getMessageActivity30d error:', error);
     return {
       data: [],
-      error: error instanceof Error ? error.message : 'Failed to fetch message activity',
+      error: 'Failed to fetch message activity',
     };
   }
 }
@@ -155,34 +155,36 @@ export async function getDocumentUsageStats(): Promise<{
     const { data, error } = await supabase.rpc('get_document_stats');
 
     if (error) {
-      // Fallback: manual aggregation
-      const { data: chunks, error: chunksError } = await supabase
+      // Fallback: Use lightweight count-only query per document instead of
+      // loading all chunks into memory. This avoids OOM on large datasets.
+      const { data: docNames, error: docError } = await supabase
         .from('dubai_code_chunks')
-        .select('document_name, metadata');
+        .select('document_name')
+        .limit(1000);
 
-      if (chunksError || !chunks) {
+      if (docError || !docNames) {
         return { data: [], error: 'Failed to fetch document stats' };
       }
 
-      const statsMap = new Map<string, { count: number; minPage: number; maxPage: number }>();
-      for (const chunk of chunks) {
-        const docName = chunk.document_name || 'unknown';
-        const page = (chunk.metadata as { page?: number })?.page || 0;
-        const existing = statsMap.get(docName) || { count: 0, minPage: Infinity, maxPage: 0 };
-        existing.count++;
-        if (page < existing.minPage) existing.minPage = page;
-        if (page > existing.maxPage) existing.maxPage = page;
-        statsMap.set(docName, existing);
+      // Get unique document names
+      const uniqueDocs = [...new Set(docNames.map(d => d.document_name || 'unknown'))];
+
+      const stats: DocumentUsageStat[] = [];
+      for (const docName of uniqueDocs) {
+        const { count } = await supabase
+          .from('dubai_code_chunks')
+          .select('id', { count: 'exact', head: true })
+          .eq('document_name', docName);
+
+        stats.push({
+          documentName: docName,
+          chunkCount: count || 0,
+          minPage: 0,
+          maxPage: 0,
+        });
       }
 
-      return {
-        data: Array.from(statsMap.entries()).map(([name, stat]) => ({
-          documentName: name,
-          chunkCount: stat.count,
-          minPage: stat.minPage === Infinity ? 0 : stat.minPage,
-          maxPage: stat.maxPage,
-        })),
-      };
+      return { data: stats };
     }
 
     return {
@@ -197,7 +199,7 @@ export async function getDocumentUsageStats(): Promise<{
     console.error('getDocumentUsageStats error:', error);
     return {
       data: [],
-      error: error instanceof Error ? error.message : 'Failed to fetch document usage',
+      error: 'Failed to fetch document usage',
     };
   }
 }
@@ -251,7 +253,7 @@ export async function getPermitStatusBreakdown(): Promise<{
     console.error('getPermitStatusBreakdown error:', error);
     return {
       data: null,
-      error: error instanceof Error ? error.message : 'Failed to fetch permit breakdown',
+      error: 'Failed to fetch permit breakdown',
     };
   }
 }
@@ -294,7 +296,7 @@ export async function getTopActiveUsers(
     console.error('getTopActiveUsers error:', error);
     return {
       data: [],
-      error: error instanceof Error ? error.message : 'Failed to fetch top users',
+      error: 'Failed to fetch top users',
     };
   }
 }

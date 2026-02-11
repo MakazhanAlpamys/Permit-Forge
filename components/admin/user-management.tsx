@@ -4,7 +4,7 @@
 // Admin Dashboard - User Management Table (with Modal Dialogs)
 // ============================================================================
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +37,7 @@ import {
   adminDeleteUser,
   type AdminUser 
 } from '@/actions/admin';
+import { getCSRFTokenAction } from '@/actions/auth';
 
 // -----------------------------------------------------------------------------
 // Modal Types
@@ -76,6 +77,12 @@ export function UserManagement({
   const [searchQuery, setSearchQuery] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>({ type: null, user: null });
+  const csrfTokenRef = useRef<string | null>(null);
+  
+  // Fetch CSRF token on mount
+  useEffect(() => {
+    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+  }, []);
   
   // Form states for modals
   const [blockReason, setBlockReason] = useState('');
@@ -110,7 +117,8 @@ export function UserManagement({
     const result = await blockUser(
       modal.user.id, 
       !modal.user.blocked, 
-      blockReason || undefined
+      blockReason || undefined,
+      csrfTokenRef.current || undefined
     );
     setActionLoading(null);
     
@@ -133,7 +141,7 @@ export function UserManagement({
     const newRole = modal.user.role === 'admin' ? 'user' : 'admin';
     
     setActionLoading(modal.user.id);
-    const result = await updateUserRole(modal.user.id, newRole);
+    const result = await updateUserRole(modal.user.id, newRole, csrfTokenRef.current || undefined);
     setActionLoading(null);
     
     if (result.success) {
@@ -172,7 +180,7 @@ export function UserManagement({
     }
     
     setActionLoading(modal.user.id);
-    const result = await adminResetPassword(modal.user.id, newPassword);
+    const result = await adminResetPassword(modal.user.id, newPassword, csrfTokenRef.current || undefined);
     setActionLoading(null);
     
     if (result.success) {
@@ -191,7 +199,7 @@ export function UserManagement({
     if (!modal.user) return;
     
     setActionLoading(modal.user.id);
-    const result = await adminDeleteUser(modal.user.id);
+    const result = await adminDeleteUser(modal.user.id, csrfTokenRef.current || undefined);
     setActionLoading(null);
     
     if (result.success) {

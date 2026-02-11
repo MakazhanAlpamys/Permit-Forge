@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation';
 import { Header } from '@/components/dashboard';
 import { PermitList } from '@/components/permits';
 import { getMyPermits, deletePermit } from '@/actions/permits';
+import { getCSRFTokenAction } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Plus, RefreshCw, ArrowLeft } from 'lucide-react';
@@ -20,6 +21,7 @@ export default function PermitsPage() {
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [permitToDelete, setPermitToDelete] = useState<string | null>(null);
+  const [csrfToken, setCsrfToken] = useState<string | null>(null);
 
   const loadPermits = useCallback(async () => {
     setLoading(true);
@@ -30,6 +32,7 @@ export default function PermitsPage() {
 
   useEffect(() => {
     loadPermits();
+    getCSRFTokenAction().then(setCsrfToken);
   }, [loadPermits]);
 
   const handleView = (id: string) => {
@@ -43,7 +46,7 @@ export default function PermitsPage() {
 
   const confirmDelete = async () => {
     if (!permitToDelete) return;
-    const result = await deletePermit(permitToDelete);
+    const result = await deletePermit(permitToDelete, csrfToken || '');
     if (result.success) {
       setPermits(prev => prev.filter(p => p.id !== permitToDelete));
     }

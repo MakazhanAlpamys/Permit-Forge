@@ -92,7 +92,7 @@ export async function getAuditLogs(
     console.error('getAuditLogs error:', error);
     return { 
       data: [], 
-      error: error instanceof Error ? error.message : 'Failed to fetch logs' 
+      error: 'Failed to fetch logs' 
     };
   }
 }
@@ -156,7 +156,7 @@ export async function getAllUsers(
     console.error('getAllUsers error:', error);
     return { 
       data: [], 
-      error: error instanceof Error ? error.message : 'Failed to fetch users' 
+      error: 'Failed to fetch users' 
     };
   }
 }
@@ -177,10 +177,8 @@ export async function blockUser(
       return { success: false, error: authCheck.error };
     }
 
-    if (csrfToken) {
-      const csrf = await requireCSRF(csrfToken);
-      if (!csrf.valid) return { success: false, error: csrf.error };
-    }
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     // Validate userId
     const validation = uuidSchema.safeParse(userId);
@@ -212,7 +210,7 @@ export async function blockUser(
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : 'Failed to update user' 
+      error: 'Failed to update user' 
     };
   }
 }
@@ -223,13 +221,17 @@ export async function blockUser(
 
 export async function updateUserRole(
   userId: string,
-  role: 'admin' | 'user'
+  role: 'admin' | 'user',
+  csrfToken?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAdmin();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
     
     // Validate userId
     const validation = uuidSchema.safeParse(userId);
@@ -260,7 +262,7 @@ export async function updateUserRole(
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : 'Failed to update role' 
+      error: 'Failed to update role' 
     };
   }
 }
@@ -281,10 +283,8 @@ export async function adminCreateUser(data: {
       return { success: false, error: authCheck.error };
     }
 
-    if (csrfToken) {
-      const csrf = await requireCSRF(csrfToken);
-      if (!csrf.valid) return { success: false, error: csrf.error };
-    }
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     // Validate input
     const validation = createUserSchema.safeParse(data);
@@ -350,7 +350,7 @@ export async function adminCreateUser(data: {
     console.error('adminCreateUser error:', error);
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : 'Failed to create user' 
+      error: 'Failed to create user' 
     };
   }
 }
@@ -359,12 +359,15 @@ export async function adminCreateUser(data: {
 // Delete User (Admin)
 // -----------------------------------------------------------------------------
 
-export async function adminDeleteUser(userId: string): Promise<{ success: boolean; error?: string }> {
+export async function adminDeleteUser(userId: string, csrfToken?: string): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAdmin();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
     
     // Validate userId
     const validation = uuidSchema.safeParse(userId);
@@ -397,7 +400,7 @@ export async function adminDeleteUser(userId: string): Promise<{ success: boolea
     const metadata = await getRequestMetadata();
     await logAuditEvent({
       userId: authCheck.user.id,
-      action: 'user_updated',
+      action: 'user_deleted',
       targetUserId: userId,
       metadata: { action: 'deleted', username: targetUser?.username },
       ...metadata,
@@ -407,7 +410,7 @@ export async function adminDeleteUser(userId: string): Promise<{ success: boolea
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : 'Failed to delete user' 
+      error: 'Failed to delete user' 
     };
   }
 }
@@ -418,13 +421,17 @@ export async function adminDeleteUser(userId: string): Promise<{ success: boolea
 
 export async function adminResetPassword(
   userId: string,
-  newPassword: string
+  newPassword: string,
+  csrfToken?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAdmin();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
     
     // Validate userId
     const validation = uuidSchema.safeParse(userId);
@@ -462,7 +469,7 @@ export async function adminResetPassword(
   } catch (error) {
     return { 
       success: false, 
-      error: error instanceof Error ? error.message : 'Failed to reset password' 
+      error: 'Failed to reset password' 
     };
   }
 }
