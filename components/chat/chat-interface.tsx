@@ -57,15 +57,33 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
   const isMountedRef = useRef(true);
   const isCancelledRef = useRef(false);
   const csrfTokenRef = useRef<string | null>(null);
+  const isInternalSessionCreateRef = useRef(false);
 
   // Load messages when session changes
   useEffect(() => {
     if (sessionId) {
-      loadSessionMessages(sessionId);
-      setCurrentSessionId(sessionId);
+      // Skip reloading messages if this session was just created internally
+      // (avoids race condition where DB reload overwrites locally-added messages)
+      if (isInternalSessionCreateRef.current) {
+        isInternalSessionCreateRef.current = false;
+        setCurrentSessionId(sessionId);
+      } else {
+        loadSessionMessages(sessionId);
+        setCurrentSessionId(sessionId);
+      }
     } else {
+      // "New Chat" — abort any ongoing stream and reset all state
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      isCancelledRef.current = true;
       setMessages([]);
       setCurrentSessionId(null);
+      setIsLoading(false);
+      setIsStreaming(false);
+      setStreamingContent('');
+      setIsVerifyingSources(false);
       setHasMoreMessages(false);
       setMessageCursor(undefined);
     }
@@ -174,6 +192,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
         activeSessionId = newSessionId;
         setCurrentSessionId(newSessionId);
         if (onSessionCreated) {
+          isInternalSessionCreateRef.current = true;
           onSessionCreated(newSessionId);
         }
       }
@@ -375,10 +394,20 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     }
   };
 
-  // Clear chat history
+  // Clear chat — equivalent to clicking "New Chat"
   const handleClearChat = () => {
+    // Abort any ongoing stream
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    isCancelledRef.current = true;
     setMessages([]);
     setCurrentSessionId(null);
+    setIsLoading(false);
+    setIsStreaming(false);
+    setStreamingContent('');
+    setIsVerifyingSources(false);
     if (onSessionCreated) {
       onSessionCreated(null!);
     }

@@ -82,16 +82,10 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pathname = usePathname();
 
-  // Load chat sessions
+  // Load chat sessions on mount and whenever active session changes
+  // (including when it becomes null after "New Chat" click)
   useEffect(() => {
     loadSessions();
-  }, []);
-
-  // Reload when new session is created
-  useEffect(() => {
-    if (currentSessionId) {
-      loadSessions();
-    }
   }, [currentSessionId]);
 
   const loadSessions = async () => {
