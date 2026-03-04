@@ -102,7 +102,7 @@ describe('Permits Server Actions', () => {
       const permitId = validUUID;
       mockSingle.mockResolvedValueOnce({ data: { id: permitId }, error: null });
 
-      const result = await createPermit(validPermitData);
+      const result = await createPermit(validPermitData, 'csrf-token');
 
       expect(result.success).toBe(true);
       expect(result.permitId).toBe(permitId);
@@ -112,7 +112,7 @@ describe('Permits Server Actions', () => {
     it('should return error when unauthenticated', async () => {
       mockRequireAuth.mockResolvedValue({ success: false, error: 'Not authenticated' });
 
-      const result = await createPermit(validPermitData);
+      const result = await createPermit(validPermitData, 'csrf-token');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Not authenticated');
@@ -123,7 +123,7 @@ describe('Permits Server Actions', () => {
         projectName: 'AB', // too short (min 3)
         projectType: 'residential' as const,
         projectAddress: '123 Dubai Street, Dubai',
-      });
+      }, 'csrf-token');
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
@@ -135,7 +135,7 @@ describe('Permits Server Actions', () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         projectType: 'invalid_type' as any,
         projectAddress: '123 Dubai Street, Dubai',
-      });
+      }, 'csrf-token');
 
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
@@ -184,7 +184,7 @@ describe('Permits Server Actions', () => {
           error: null,
         }); // permit data
 
-      const result = await submitPermit(validUUID);
+      const result = await submitPermit(validUUID, 'csrf-token');
 
       expect(result.success).toBe(true);
     });
@@ -192,14 +192,14 @@ describe('Permits Server Actions', () => {
     it('should return error when unauthenticated', async () => {
       mockRequireAuth.mockResolvedValue({ success: false, error: 'Not authenticated' });
 
-      const result = await submitPermit(validUUID);
+      const result = await submitPermit(validUUID, 'csrf-token');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Not authenticated');
     });
 
     it('should reject invalid permit ID', async () => {
-      const result = await submitPermit('not-a-uuid');
+      const result = await submitPermit('not-a-uuid', 'csrf-token');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Invalid permit ID');
@@ -212,7 +212,7 @@ describe('Permits Server Actions', () => {
         error: null,
       });
 
-      const result = await submitPermit(validUUID);
+      const result = await submitPermit(validUUID, 'csrf-token');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Access denied');
@@ -318,7 +318,7 @@ describe('Permits Server Actions', () => {
 
   describe('deletePermit', () => {
     it('should reject invalid permit ID', async () => {
-      const result = await deletePermit('not-a-uuid');
+      const result = await deletePermit('not-a-uuid', 'csrf-token');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Invalid permit ID');
@@ -331,7 +331,7 @@ describe('Permits Server Actions', () => {
         error: null,
       });
 
-      const result = await deletePermit(validUUID);
+      const result = await deletePermit(validUUID, 'csrf-token');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Access denied');
@@ -340,7 +340,7 @@ describe('Permits Server Actions', () => {
     it('should return error when unauthenticated', async () => {
       mockRequireAuth.mockResolvedValue({ success: false, error: 'Not authenticated' });
 
-      const result = await deletePermit(validUUID);
+      const result = await deletePermit(validUUID, 'csrf-token');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Not authenticated');

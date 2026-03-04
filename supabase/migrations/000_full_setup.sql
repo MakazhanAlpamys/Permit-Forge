@@ -2,7 +2,7 @@
 -- Emirate Forge — Complete Database Setup (Merged Migration)
 -- Combines: 001_complete_setup + 002_permit_applications +
 --           003_permit_enhancements + 004_multi_document_support +
---           005_analytics_functions
+--           005_analytics_functions + 006_cleanup_functions
 -- Run this SQL in Supabase SQL Editor (https://supabase.com/dashboard)
 -- ============================================================================
 
@@ -51,6 +51,10 @@ DROP FUNCTION IF EXISTS clear_document_chunks CASCADE;
 DROP FUNCTION IF EXISTS get_analytics_dashboard_stats CASCADE;
 DROP FUNCTION IF EXISTS get_message_activity_30d CASCADE;
 DROP FUNCTION IF EXISTS get_top_active_users CASCADE;
+DROP FUNCTION IF EXISTS cleanup_old_sessions CASCADE;
+DROP FUNCTION IF EXISTS cleanup_old_audit_logs CASCADE;
+DROP FUNCTION IF EXISTS cleanup_expired_rate_limits CASCADE;
+DROP FUNCTION IF EXISTS run_all_cleanup CASCADE;
 
 -- ============================================================================
 -- 1. EXTENSIONS
@@ -1441,7 +1445,97 @@ REVOKE ALL ON users FROM anon;
 REVOKE ALL ON audit_logs FROM anon;
 
 -- ============================================================================
--- 12. DEFAULT ADMIN USER
+-- 12. DATA CLEANUP FUNCTIONS (from 006_cleanup_functions)
+-- ============================================================================
+
+-- Clean old chat sessions (no activity in retention_days)
+CREATE OR REPLACE FUNCTION cleanup_old_sessions(retention_days INT DEFAULT 90)
+RETURNS TABLE(deleted_count BIGINT) AS $$
+DECLARE
+  _deleted BIGINT;
+BEGIN
+  WITH deleted AS (
+    DELETE FROM chat_sessions
+    WHERE updated_at < NOW() - (retention_days || ' days')::INTERVAL
+    RETURNING id
+  )
+  SELECT COUNT(*) INTO _deleted FROM deleted;
+
+  RETURN QUERY SELECT _deleted;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION cleanup_old_sessions(INT) FROM public, anon;
+GRANT EXECUTE ON FUNCTION cleanup_old_sessions(INT) TO authenticated;
+
+-- Clean old audit logs (older than retention_days)
+CREATE OR REPLACE FUNCTION cleanup_old_audit_logs(retention_days INT DEFAULT 365)
+RETURNS TABLE(deleted_count BIGINT) AS $$
+DECLARE
+  _deleted BIGINT;
+BEGIN
+  WITH deleted AS (
+    DELETE FROM audit_logs
+    WHERE created_at < NOW() - (retention_days || ' days')::INTERVAL
+    RETURNING id
+  )
+  SELECT COUNT(*) INTO _deleted FROM deleted;
+
+  RETURN QUERY SELECT _deleted;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION cleanup_old_audit_logs(INT) FROM public, anon;
+GRANT EXECUTE ON FUNCTION cleanup_old_audit_logs(INT) TO authenticated;
+
+-- Clean expired rate limit entries (older than 1 hour)
+CREATE OR REPLACE FUNCTION cleanup_expired_rate_limits()
+RETURNS TABLE(deleted_count BIGINT) AS $$
+DECLARE
+  _deleted BIGINT;
+BEGIN
+  WITH deleted AS (
+    DELETE FROM rate_limits
+    WHERE request_timestamp < NOW() - INTERVAL '1 hour'
+    RETURNING id
+  )
+  SELECT COUNT(*) INTO _deleted FROM deleted;
+
+  RETURN QUERY SELECT _deleted;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION cleanup_expired_rate_limits() FROM public, anon;
+GRANT EXECUTE ON FUNCTION cleanup_expired_rate_limits() TO authenticated;
+
+-- Run all cleanup functions at once
+CREATE OR REPLACE FUNCTION run_all_cleanup(
+  session_retention_days INT DEFAULT 90,
+  audit_retention_days INT DEFAULT 365
+)
+RETURNS TABLE(
+  sessions_deleted BIGINT,
+  audit_logs_deleted BIGINT,
+  rate_limits_deleted BIGINT
+) AS $$
+DECLARE
+  _sessions BIGINT;
+  _audits BIGINT;
+  _rates BIGINT;
+BEGIN
+  SELECT deleted_count INTO _sessions FROM cleanup_old_sessions(session_retention_days);
+  SELECT deleted_count INTO _audits FROM cleanup_old_audit_logs(audit_retention_days);
+  SELECT deleted_count INTO _rates FROM cleanup_expired_rate_limits();
+
+  RETURN QUERY SELECT _sessions, _audits, _rates;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+REVOKE ALL ON FUNCTION run_all_cleanup(INT, INT) FROM public, anon;
+GRANT EXECUTE ON FUNCTION run_all_cleanup(INT, INT) TO authenticated;
+
+-- ============================================================================
+-- 13. DEFAULT ADMIN USER
 -- ============================================================================
 
 INSERT INTO users (username, password_hash, full_name, role)
