@@ -15,7 +15,7 @@ const MemoizedDithering = memo(function MemoizedDithering({
     <Dithering
       colorBack={colorBack}
       colorFront={colorFront}
-      shape="warp"
+      shape="swirl"
       type="4x4"
       size={2.5}
       speed={0.6}
