@@ -14,9 +14,25 @@ import {
   getQuickSession
 } from '@/lib/auth';
 import { loginSchema } from '@/lib/validations';
-import { checkRateLimit } from '@/lib/supabase-server';
 import { redirect } from 'next/navigation';
 import { getRequestMetadata, getCSRFToken } from '@/lib/auth';
+
+// In-memory login rate limiter (keyed by IP, not DB-backed)
+// The DB check_rate_limit RPC requires a UUID user_id, which doesn't exist pre-login
+const loginAttempts = new Map<string, { count: number; firstAttempt: number }>();
+const LOGIN_WINDOW_MS = 60_000; // 1 minute
+const LOGIN_MAX_ATTEMPTS = 10;
+
+function checkLoginRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (!entry || now - entry.firstAttempt > LOGIN_WINDOW_MS) {
+    loginAttempts.set(ip, { count: 1, firstAttempt: now });
+    return true;
+  }
+  entry.count++;
+  return entry.count <= LOGIN_MAX_ATTEMPTS;
+}
 
 // -----------------------------------------------------------------------------
 // Login Action
@@ -26,10 +42,8 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
   const metadata = await getRequestMetadata();
   
   try {
-    // Rate limit by IP to prevent brute force attacks
-    const rateLimitKey = `login:${metadata.ipAddress}`;
-    const rateLimitResult = await checkRateLimit(rateLimitKey);
-    if (!rateLimitResult.allowed) {
+    // Rate limit by IP to prevent brute force attacks (in-memory, not DB)
+    if (!checkLoginRateLimit(metadata.ipAddress || 'unknown')) {
       return { error: 'Too many login attempts. Please try again later.' };
     }
 
