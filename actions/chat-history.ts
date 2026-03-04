@@ -58,10 +58,10 @@ export async function createChatSession(title?: string): Promise<{ sessionId: st
     }
 
     return { sessionId: data.id };
-  } catch (error) {
-    return { 
-      sessionId: null, 
-      error: 'Failed to create session' 
+  } catch {
+    return {
+      sessionId: null,
+      error: 'Failed to create session'
     };
   }
 }
@@ -122,10 +122,10 @@ export async function saveMessageToSession(params: {
     }
 
     return { success: true };
-  } catch (error) {
-    return { 
-      success: false, 
-      error: 'Failed to save message' 
+  } catch {
+    return {
+      success: false,
+      error: 'Failed to save message'
     };
   }
 }
@@ -192,9 +192,9 @@ export async function getChatSessions(
       nextCursor,
       hasMore 
     };
-  } catch (error) {
-    return { 
-      sessions: [], 
+  } catch {
+    return {
+      sessions: [],
       hasMore: false,
       error: 'Failed to fetch sessions' 
     };
@@ -281,7 +281,7 @@ export async function getSessionMessages(
     }));
 
     return { messages, nextCursor, hasMore };
-  } catch (error) {
+  } catch {
     return {
       messages: [],
       hasMore: false,
@@ -332,10 +332,10 @@ export async function deleteChatSession(sessionId: string): Promise<{ success: b
     });
 
     return { success: true };
-  } catch (error) {
-    return { 
-      success: false, 
-      error: 'Failed to delete session' 
+  } catch {
+    return {
+      success: false,
+      error: 'Failed to delete session'
     };
   }
 }
@@ -378,7 +378,7 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
     }
 
     return { success: true };
-  } catch (error) {
+  } catch {
     return {
       success: false,
       error: 'Failed to update title'
@@ -472,7 +472,7 @@ export async function searchChatHistory(
     }
 
     return { results: results.slice(0, 15) };
-  } catch (error) {
+  } catch {
     return {
       results: [],
       error: 'Search failed',

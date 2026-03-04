@@ -207,10 +207,10 @@ export async function blockUser(
     });
     
     return { success: true };
-  } catch (error) {
-    return { 
-      success: false, 
-      error: 'Failed to update user' 
+  } catch {
+    return {
+      success: false,
+      error: 'Failed to update user'
     };
   }
 }
@@ -259,10 +259,10 @@ export async function updateUserRole(
     });
     
     return { success: true };
-  } catch (error) {
-    return { 
-      success: false, 
-      error: 'Failed to update role' 
+  } catch {
+    return {
+      success: false,
+      error: 'Failed to update role'
     };
   }
 }
@@ -407,10 +407,10 @@ export async function adminDeleteUser(userId: string, csrfToken?: string): Promi
     });
     
     return { success: true };
-  } catch (error) {
-    return { 
-      success: false, 
-      error: 'Failed to delete user' 
+  } catch {
+    return {
+      success: false,
+      error: 'Failed to delete user'
     };
   }
 }
@@ -466,10 +466,10 @@ export async function adminResetPassword(
     });
     
     return { success: true };
-  } catch (error) {
-    return { 
-      success: false, 
-      error: 'Failed to reset password' 
+  } catch {
+    return {
+      success: false,
+      error: 'Failed to reset password'
     };
   }
 }
