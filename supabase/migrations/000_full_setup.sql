@@ -25,36 +25,30 @@ DROP TABLE IF EXISTS users CASCADE;
 
 DROP MATERIALIZED VIEW IF EXISTS analytics_daily CASCADE;
 
-DROP FUNCTION IF EXISTS match_dubai_code CASCADE;
-DROP FUNCTION IF EXISTS search_dubai_code_keywords CASCADE;
-DROP FUNCTION IF EXISTS match_dubai_code_hybrid CASCADE;
-DROP FUNCTION IF EXISTS match_dubai_code_hybrid_filtered CASCADE;
-DROP FUNCTION IF EXISTS search_dubai_code_exact CASCADE;
-DROP FUNCTION IF EXISTS find_chunks_by_page CASCADE;
-DROP FUNCTION IF EXISTS find_chunks_by_section CASCADE;
-DROP FUNCTION IF EXISTS match_citation CASCADE;
-DROP FUNCTION IF EXISTS get_document_tree CASCADE;
-DROP FUNCTION IF EXISTS save_document_tree CASCADE;
-DROP FUNCTION IF EXISTS update_session_timestamp CASCADE;
-DROP FUNCTION IF EXISTS check_rate_limit CASCADE;
-DROP FUNCTION IF EXISTS refresh_analytics CASCADE;
-DROP FUNCTION IF EXISTS get_admin_stats CASCADE;
-DROP FUNCTION IF EXISTS get_weekly_activity CASCADE;
-DROP FUNCTION IF EXISTS get_recent_audit_logs CASCADE;
-DROP FUNCTION IF EXISTS admin_block_user CASCADE;
-DROP FUNCTION IF EXISTS admin_update_user_role CASCADE;
-DROP FUNCTION IF EXISTS get_all_users_admin CASCADE;
-DROP FUNCTION IF EXISTS update_permit_timestamp CASCADE;
-DROP FUNCTION IF EXISTS get_permit_stats CASCADE;
-DROP FUNCTION IF EXISTS get_document_stats CASCADE;
-DROP FUNCTION IF EXISTS clear_document_chunks CASCADE;
-DROP FUNCTION IF EXISTS get_analytics_dashboard_stats CASCADE;
-DROP FUNCTION IF EXISTS get_message_activity_30d CASCADE;
-DROP FUNCTION IF EXISTS get_top_active_users CASCADE;
-DROP FUNCTION IF EXISTS cleanup_old_sessions CASCADE;
-DROP FUNCTION IF EXISTS cleanup_old_audit_logs CASCADE;
-DROP FUNCTION IF EXISTS cleanup_expired_rate_limits CASCADE;
-DROP FUNCTION IF EXISTS run_all_cleanup CASCADE;
+-- Drop all overloaded function variants dynamically
+DO $$
+DECLARE
+  _sql TEXT;
+BEGIN
+  FOR _sql IN
+    SELECT 'DROP FUNCTION IF EXISTS ' || oid::regprocedure || ' CASCADE'
+    FROM pg_proc
+    WHERE proname IN (
+      'match_dubai_code', 'search_dubai_code_keywords', 'match_dubai_code_hybrid',
+      'match_dubai_code_hybrid_filtered', 'search_dubai_code_exact', 'find_chunks_by_page',
+      'find_chunks_by_section', 'match_citation', 'get_document_tree', 'save_document_tree',
+      'update_session_timestamp', 'check_rate_limit', 'refresh_analytics', 'get_admin_stats',
+      'get_weekly_activity', 'get_recent_audit_logs', 'admin_block_user', 'admin_update_user_role',
+      'get_all_users_admin', 'update_permit_timestamp', 'get_permit_stats', 'get_document_stats',
+      'clear_document_chunks', 'get_analytics_dashboard_stats', 'get_message_activity_30d',
+      'get_top_active_users', 'cleanup_old_sessions', 'cleanup_old_audit_logs',
+      'cleanup_expired_rate_limits', 'run_all_cleanup'
+    )
+    AND pg_function_is_visible(oid)
+  LOOP
+    EXECUTE _sql;
+  END LOOP;
+END $$;
 
 -- ============================================================================
 -- 1. EXTENSIONS

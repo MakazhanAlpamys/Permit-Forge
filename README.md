@@ -228,7 +228,7 @@ LOG_LEVEL=info                           # debug | info | warn | error
 2. Open **SQL Editor** and run the migrations.
 
 **Option A — Single file (recommended for fresh setup):**
-Run `000_full_setup.sql` — it contains everything from 001–005 merged into one idempotent script.
+Run `000_full_setup.sql` — it contains everything from 001–006 merged into one idempotent script.
 
 **Option B — Incremental migrations (001 → 006):**
 
@@ -766,7 +766,7 @@ Emirate-Forge/
 │
 ├── types/index.ts                     # Shared TypeScript definitions
 ├── test/                              # Vitest test suites (11 files, 158 tests)
-├── supabase/migrations/               # Database schema (6 migration files)
+├── supabase/migrations/               # Database schema (7 migration files, 000 = merged all)
 ├── middleware.ts                       # Edge auth + block check + security headers
 └── public/                            # Static assets
 ```
