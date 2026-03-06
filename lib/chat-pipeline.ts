@@ -3,7 +3,7 @@
 // 1-2 API calls per question (~1.5 average with cache hits)
 // ============================================================================
 
-import { queryDubaiCode, queryDubaiCodeFiltered, buildContext, passesCRAGCheck, expandToParentChunks } from '@/lib/rag';
+import { queryDubaiCode, queryDubaiCodeFiltered, passesCRAGCheck, expandToParentChunks } from '@/lib/rag';
 import { classifyQueryStructure, treeReasoner, getPageRangesForNodes } from '@/lib/agents';
 import { createChunkCitations, getCitationStats } from '@/lib/citation-parser';
 import { heuristicRerank } from '@/lib/heuristic-reranker';
