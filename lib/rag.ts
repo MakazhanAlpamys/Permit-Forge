@@ -1,5 +1,6 @@
 // ============================================================================
-// RAG (Retrieval-Augmented Generation) Query Engine - Advanced Hybrid Search
+// RAG (Retrieval-Augmented Generation) Query Engine — v2 Pipeline
+// Hybrid Search with pre-computed embeddings, document filtering, CRAG check
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase-server';
@@ -11,27 +12,42 @@ import type { MatchedChunk, RAGQuery, RAGResult, ChunkMetadata, HybridSearchResu
 // Configuration
 // -----------------------------------------------------------------------------
 
-const DEFAULT_MATCH_COUNT = 25;        // Get more chunks for reranking
-const FINAL_CHUNK_COUNT = 10;          // Return top 10 after processing
+const DEFAULT_MATCH_COUNT = 25;
+const FINAL_CHUNK_COUNT = 10;
+const MAX_CHUNK_LENGTH = 1500;
+
+// CRAG threshold — if top chunk score is below this, search quality is too low
+export const CRAG_THRESHOLD = 0.3;
 
 // -----------------------------------------------------------------------------
-// Hybrid Search Function (Vector + Keyword with RRF)
+// Hybrid Search (accepts pre-computed embedding)
 // -----------------------------------------------------------------------------
 
 /**
- * Perform hybrid search combining vector similarity and keyword matching
- * Uses Reciprocal Rank Fusion (RRF) to merge results
+ * Perform hybrid search combining vector similarity and keyword matching.
+ * Accepts an optional pre-computed embedding to avoid redundant API calls
+ * (the same embedding is used for semantic cache lookup).
  */
 export async function hybridSearch(
   query: string,
-  matchCount: number = DEFAULT_MATCH_COUNT
+  matchCount: number = DEFAULT_MATCH_COUNT,
+  options: {
+    precomputedEmbedding?: number[];
+    documentFilter?: string[];
+  } = {}
 ): Promise<HybridSearchResult[]> {
   const supabase = createAdminClient();
 
-  // Generate embedding for the query
-  const queryEmbedding = await embeddingsModel.embedQuery(query);
+  // Use pre-computed embedding or generate new one
+  const queryEmbedding = options.precomputedEmbedding
+    ?? await embeddingsModel.embedQuery(query);
 
-  // Call hybrid search RPC (search across ALL documents)
+  // If filtering to specific documents, search each and merge
+  // Otherwise search all documents at once
+  const filterDocument = options.documentFilter?.length === 1
+    ? options.documentFilter[0]
+    : null;
+
   const { data, error } = await supabase.rpc('match_dubai_code_hybrid', {
     query_text: query,
     query_embedding: queryEmbedding,
@@ -39,16 +55,15 @@ export async function hybridSearch(
     keyword_weight: 0.3,
     vector_weight: 0.7,
     rrf_k: 60,
-    filter_document: null,
+    filter_document: filterDocument,
   });
 
   if (error) {
     console.error('Hybrid search error:', error);
-    throw new Error(`Hybrid search failed: ${error.message}. Check if the match_dubai_code_hybrid RPC function exists in your database.`);
+    throw new Error(`Hybrid search failed: ${error.message}`);
   }
 
-  // Transform to our type
-  return (data || []).map((item: {
+  let results = (data || []).map((item: {
     id: number;
     content: string;
     metadata: ChunkMetadata;
@@ -63,15 +78,22 @@ export async function hybridSearch(
     keywordRank: item.keyword_rank || 0,
     hybridScore: item.hybrid_score || 0,
   }));
+
+  // Post-filter by multiple documents if needed
+  if (options.documentFilter && options.documentFilter.length > 1) {
+    const allowedDocs = new Set(options.documentFilter);
+    results = results.filter((r: HybridSearchResult) =>
+      !r.metadata.documentName || allowedDocs.has(r.metadata.documentName)
+    );
+  }
+
+  return results;
 }
 
 // -----------------------------------------------------------------------------
-// Exact Search Function (For specific section/table lookups)
+// Exact Search
 // -----------------------------------------------------------------------------
 
-/**
- * Search for exact matches (section numbers, table references, etc.)
- */
 async function exactSearch(
   pattern: string,
   matchCount: number = 10
@@ -97,31 +119,35 @@ async function exactSearch(
     id: item.id,
     content: item.content,
     metadata: item.metadata || {},
-    similarity: 1.0, // Exact match
+    similarity: 1.0,
   }));
 }
 
 // -----------------------------------------------------------------------------
-// Main RAG Query Function (Enhanced with Hybrid Search)
+// Main RAG Query (v2 — with pre-computed embedding + document filter)
 // -----------------------------------------------------------------------------
 
 /**
- * Query the Dubai Building Code using hybrid search
- * Combines vector similarity and keyword matching for best results
+ * Query Dubai Code using hybrid search.
+ * v2 changes:
+ *   - Accepts pre-computed embedding (reused from semantic cache check)
+ *   - Accepts document filter (from document selector)
+ *   - No more query expansion (removed in v2)
  */
-export async function queryDubaiCode(params: RAGQuery): Promise<RAGResult> {
-  const {
-    query,
-    matchCount = DEFAULT_MATCH_COUNT
-  } = params;
+export async function queryDubaiCode(
+  params: RAGQuery & {
+    precomputedEmbedding?: number[];
+    documentFilter?: string[];
+  }
+): Promise<RAGResult> {
+  const { query, matchCount = DEFAULT_MATCH_COUNT } = params;
 
-  // Detect if query needs exact search (section numbers, etc.)
+  // Detect if query needs exact search
   const needsExactSearch = /\b\d+\.\d+(\.\d+)?\b|section\s+\d+|table\s+\d+/i.test(query);
 
   let chunks: MatchedChunk[] = [];
 
   if (needsExactSearch) {
-    // Extract the pattern and do exact search first
     const patternMatch = query.match(/\b(\d+\.\d+(?:\.\d+)?)\b|section\s+(\d+[\.\d]*)|table\s+(\d+[-\d]*)/i);
     if (patternMatch) {
       const pattern = patternMatch[1] || patternMatch[2] || patternMatch[3];
@@ -130,18 +156,20 @@ export async function queryDubaiCode(params: RAGQuery): Promise<RAGResult> {
     }
   }
 
-  // Always do hybrid search
-  const hybridResults = await hybridSearch(query, matchCount);
+  // Hybrid search with pre-computed embedding
+  const hybridResults = await hybridSearch(query, matchCount, {
+    precomputedEmbedding: params.precomputedEmbedding,
+    documentFilter: params.documentFilter,
+  });
 
-  // Convert hybrid results to MatchedChunk format
   const hybridChunks: MatchedChunk[] = hybridResults.map(result => ({
     id: result.id,
     content: result.content,
     metadata: result.metadata,
-    similarity: result.hybridScore * 10, // Normalize score
+    similarity: result.hybridScore * 10,
   }));
 
-  // Merge results, avoiding duplicates
+  // Merge, deduplicate
   const seenIds = new Set(chunks.map(c => c.id));
   for (const chunk of hybridChunks) {
     if (!seenIds.has(chunk.id)) {
@@ -150,96 +178,37 @@ export async function queryDubaiCode(params: RAGQuery): Promise<RAGResult> {
     }
   }
 
-  // Sort by similarity and take top results
   chunks.sort((a, b) => b.similarity - a.similarity);
   chunks = chunks.slice(0, FINAL_CHUNK_COUNT);
 
-  // Build context string from chunks
   const context = buildContext(chunks);
-
-  return {
-    chunks,
-    context,
-  };
+  return { chunks, context };
 }
 
 // -----------------------------------------------------------------------------
-// Multi-Query Search (For Query Expansion)
+// CRAG Check (Corrective RAG — v2)
 // -----------------------------------------------------------------------------
 
 /**
- * Search with multiple queries and merge results using RRF
+ * Check if search results are good enough to generate an answer.
+ * If the top chunk score is below CRAG_THRESHOLD, the search quality
+ * is too low and we should return "information not found" instead
+ * of letting the LLM hallucinate.
+ *
+ * 0 API calls.
  */
-export async function multiQuerySearch(
-  queries: string[],
-  matchCountPerQuery: number = 10
-): Promise<MatchedChunk[]> {
-  const allResults: Map<number, { chunk: MatchedChunk; ranks: number[] }> = new Map();
-
-  // Search for each query
-  for (let queryIdx = 0; queryIdx < queries.length; queryIdx++) {
-    const query = queries[queryIdx];
-
-    try {
-      const results = await hybridSearch(query, matchCountPerQuery);
-
-      // Track rank for each result
-      results.forEach((result, rank) => {
-        const existing = allResults.get(result.id);
-
-        if (existing) {
-          existing.ranks.push(rank + 1); // 1-indexed rank
-        } else {
-          allResults.set(result.id, {
-            chunk: {
-              id: result.id,
-              content: result.content,
-              metadata: result.metadata,
-              similarity: result.hybridScore,
-            },
-            ranks: [rank + 1],
-          });
-        }
-      });
-    } catch (error) {
-      console.error(`Search failed for query "${query}":`, error instanceof Error ? error.message : error);
-    }
-  }
-
-  // Calculate RRF score across all queries
-  const K = 60; // RRF constant
-  const scoredChunks = Array.from(allResults.values()).map(item => {
-    // RRF score = sum of 1/(k + rank) for each query
-    const rrfScore = item.ranks.reduce((sum, rank) => sum + 1 / (K + rank), 0);
-
-    return {
-      ...item.chunk,
-      similarity: rrfScore,
-    };
-  });
-
-  // Sort by RRF score
-  scoredChunks.sort((a, b) => b.similarity - a.similarity);
-
-  return scoredChunks.slice(0, FINAL_CHUNK_COUNT);
+export function passesCRAGCheck(chunks: MatchedChunk[]): boolean {
+  if (chunks.length === 0) return false;
+  return chunks[0].similarity >= CRAG_THRESHOLD;
 }
 
 // -----------------------------------------------------------------------------
-// Context Building (Clean Format for LLM)
+// Context Building
 // -----------------------------------------------------------------------------
 
-const MAX_CHUNK_LENGTH = 1500;
-
-/**
- * Build context string for LLM consumption
- * Uses a clean, structured format with source attribution
- */
 export function buildContext(chunks: MatchedChunk[]): string {
-  if (chunks.length === 0) {
-    return '';
-  }
+  if (chunks.length === 0) return '';
 
-  // Build structured context with clear source attribution including document name
   const contextParts = chunks.map((chunk, index) => {
     const page = chunk.metadata.page || 'N/A';
     const section = chunk.metadata.section || '';
@@ -257,7 +226,6 @@ export function buildContext(chunks: MatchedChunk[]): string {
     return `${header}\n${content}`;
   });
 
-  // Collect unique document names from chunks
   const docNames = new Set(chunks.map(c => {
     const docId = c.metadata.documentName;
     const info = docId ? getDocumentById(docId) : undefined;
@@ -269,56 +237,7 @@ export function buildContext(chunks: MatchedChunk[]): string {
 }
 
 // -----------------------------------------------------------------------------
-// Chunk Diversity Filter (Multi-Document Awareness)
-// -----------------------------------------------------------------------------
-
-const MAX_CHUNKS_PER_DOCUMENT = 3;
-const MAX_CHUNKS_PER_PAGE_RANGE = 2;
-
-/**
- * Ensure diversity in chunk selection across documents and page ranges.
- * Prevents all chunks from coming from one document.
- * Iterates through ranked chunks and enforces per-document/per-page limits.
- */
-export function diversifyChunks(
-  chunks: MatchedChunk[],
-  maxTotal: number = 10
-): MatchedChunk[] {
-  if (chunks.length <= maxTotal) return chunks;
-
-  const docCounts = new Map<string, number>();
-  const pageRangeCounts = new Map<string, number>();
-  const selected: MatchedChunk[] = [];
-  const deferred: MatchedChunk[] = [];
-
-  for (const chunk of chunks) {
-    const docName = chunk.metadata.documentName || 'unknown';
-    const pageKey = `${docName}-${Math.floor((chunk.metadata.page || 0) / 10)}`;
-
-    const docCount = docCounts.get(docName) || 0;
-    const pageCount = pageRangeCounts.get(pageKey) || 0;
-
-    if (docCount < MAX_CHUNKS_PER_DOCUMENT && pageCount < MAX_CHUNKS_PER_PAGE_RANGE) {
-      selected.push(chunk);
-      docCounts.set(docName, docCount + 1);
-      pageRangeCounts.set(pageKey, pageCount + 1);
-    } else {
-      deferred.push(chunk);
-    }
-
-    if (selected.length >= maxTotal) break;
-  }
-
-  // Fill remaining slots with deferred chunks
-  while (selected.length < maxTotal && deferred.length > 0) {
-    selected.push(deferred.shift()!);
-  }
-
-  return selected;
-}
-
-// -----------------------------------------------------------------------------
-// Filtered Search (For Tree Reasoning)
+// Filtered Search (For scope-limited queries)
 // -----------------------------------------------------------------------------
 
 export interface PageRange {
@@ -327,21 +246,17 @@ export interface PageRange {
   section?: string;
 }
 
-/**
- * Perform hybrid search filtered by page ranges (Tree Reasoning)
- * Only searches within specified page ranges for more precise results
- */
 export async function filteredHybridSearch(
   query: string,
   pageRanges: PageRange[],
-  matchCount: number = DEFAULT_MATCH_COUNT
+  matchCount: number = DEFAULT_MATCH_COUNT,
+  precomputedEmbedding?: number[]
 ): Promise<HybridSearchResult[]> {
   const supabase = createAdminClient();
 
-  // Generate embedding for the query
-  const queryEmbedding = await embeddingsModel.embedQuery(query);
+  const queryEmbedding = precomputedEmbedding
+    ?? await embeddingsModel.embedQuery(query);
 
-  // Call filtered hybrid search RPC
   const { data, error } = await supabase.rpc('match_dubai_code_hybrid_filtered', {
     query_text: query,
     query_embedding: queryEmbedding,
@@ -357,10 +272,9 @@ export async function filteredHybridSearch(
   });
 
   if (error) {
-    // Fallback to regular hybrid search if filtered RPC doesn't exist
     if (error.message.includes('does not exist') || error.message.includes('not found')) {
-      console.warn('Filtered search RPC not found, falling back to regular search with post-filter');
-      return await hybridSearchWithPostFilter(query, pageRanges, matchCount);
+      console.warn('Filtered search RPC not found, falling back to post-filter');
+      return await hybridSearchWithPostFilter(query, pageRanges, matchCount, queryEmbedding);
     }
     console.error('Filtered hybrid search error:', error);
     throw new Error(`Filtered hybrid search failed: ${error.message}`);
@@ -383,47 +297,37 @@ export async function filteredHybridSearch(
   }));
 }
 
-/**
- * Fallback: Regular hybrid search with post-filtering by page ranges
- * Used when filtered RPC is not available
- */
 async function hybridSearchWithPostFilter(
   query: string,
   pageRanges: PageRange[],
-  matchCount: number
+  matchCount: number,
+  precomputedEmbedding?: number[]
 ): Promise<HybridSearchResult[]> {
-  // Get more results to filter
   const expandedCount = matchCount * 3;
-  const results = await hybridSearch(query, expandedCount);
+  const results = await hybridSearch(query, expandedCount, {
+    precomputedEmbedding: precomputedEmbedding,
+  });
 
-  // Filter by page ranges
   const filtered = results.filter(result => {
     const chunkStart = result.metadata.startPage || result.metadata.page || 0;
     const chunkEnd = result.metadata.endPage || result.metadata.page || 0;
 
-    return pageRanges.some(range => {
-      // Check if chunk overlaps with any page range
-      return chunkStart <= range.endPage && chunkEnd >= range.startPage;
-    });
+    return pageRanges.some(range =>
+      chunkStart <= range.endPage && chunkEnd >= range.startPage
+    );
   });
 
   return filtered.slice(0, matchCount);
 }
 
-/**
- * Query Dubai Code with Tree Reasoning filter
- * Searches only within specified page ranges
- */
 export async function queryDubaiCodeFiltered(
-  params: RAGQuery & { pageRanges: PageRange[] }
+  params: RAGQuery & {
+    pageRanges: PageRange[];
+    precomputedEmbedding?: number[];
+  }
 ): Promise<RAGResult> {
-  const {
-    query,
-    pageRanges,
-    matchCount = DEFAULT_MATCH_COUNT
-  } = params;
+  const { query, pageRanges, matchCount = DEFAULT_MATCH_COUNT } = params;
 
-  // Check if we need exact search
   const needsExactSearch = /\b\d+\.\d+(\.\d+)?\b|section\s+\d+|table\s+\d+/i.test(query);
 
   let chunks: MatchedChunk[] = [];
@@ -433,23 +337,22 @@ export async function queryDubaiCodeFiltered(
     if (patternMatch) {
       const pattern = patternMatch[1] || patternMatch[2] || patternMatch[3];
       const exactResults = await exactSearch(pattern, 5);
-      
-      // Filter exact results by page ranges too
+
       const filteredExact = exactResults.filter(chunk => {
         const chunkPage = chunk.metadata.page || 0;
-        return pageRanges.some(range => 
+        return pageRanges.some(range =>
           chunkPage >= range.startPage && chunkPage <= range.endPage
         );
       });
-      
+
       chunks.push(...filteredExact);
     }
   }
 
-  // Filtered hybrid search
-  const filteredResults = await filteredHybridSearch(query, pageRanges, matchCount);
+  const filteredResults = await filteredHybridSearch(
+    query, pageRanges, matchCount, params.precomputedEmbedding
+  );
 
-  // Convert to MatchedChunk format
   const filteredChunks: MatchedChunk[] = filteredResults.map(result => ({
     id: result.id,
     content: result.content,
@@ -457,7 +360,6 @@ export async function queryDubaiCodeFiltered(
     similarity: result.hybridScore * 10,
   }));
 
-  // Merge results, avoiding duplicates
   const seenIds = new Set(chunks.map(c => c.id));
   for (const chunk of filteredChunks) {
     if (!seenIds.has(chunk.id)) {
@@ -466,14 +368,64 @@ export async function queryDubaiCodeFiltered(
     }
   }
 
-  // Sort by similarity
   chunks.sort((a, b) => b.similarity - a.similarity);
   chunks = chunks.slice(0, FINAL_CHUNK_COUNT);
 
   const context = buildContext(chunks);
+  return { chunks, context };
+}
 
-  return {
-    chunks,
-    context,
-  };
+// -----------------------------------------------------------------------------
+// Parent Chunk Expansion (v2 — replace child chunks with parent for richer context)
+// -----------------------------------------------------------------------------
+
+/**
+ * For chunks that have parent_id, fetch parent content from DB
+ * and replace chunk content with the richer parent content.
+ * This gives the LLM more context without additional API calls.
+ */
+export async function expandToParentChunks(
+  chunks: MatchedChunk[]
+): Promise<MatchedChunk[]> {
+  const childIds = chunks
+    .map(c => c.id)
+    .filter(id => id > 0);
+
+  if (childIds.length === 0) return chunks;
+
+  try {
+    const supabase = createAdminClient();
+
+    const { data, error } = await supabase.rpc('get_parent_chunks', {
+      child_ids: childIds,
+    });
+
+    if (error || !data || data.length === 0) {
+      return chunks; // No parents found, return original
+    }
+
+    // Build parent lookup
+    const parentMap = new Map<number, { content: string; metadata: ChunkMetadata }>();
+    for (const row of data) {
+      parentMap.set(row.child_id, {
+        content: row.parent_content,
+        metadata: row.parent_metadata,
+      });
+    }
+
+    // Replace child content with parent content (keep child metadata for citations)
+    return chunks.map(chunk => {
+      const parent = parentMap.get(chunk.id);
+      if (parent) {
+        return {
+          ...chunk,
+          content: parent.content, // Richer parent content for LLM
+          // Keep original chunk metadata for accurate citations
+        };
+      }
+      return chunk;
+    });
+  } catch {
+    return chunks; // Graceful fallback
+  }
 }

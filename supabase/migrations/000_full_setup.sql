@@ -10,6 +10,8 @@
 -- 0. CLEAN SLATE — Drop everything in correct order
 -- ============================================================================
 
+DROP TABLE IF EXISTS semantic_cache CASCADE;
+DROP TABLE IF EXISTS parent_chunks CASCADE;
 DROP TABLE IF EXISTS permit_certificates CASCADE;
 DROP TABLE IF EXISTS permit_attachments CASCADE;
 DROP TABLE IF EXISTS notifications CASCADE;
@@ -42,7 +44,9 @@ BEGIN
       'get_all_users_admin', 'update_permit_timestamp', 'get_permit_stats', 'get_document_stats',
       'clear_document_chunks', 'get_analytics_dashboard_stats', 'get_message_activity_30d',
       'get_top_active_users', 'cleanup_old_sessions', 'cleanup_old_audit_logs',
-      'cleanup_expired_rate_limits', 'run_all_cleanup'
+      'cleanup_expired_rate_limits', 'run_all_cleanup',
+      'search_semantic_cache', 'insert_semantic_cache', 'cleanup_semantic_cache',
+      'get_parent_chunks'
     )
     AND pg_function_is_visible(oid)
   LOOP
@@ -97,12 +101,13 @@ CREATE TABLE dubai_code_chunks (
   metadata JSONB DEFAULT '{}',
   embedding VECTOR(768),
   document_name TEXT NOT NULL DEFAULT 'dubai-building-code-2021',
+  parent_id BIGINT,  -- References parent_chunks for parent-child chunking (v2)
   fts tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 CREATE INDEX dubai_code_chunks_embedding_idx
-  ON dubai_code_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+  ON dubai_code_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 CREATE INDEX dubai_code_chunks_fts_idx
   ON dubai_code_chunks USING gin(fts);
 CREATE INDEX dubai_code_chunks_metadata_idx
@@ -298,6 +303,42 @@ CREATE TABLE permit_certificates (
 
 CREATE INDEX permit_certificates_permit_id_idx ON permit_certificates(permit_id);
 CREATE UNIQUE INDEX permit_certificates_number_idx ON permit_certificates(certificate_number);
+
+-- ---------------------------------------------------------------------------
+-- 2.12 PARENT CHUNKS (v2 Pipeline - Parent-Child Chunking)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE parent_chunks (
+  id BIGSERIAL PRIMARY KEY,
+  content TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  document_name TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX parent_chunks_document_name_idx ON parent_chunks(document_name);
+
+-- Add foreign key from dubai_code_chunks.parent_id to parent_chunks.id
+ALTER TABLE dubai_code_chunks ADD CONSTRAINT dubai_code_chunks_parent_id_fkey
+  FOREIGN KEY (parent_id) REFERENCES parent_chunks(id) ON DELETE SET NULL;
+
+-- ---------------------------------------------------------------------------
+-- 2.13 SEMANTIC CACHE (v2 Pipeline - Query Response Caching)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE semantic_cache (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  query_text TEXT NOT NULL,
+  query_embedding VECTOR(768) NOT NULL,
+  response TEXT NOT NULL,
+  citations JSONB DEFAULT '[]',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  ttl_seconds INT NOT NULL DEFAULT 3600  -- 1 hour default
+);
+
+CREATE INDEX semantic_cache_embedding_idx
+  ON semantic_cache USING hnsw (query_embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+CREATE INDEX semantic_cache_created_at_idx ON semantic_cache(created_at DESC);
 
 -- ============================================================================
 -- 3. TRIGGERS
@@ -1365,6 +1406,8 @@ ALTER TABLE permit_status_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE permit_attachments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE permit_certificates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE parent_chunks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE semantic_cache ENABLE ROW LEVEL SECURITY;
 
 -- Users: authenticated can read/update only own profile
 CREATE POLICY "Authenticated users can view own profile" ON users
@@ -1437,6 +1480,117 @@ REVOKE EXECUTE ON FUNCTION get_top_active_users FROM anon, authenticated;
 
 REVOKE ALL ON users FROM anon;
 REVOKE ALL ON audit_logs FROM anon;
+
+-- ============================================================================
+-- 11.5 SEMANTIC CACHE FUNCTIONS (v2 Pipeline)
+-- ============================================================================
+
+-- Search cache for semantically similar queries (cosine similarity > threshold)
+CREATE OR REPLACE FUNCTION search_semantic_cache(
+  query_embedding VECTOR(768),
+  similarity_threshold FLOAT DEFAULT 0.95,
+  max_age_seconds INT DEFAULT 3600
+)
+RETURNS TABLE (
+  id UUID,
+  query_text TEXT,
+  response TEXT,
+  citations JSONB,
+  similarity FLOAT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    sc.id, sc.query_text, sc.response, sc.citations,
+    (1 - (sc.query_embedding <=> search_semantic_cache.query_embedding))::FLOAT AS similarity
+  FROM semantic_cache sc
+  WHERE (1 - (sc.query_embedding <=> search_semantic_cache.query_embedding)) > similarity_threshold
+    AND sc.created_at > NOW() - (max_age_seconds || ' seconds')::INTERVAL
+  ORDER BY sc.query_embedding <=> search_semantic_cache.query_embedding
+  LIMIT 1;
+END;
+$$;
+
+-- Insert a new cache entry
+CREATE OR REPLACE FUNCTION insert_semantic_cache(
+  p_query_text TEXT,
+  p_query_embedding VECTOR(768),
+  p_response TEXT,
+  p_citations JSONB DEFAULT '[]',
+  p_ttl_seconds INT DEFAULT 3600
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  new_id UUID;
+BEGIN
+  INSERT INTO semantic_cache (query_text, query_embedding, response, citations, ttl_seconds)
+  VALUES (p_query_text, p_query_embedding, p_response, p_citations, p_ttl_seconds)
+  RETURNING semantic_cache.id INTO new_id;
+  RETURN new_id;
+END;
+$$;
+
+-- Cleanup expired cache entries
+CREATE OR REPLACE FUNCTION cleanup_semantic_cache()
+RETURNS BIGINT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  deleted_count BIGINT;
+BEGIN
+  DELETE FROM semantic_cache
+  WHERE created_at < NOW() - (ttl_seconds || ' seconds')::INTERVAL;
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  RETURN deleted_count;
+END;
+$$;
+
+-- Fetch parent chunk content for child chunks (parent-child expansion)
+CREATE OR REPLACE FUNCTION get_parent_chunks(
+  child_ids BIGINT[]
+)
+RETURNS TABLE (
+  child_id BIGINT,
+  parent_id BIGINT,
+  parent_content TEXT,
+  parent_metadata JSONB
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    c.id AS child_id,
+    p.id AS parent_id,
+    p.content AS parent_content,
+    p.metadata AS parent_metadata
+  FROM dubai_code_chunks c
+  JOIN parent_chunks p ON c.parent_id = p.id
+  WHERE c.id = ANY(child_ids)
+    AND c.parent_id IS NOT NULL;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) FROM public, anon;
+GRANT EXECUTE ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) TO authenticated;
+REVOKE ALL ON FUNCTION insert_semantic_cache(TEXT, VECTOR(768), TEXT, JSONB, INT) FROM public, anon;
+GRANT EXECUTE ON FUNCTION insert_semantic_cache(TEXT, VECTOR(768), TEXT, JSONB, INT) TO authenticated;
+REVOKE ALL ON FUNCTION cleanup_semantic_cache() FROM public, anon;
+GRANT EXECUTE ON FUNCTION cleanup_semantic_cache() TO authenticated;
+REVOKE ALL ON FUNCTION get_parent_chunks(BIGINT[]) FROM public, anon;
+GRANT EXECUTE ON FUNCTION get_parent_chunks(BIGINT[]) TO authenticated;
 
 -- ============================================================================
 -- 12. DATA CLEANUP FUNCTIONS (from 006_cleanup_functions)

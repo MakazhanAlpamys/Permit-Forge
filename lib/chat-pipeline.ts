@@ -1,53 +1,45 @@
 // ============================================================================
-// Centralized Chat Pipeline (Shared RAG logic for Server Action and API Route)
-// Enhanced with Tree Reasoning for structure-aware search
+// Chat Pipeline v2 — Optimized RAG with Semantic Cache, CRAG, Heuristic Rerank
+// 1-2 API calls per question (~1.5 average with cache hits)
 // ============================================================================
 
-import { queryDubaiCode, multiQuerySearch, queryDubaiCodeFiltered, diversifyChunks } from '@/lib/rag';
-import {
-  expandQuery,
-  rerankChunks,
-  verifyAnswer,
-  detectQueryType,
-  classifyQueryStructure,
-  treeReasoner,
-  getPageRangesForNodes
-} from '@/lib/agents';
-import { createSmartCitations, getCitationStats, getConfidenceTier } from '@/lib/citation-parser';
+import { queryDubaiCode, queryDubaiCodeFiltered, buildContext, passesCRAGCheck, expandToParentChunks } from '@/lib/rag';
+import { classifyQueryStructure, treeReasoner, getPageRangesForNodes } from '@/lib/agents';
+import { createChunkCitations, getCitationStats } from '@/lib/citation-parser';
+import { heuristicRerank } from '@/lib/heuristic-reranker';
+import { selectDocuments, getSelectedDocumentNames } from '@/lib/document-selector';
+import { detectScope } from '@/lib/scope-detector';
+import { searchCache, storeInCache } from '@/lib/semantic-cache';
 import { getAllCachedDocumentTrees } from '@/lib/tree-cache';
-import type {
-  Citation,
-  MatchedChunk,
-  VerifiedAnswer,
-} from '@/types';
+import { generateEmbedding } from '@/lib/gemini';
+import type { Citation, MatchedChunk } from '@/types';
 
 // Re-export classifyTopic for backward compatibility
 export { classifyTopic as classifyUserTopic } from '@/lib/agents';
+// Re-export buildContext for stream route
+export { buildContext } from '@/lib/rag';
 
 // -----------------------------------------------------------------------------
 // Configuration
 // -----------------------------------------------------------------------------
 
 export const CHAT_PIPELINE_CONFIG = {
-  // Standard RAG settings
-  ENABLE_QUERY_EXPANSION: true,
-  ENABLE_RERANKING: true,
-  ENABLE_VERIFICATION: true,
-  MAX_EXPANDED_QUERIES: 4,
-  RERANK_TOP_K: 10,
-  MIN_CITATION_CONFIDENCE: 50,
-  MATCH_THRESHOLD: 0.4,
-  INITIAL_MATCH_COUNT: 30,
-  MULTI_QUERY_MATCH_COUNT: 20,
+  // Semantic cache
+  ENABLE_CACHE: true,
 
-  // Tree Reasoning settings
-  ENABLE_TREE_REASONING: true,           // Enable structure-aware search
-  TREE_REASONING_MIN_CONFIDENCE: 45,     // Min confidence to use tree results
-  TREE_REASONING_MAX_NODES: 5,           // Max nodes to select
-  TREE_REASONING_FALLBACK: true,         // Fallback to standard search on failure
+  // Search settings
+  RERANK_TOP_K: 7,
+  INITIAL_MATCH_COUNT: 25,
+
+  // Tree Reasoning
+  ENABLE_TREE_REASONING: true,
+  TREE_REASONING_MIN_CONFIDENCE: 45,
+  TREE_REASONING_MAX_NODES: 5,
+  TREE_REASONING_FALLBACK: true,
+
+  // Parent chunk expansion
+  ENABLE_PARENT_EXPANSION: true,
 } as const;
-
-// Document tree cache is managed by lib/tree-cache.ts (TTL + Supabase-backed)
 
 // -----------------------------------------------------------------------------
 // Types
@@ -58,14 +50,16 @@ export interface TopicClassificationResult {
   shouldUseRAG: boolean;
 }
 
-export interface RAGPipelineResult {
+export interface PipelineResult {
   chunks: MatchedChunk[];
-  context: string;
-  verificationResult?: VerifiedAnswer;
+  queryEmbedding: number[];
+  fromCache: boolean;
+  cachedResponse?: string;
+  cachedCitations?: Citation[];
 }
 
 // -----------------------------------------------------------------------------
-// Off-Topic Response Templates
+// Response Templates
 // -----------------------------------------------------------------------------
 
 export const OFF_TOPIC_RESPONSE =
@@ -80,238 +74,195 @@ export const GREETING_RESPONSE =
   "- **Sewerage & Stormwater Guidelines** — drainage, plumbing design\n\n" +
   "I search across all documents to give you comprehensive answers with precise source citations!";
 
+export const CRAG_FAIL_RESPONSE =
+  "I could not find relevant information about this topic in the available documents. " +
+  "Please try rephrasing your question or ask about a specific aspect of Dubai building regulations.";
+
 // -----------------------------------------------------------------------------
-// RAG Pipeline (Search  Rerank) with Tree Reasoning
+// v2 RAG Pipeline
 // -----------------------------------------------------------------------------
 
 /**
- * Execute the RAG search pipeline with optional Tree Reasoning:
- *   2. Tree Reasoner selects relevant sections
- *   3. Filtered search within sections
- *   4. Re-ranking
- * 
- * For STANDARD queries:
- *   1. Query type detection
- *   2. Query expansion (optional)
- *   3. Hybrid search (full document)
- *   4. Re-ranking
- * 
- * Fallback: If Tree Reasoning fails, use standard pipeline
+ * Execute the v2 RAG pipeline:
+ *
+ *   [1] Generate embedding (reused for cache + search)
+ *   [2] Semantic Cache check
+ *   [3] Document Selector (0 API)
+ *   [4] Scope Detector (0 API)
+ *   [5] Hybrid Search (reuses embedding)
+ *   [6] CRAG Check (0 API)
+ *   [7] Heuristic Rerank (0 API, ~1ms)
+ *   [8] Parent Chunk Expansion (DB lookup, 0 API)
+ *
+ * Total: 1 embedding call. Cache hit = 0 more calls.
  */
-export async function executeRAGPipeline(query: string): Promise<MatchedChunk[]> {
-  const {
-    ENABLE_TREE_REASONING,
-    TREE_REASONING_MIN_CONFIDENCE,
-    TREE_REASONING_FALLBACK,
-  } = CHAT_PIPELINE_CONFIG;
+export async function executeRAGPipeline(query: string): Promise<PipelineResult> {
+  // Step 1: Generate embedding (reused for cache lookup AND search)
+  const queryEmbedding = await generateEmbedding(query);
 
-  // Classify query to determine routing
-  const queryClassification = classifyQueryStructure(query);
-
-  console.log(`🔍 Query classification: ${queryClassification.suggestedPath}`,
-    queryClassification.structuralHints.length > 0
-      ? `(hints: ${queryClassification.structuralHints.join(', ')})`
-      : '');
-
-  // Route to Tree Reasoning path for structural queries
-  if (
-    ENABLE_TREE_REASONING &&
-    queryClassification.isStructural &&
-    queryClassification.suggestedPath === 'tree'
-  ) {
-    try {
-      const treeResult = await executeTreeReasoningPipeline(query);
-
-      if (treeResult.chunks.length > 0 && treeResult.confidence >= TREE_REASONING_MIN_CONFIDENCE) {
-        const diverseChunks = diversifyChunks(treeResult.chunks, CHAT_PIPELINE_CONFIG.RERANK_TOP_K);
-        console.log(`🌳 Tree Reasoning: Found ${treeResult.chunks.length} chunks (${diverseChunks.length} after diversity) with ${treeResult.confidence}% confidence`);
-        return diverseChunks;
-      }
-
-      // Low confidence - fallback
-      if (TREE_REASONING_FALLBACK) {
-        console.log(`⚠️ Tree Reasoning low confidence (${treeResult.confidence}%), falling back to standard`);
-      }
-    } catch (error) {
-      console.error('Tree Reasoning error, falling back:', error);
+  // Step 2: Semantic Cache check
+  if (CHAT_PIPELINE_CONFIG.ENABLE_CACHE) {
+    const cacheResult = await searchCache(queryEmbedding);
+    if (cacheResult.hit && cacheResult.response && cacheResult.citations) {
+      return {
+        chunks: [],
+        queryEmbedding,
+        fromCache: true,
+        cachedResponse: cacheResult.response,
+        cachedCitations: cacheResult.citations,
+      };
     }
   }
 
-  // Standard RAG pipeline
-  return executeStandardRAGPipeline(query);
+  // Step 3: Document Selector (0 API)
+  const selectedDocs = selectDocuments(query);
+  console.log(`Document selector: [${getSelectedDocumentNames(selectedDocs).join(', ')}]`);
+
+  // Step 4: Scope Detector (0 API)
+  const scope = detectScope(query);
+
+  // Step 5: Search — route based on scope and structure
+  let chunks: MatchedChunk[];
+
+  if (scope.hasScope && scope.pageRanges.length > 0) {
+    // Direct page range filter
+    const result = await queryDubaiCodeFiltered({
+      query,
+      pageRanges: scope.pageRanges,
+      matchCount: CHAT_PIPELINE_CONFIG.INITIAL_MATCH_COUNT,
+      precomputedEmbedding: queryEmbedding,
+    });
+    chunks = result.chunks;
+  } else if (CHAT_PIPELINE_CONFIG.ENABLE_TREE_REASONING) {
+    // Try tree reasoning for structural queries
+    const queryClassification = classifyQueryStructure(query);
+
+    if (queryClassification.isStructural && queryClassification.suggestedPath === 'tree') {
+      const treeResult = await executeTreePath(query, queryEmbedding);
+      if (treeResult) {
+        chunks = treeResult;
+      } else {
+        chunks = await executeStandardSearch(query, queryEmbedding, selectedDocs);
+      }
+    } else {
+      chunks = await executeStandardSearch(query, queryEmbedding, selectedDocs);
+    }
+  } else {
+    chunks = await executeStandardSearch(query, queryEmbedding, selectedDocs);
+  }
+
+  // Step 6: CRAG Check (0 API)
+  if (!passesCRAGCheck(chunks)) {
+    console.log('CRAG check failed — search quality too low');
+    return { chunks: [], queryEmbedding, fromCache: false };
+  }
+
+  // Step 7: Heuristic Rerank (0 API, ~1ms)
+  chunks = heuristicRerank(query, chunks, CHAT_PIPELINE_CONFIG.RERANK_TOP_K);
+
+  // Step 8: Parent Chunk Expansion (DB lookup, 0 API)
+  if (CHAT_PIPELINE_CONFIG.ENABLE_PARENT_EXPANSION) {
+    chunks = await expandToParentChunks(chunks);
+  }
+
+  return { chunks, queryEmbedding, fromCache: false };
 }
 
-/**
- * Tree Reasoning Pipeline — Multi-Document
- * Searches across all document trees to find relevant sections
- */
-async function executeTreeReasoningPipeline(query: string): Promise<{
-  chunks: MatchedChunk[];
-  confidence: number;
-  reasoning: string;
-}> {
-  const {
-    ENABLE_RERANKING,
-    RERANK_TOP_K,
-    TREE_REASONING_MAX_NODES,
-  } = CHAT_PIPELINE_CONFIG;
+// -----------------------------------------------------------------------------
+// Tree Reasoning Path
+// -----------------------------------------------------------------------------
 
-  // Load ALL document trees (TTL-cached via Supabase)
-  const allTrees = await getAllCachedDocumentTrees();
+async function executeTreePath(
+  query: string,
+  queryEmbedding: number[]
+): Promise<MatchedChunk[] | null> {
+  const { TREE_REASONING_MIN_CONFIDENCE, TREE_REASONING_MAX_NODES } = CHAT_PIPELINE_CONFIG;
 
-  if (allTrees.size === 0) {
-    console.warn('No document trees available, cannot use Tree Reasoning');
-    return { chunks: [], confidence: 0, reasoning: 'No trees available' };
-  }
+  try {
+    const allTrees = await getAllCachedDocumentTrees();
+    if (allTrees.size === 0) return null;
 
-  // Run tree reasoner on each document and collect best results
-  let bestConfidence = 0;
-  const allPageRanges: { startPage: number; endPage: number; section?: string }[] = [];
-  const allReasonings: string[] = [];
+    const allPageRanges: { startPage: number; endPage: number; section?: string }[] = [];
+    let bestConfidence = 0;
 
-  for (const [docName, tree] of allTrees) {
-    if (tree.length === 0) continue;
+    for (const [docName, tree] of allTrees) {
+      if (tree.length === 0) continue;
 
-    const treeResult = treeReasoner(query, tree);
+      const treeResult = treeReasoner(query, tree);
 
-    console.log(`🌳 Tree Reasoner [${docName}]: ${treeResult.selectedNodes.length} nodes, ${treeResult.confidence}% confidence`);
-
-    if (treeResult.selectedNodes.length > 0 && treeResult.confidence >= CHAT_PIPELINE_CONFIG.TREE_REASONING_MIN_CONFIDENCE) {
-      const selectedNodes = treeResult.selectedNodes.slice(0, TREE_REASONING_MAX_NODES);
-      const pageRanges = getPageRangesForNodes(selectedNodes, tree);
-      allPageRanges.push(...pageRanges);
-      allReasonings.push(`[${docName}] ${treeResult.reasoning}`);
-      bestConfidence = Math.max(bestConfidence, treeResult.confidence);
+      if (treeResult.selectedNodes.length > 0 && treeResult.confidence >= TREE_REASONING_MIN_CONFIDENCE) {
+        const selectedNodes = treeResult.selectedNodes.slice(0, TREE_REASONING_MAX_NODES);
+        const pageRanges = getPageRangesForNodes(selectedNodes, tree);
+        allPageRanges.push(...pageRanges);
+        bestConfidence = Math.max(bestConfidence, treeResult.confidence);
+        console.log(`Tree [${docName}]: ${selectedNodes.length} nodes, ${treeResult.confidence}% conf`);
+      }
     }
+
+    if (allPageRanges.length === 0 || bestConfidence < TREE_REASONING_MIN_CONFIDENCE) {
+      return null;
+    }
+
+    const result = await queryDubaiCodeFiltered({
+      query,
+      pageRanges: allPageRanges,
+      matchCount: CHAT_PIPELINE_CONFIG.INITIAL_MATCH_COUNT,
+      precomputedEmbedding: queryEmbedding,
+    });
+
+    return result.chunks;
+  } catch (error) {
+    console.error('Tree reasoning error, falling back:', error);
+    return null;
   }
+}
 
-  if (allPageRanges.length === 0) {
-    return { chunks: [], confidence: 0, reasoning: 'No matching sections found across documents' };
-  }
+// -----------------------------------------------------------------------------
+// Standard Search Path
+// -----------------------------------------------------------------------------
 
-  console.log(`📄 Searching in ${allPageRanges.length} page ranges across documents`);
-
-  // Filtered search within page ranges (across ALL documents)
-  const filteredResult = await queryDubaiCodeFiltered({
+async function executeStandardSearch(
+  query: string,
+  queryEmbedding: number[],
+  documentFilter: string[]
+): Promise<MatchedChunk[]> {
+  const result = await queryDubaiCode({
     query,
-    pageRanges: allPageRanges,
-    matchCount: 25,
+    matchCount: CHAT_PIPELINE_CONFIG.INITIAL_MATCH_COUNT,
+    precomputedEmbedding: queryEmbedding,
+    documentFilter,
   });
 
-  let chunks = filteredResult.chunks;
-
-  // Re-ranking
-  if (ENABLE_RERANKING && chunks.length > RERANK_TOP_K) {
-    chunks = await rerankChunks(query, chunks, RERANK_TOP_K);
-  }
-  chunks = diversifyChunks(chunks, RERANK_TOP_K);
-
-  return {
-    chunks,
-    confidence: bestConfidence,
-    reasoning: allReasonings.join('; '),
-  };
-}
-
-/**
- * Standard RAG Pipeline (no Tree Reasoning)
- * Used for non-structural queries or as fallback
- */
-async function executeStandardRAGPipeline(query: string): Promise<MatchedChunk[]> {
-  const {
-    ENABLE_QUERY_EXPANSION,
-    ENABLE_RERANKING,
-    MAX_EXPANDED_QUERIES,
-    RERANK_TOP_K,
-    MATCH_THRESHOLD,
-    INITIAL_MATCH_COUNT,
-    MULTI_QUERY_MATCH_COUNT,
-  } = CHAT_PIPELINE_CONFIG;
-
-  // Step 1: Query Type Detection
-  const queryType = detectQueryType(query);
-
-  // Step 2: Query Expansion
-  let searchQueries = [query];
-  if (ENABLE_QUERY_EXPANSION && queryType !== 'exact') {
-    const expandedQueries = await expandQuery(query);
-    searchQueries = expandedQueries.slice(0, MAX_EXPANDED_QUERIES);
-  }
-
-  // Step 3: Hybrid Search
-  let chunks: MatchedChunk[];
-  if (searchQueries.length > 1) {
-    chunks = await multiQuerySearch(searchQueries, MULTI_QUERY_MATCH_COUNT);
-  } else {
-    const ragResult = await queryDubaiCode({
-      query,
-      matchThreshold: MATCH_THRESHOLD,
-      matchCount: INITIAL_MATCH_COUNT,
-    });
-    chunks = ragResult.chunks;
-  }
-
-  // Step 4: Re-ranking
-  if (ENABLE_RERANKING && chunks.length > RERANK_TOP_K) {
-    chunks = await rerankChunks(query, chunks, RERANK_TOP_K);
-  }
-
-  // Step 5: Diversity filter for cross-document coverage
-  chunks = diversifyChunks(chunks, RERANK_TOP_K);
-
-  return chunks;
+  return result.chunks;
 }
 
 // -----------------------------------------------------------------------------
-// -----------------------------------------------------------------------------
-// Answer Verification
-// -----------------------------------------------------------------------------
-
-/**
- * Verify an AI response against source chunks
- * Returns verification result with confidence score
- */
-export async function verifyAIResponse(
-  response: string,
-  chunks: MatchedChunk[],
-  originalQuery: string
-): Promise<{ verifiedResponse: string; verificationResult: VerifiedAnswer }> {
-  const verificationResult = await verifyAnswer(response, chunks, originalQuery);
-
-  let verifiedResponse = response;
-  if (!verificationResult.isVerified && verificationResult.confidence < 50) {
-    verifiedResponse = response +
-      '\n\n⚠️ Note: I could not fully verify all details in this response against the source documents. Please cross-reference with the official Dubai Building Code.';
-  }
-
-  return { verifiedResponse, verificationResult };
-}
-
-// -----------------------------------------------------------------------------
-// Citation Generation
+// Citation Generation (v2 — chunk-based, 0 API)
 // -----------------------------------------------------------------------------
 
 /**
- * Generate smart citations from AI response and chunks
+ * Generate citations from chunks used as context.
+ * v2: No LLM parsing, no RPC calls, 100% accurate from DB metadata.
  */
-export async function generateCitations(
-  aiResponse: string,
-  chunks: MatchedChunk[],
-  verificationConfidence: number
-): Promise<Citation[]> {
-  const { MIN_CITATION_CONFIDENCE } = CHAT_PIPELINE_CONFIG;
+export function generateCitations(chunks: MatchedChunk[]): Citation[] {
+  const citations = createChunkCitations(chunks);
 
-  const citations = await createSmartCitations(
-    aiResponse,
-    chunks,
-    verificationConfidence,
-    MIN_CITATION_CONFIDENCE
-  );
-
-  // Log citation statistics
   const stats = getCitationStats(citations);
-  console.log(`📊 Citation stats: ${stats.verified} verified / ${stats.total} total, ${stats.uniquePages} pages, ${stats.uniqueSections} sections, verification confidence: ${verificationConfidence} (${getConfidenceTier(verificationConfidence)})`);
+  console.log(`Citations: ${stats.total} total, ${stats.uniquePages} pages, ${stats.uniqueSections} sections`);
 
   return citations;
 }
 
+/**
+ * Store response + citations in semantic cache (fire-and-forget).
+ */
+export async function cacheResponse(
+  queryText: string,
+  queryEmbedding: number[],
+  response: string,
+  citations: Citation[]
+): Promise<void> {
+  if (CHAT_PIPELINE_CONFIG.ENABLE_CACHE) {
+    await storeInCache(queryText, queryEmbedding, response, citations);
+  }
+}

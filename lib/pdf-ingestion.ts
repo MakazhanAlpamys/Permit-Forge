@@ -22,12 +22,14 @@ import fs from 'fs';
 // -----------------------------------------------------------------------------
 
 export const PDF_INGESTION_CONFIG = {
-  CHUNK_SIZE: 800,         // Characters per chunk
-  CHUNK_OVERLAP: 150,      // Overlap between chunks
-  BATCH_SIZE: 3,           // Chunks per database batch (sequential embedding — lower is safer for free tier)
+  // v2: Parent-child chunking
+  CHILD_CHUNK_SIZE: 400,   // Child chunks for embedding + search (higher precision)
+  PARENT_CHUNK_SIZE: 2000, // Parent chunks for LLM context (richer information)
+  CHUNK_OVERLAP: 100,      // Overlap between child chunks
+  BATCH_SIZE: 3,           // Chunks per database batch
   MIN_CHUNK_LENGTH: 50,    // Minimum chunk length to include
-  BATCH_DELAY_MS: 2000,    // Delay between batches (each chunk embedded sequentially, ~3 per 2s gap)
-  EMBED_DELAY_MS: 350,     // Delay between individual embedding requests within a batch
+  BATCH_DELAY_MS: 2000,    // Delay between batches
+  EMBED_DELAY_MS: 350,     // Delay between individual embedding requests
 } as const;
 
 // -----------------------------------------------------------------------------
@@ -63,10 +65,10 @@ export async function splitWithPageTracking(
   pages: PDFPageContent[],
   parser: PDFParser
 ): Promise<ChunkWithPageRange[]> {
-  const { CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_LENGTH } = PDF_INGESTION_CONFIG;
+  const { CHILD_CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_LENGTH } = PDF_INGESTION_CONFIG;
 
   const textSplitter = new RecursiveCharacterTextSplitter({
-    chunkSize: CHUNK_SIZE,
+    chunkSize: CHILD_CHUNK_SIZE,
     chunkOverlap: CHUNK_OVERLAP,
     separators: [
       '\n\n\n',   // Major section breaks
@@ -323,12 +325,23 @@ export async function runIngestionPipeline(
       };
     }
 
-    // Stage 6: Generate embeddings and store (sequential to avoid wasting quota)
+    // Stage 5.5: Create parent chunks (v2 — larger chunks for LLM context)
+    await sendProgress({
+      stage: 'parents',
+      progress: 17,
+      total: 100,
+      message: 'Creating parent chunks for richer LLM context...',
+    });
+
+    const parentChunks = await createParentChunks(pages, parser);
+    const parentIdMap = await insertParentChunks(supabase, parentChunks, documentId);
+
+    // Stage 6: Generate embeddings and store child chunks
     await sendProgress({
       stage: 'embedding',
       progress: 20,
       total: 100,
-      message: `Processing ${chunksToProcess.length} chunks (TOC: ${structure.flatTOC.length} entries)...`,
+      message: `Processing ${chunksToProcess.length} child chunks (TOC: ${structure.flatTOC.length} entries)...`,
     });
 
     let processedCount = existingContents.size;
@@ -348,18 +361,16 @@ export async function runIngestionPipeline(
         chunksProcessed: processedCount,
       });
 
-      // Generate embeddings SEQUENTIALLY to avoid wasting quota on parallel failures
+      // Generate embeddings SEQUENTIALLY
       const embeddings: number[][] = [];
       for (let j = 0; j < batch.length; j++) {
         try {
           const embedding = await generateEmbedding(batch[j].content);
           embeddings.push(embedding);
-          // Small delay between individual requests to stay under per-minute limits
           if (j < batch.length - 1) {
             await new Promise(resolve => setTimeout(resolve, EMBED_DELAY_MS));
           }
         } catch (error) {
-          // Daily quota exhaustion — stop immediately with clear message
           if (error instanceof DailyQuotaExhaustedError) {
             const errorMsg = `${error.message} (${processedCount}/${totalChunks} chunks saved — will resume on next attempt)`;
             await sendProgress({
@@ -377,15 +388,15 @@ export async function runIngestionPipeline(
         }
       }
 
-      // Prepare records
+      // Find parent_id for each child chunk by page overlap
       const records = batch.map((chunk, idx) => ({
         content: chunk.content,
         metadata: { ...buildChunkMetadata(chunk), documentName: documentId },
         embedding: embeddings[idx],
         document_name: documentId,
+        parent_id: findParentForChild(chunk, parentIdMap),
       }));
 
-      // Insert to database
       const { error } = await supabase
         .from('dubai_code_chunks')
         .insert(records);
@@ -406,7 +417,6 @@ export async function runIngestionPipeline(
 
       processedCount += batch.length;
 
-      // Rate limiting delay between batches
       if (i + BATCH_SIZE < chunksToProcess.length) {
         await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
       }
@@ -448,6 +458,165 @@ export async function runIngestionPipeline(
       await parser.close();
     }
   }
+}
+
+// -----------------------------------------------------------------------------
+// Parent-Child Chunking Support (v2)
+// -----------------------------------------------------------------------------
+
+interface ParentChunkData {
+  content: string;
+  startPage: number;
+  endPage: number;
+  section?: string;
+  sectionTitle?: string;
+}
+
+/**
+ * Create larger parent chunks (2000 chars) for richer LLM context.
+ * Parent chunks don't get embeddings — only child chunks do.
+ */
+async function createParentChunks(
+  pages: PDFPageContent[],
+  parser: PDFParser
+): Promise<ParentChunkData[]> {
+  const { PARENT_CHUNK_SIZE, MIN_CHUNK_LENGTH } = PDF_INGESTION_CONFIG;
+
+  const textSplitter = new RecursiveCharacterTextSplitter({
+    chunkSize: PARENT_CHUNK_SIZE,
+    chunkOverlap: 200,
+    separators: ['\n\n\n', '\n\n', '\n', '. ', '; ', ', ', ' ', ''],
+  });
+
+  let fullText = '';
+  const segments: Array<{ text: string; pageNumber: number }> = [];
+
+  for (const page of pages) {
+    if (page.text.trim().length === 0) continue;
+    fullText += page.text + '\n\n';
+    segments.push({ text: page.text, pageNumber: page.pageNumber });
+  }
+
+  const rawChunks = await textSplitter.splitText(fullText);
+  const parentChunks: ParentChunkData[] = [];
+  let currentPosition = 0;
+
+  for (const chunkContent of rawChunks) {
+    if (chunkContent.trim().length < MIN_CHUNK_LENGTH) continue;
+
+    const chunkStart = fullText.indexOf(chunkContent, currentPosition);
+    const chunkEnd = chunkStart + chunkContent.length;
+
+    let position = 0;
+    let startPage = 1;
+    let endPage = 1;
+    let foundStart = false;
+
+    for (const segment of segments) {
+      const segmentEnd = position + segment.text.length + 2;
+
+      if (!foundStart && chunkStart < segmentEnd) {
+        startPage = segment.pageNumber;
+        foundStart = true;
+      }
+
+      if (chunkEnd <= segmentEnd) {
+        endPage = segment.pageNumber;
+        break;
+      }
+
+      if (foundStart) {
+        endPage = segment.pageNumber;
+      }
+
+      position = segmentEnd;
+    }
+
+    const sectionInfo = parser.findSectionForPage(startPage);
+
+    parentChunks.push({
+      content: chunkContent.trim(),
+      startPage,
+      endPage,
+      section: sectionInfo.section,
+      sectionTitle: sectionInfo.sectionTitle,
+    });
+
+    currentPosition = chunkStart + 1;
+  }
+
+  return parentChunks;
+}
+
+/**
+ * Insert parent chunks into the database and return a map for linking child chunks.
+ */
+async function insertParentChunks(
+  supabase: ReturnType<typeof createAdminClient>,
+  parentChunks: ParentChunkData[],
+  documentId: string
+): Promise<Array<{ id: number; startPage: number; endPage: number }>> {
+  if (parentChunks.length === 0) return [];
+
+  // Clear existing parent chunks for this document
+  await supabase
+    .from('parent_chunks')
+    .delete()
+    .eq('document_name', documentId);
+
+  const records = parentChunks.map(chunk => ({
+    content: chunk.content,
+    metadata: {
+      page: chunk.startPage,
+      startPage: chunk.startPage,
+      endPage: chunk.endPage,
+      section: chunk.section,
+      sectionTitle: chunk.sectionTitle,
+      documentName: documentId,
+    },
+    document_name: documentId,
+  }));
+
+  const { data, error } = await supabase
+    .from('parent_chunks')
+    .insert(records)
+    .select('id, metadata');
+
+  if (error) {
+    console.error('Failed to insert parent chunks:', error);
+    return [];
+  }
+
+  return (data || []).map(row => ({
+    id: row.id,
+    startPage: (row.metadata as { startPage?: number })?.startPage || 0,
+    endPage: (row.metadata as { endPage?: number })?.endPage || 0,
+  }));
+}
+
+/**
+ * Find the best parent chunk for a child chunk based on page overlap.
+ */
+function findParentForChild(
+  child: ChunkWithPageRange,
+  parents: Array<{ id: number; startPage: number; endPage: number }>
+): number | null {
+  if (parents.length === 0) return null;
+
+  for (const parent of parents) {
+    if (child.startPage >= parent.startPage && child.endPage <= parent.endPage) {
+      return parent.id;
+    }
+  }
+
+  // Partial overlap fallback
+  for (const parent of parents) {
+    if (child.startPage <= parent.endPage && child.endPage >= parent.startPage) {
+      return parent.id;
+    }
+  }
+
+  return null;
 }
 
 // -----------------------------------------------------------------------------

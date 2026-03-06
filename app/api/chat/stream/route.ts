@@ -8,11 +8,11 @@ import { MAX_CONTEXT_LENGTH } from '@/lib/constants';
 import {
   classifyUserTopic,
   executeRAGPipeline,
-  verifyAIResponse,
   generateCitations,
+  cacheResponse,
+  buildContext,
+  CRAG_FAIL_RESPONSE,
 } from '@/lib/chat-pipeline';
-import { buildContext } from '@/lib/rag';
-import type { MatchedChunk } from '@/types';
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
     // =========================================================================
     const user = await getQuickSession();
     if (!user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { 
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
@@ -50,10 +50,10 @@ export async function POST(request: NextRequest) {
     // =========================================================================
     const rateLimitResult = await checkRateLimit(user.id);
     if (!rateLimitResult.allowed) {
-      return new Response(JSON.stringify({ 
-        error: 'Rate limited', 
-        retryAfter: rateLimitResult.retryAfterMs 
-      }), { 
+      return new Response(JSON.stringify({
+        error: 'Rate limited',
+        retryAfter: rateLimitResult.retryAfterMs
+      }), {
         status: 429,
         headers: { 'Content-Type': 'application/json' }
       });
@@ -64,12 +64,12 @@ export async function POST(request: NextRequest) {
     // =========================================================================
     const body = await request.json();
     const validation = chatMessageSchema.safeParse(body);
-    
+
     if (!validation.success) {
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         error: 'Invalid input',
-        details: validation.error.issues[0].message 
-      }), { 
+        details: validation.error.issues[0].message
+      }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       });
@@ -88,26 +88,70 @@ export async function POST(request: NextRequest) {
         .select('user_id')
         .eq('id', sessionId)
         .single();
-      
+
       if (error || !session || session.user_id !== user.id) {
-        return new Response(JSON.stringify({ error: 'Access denied' }), { 
+        return new Response(JSON.stringify({ error: 'Access denied' }), {
           status: 403,
           headers: { 'Content-Type': 'application/json' }
         });
       }
     }
 
-    // Topic classification using centralized pipeline
+    // Topic classification
     const topicClassification = await classifyUserTopic(trimmedMessage);
 
-    // Execute RAG only for on-topic queries that need it
-    // Greetings and off-topic go through LLM without RAG context (for multilingual support)
-    let chunks: MatchedChunk[] = [];
+    // v2 Pipeline: Execute RAG only for on-topic queries that need it
+    let pipelineResult: Awaited<ReturnType<typeof executeRAGPipeline>> | null = null;
+
     if (topicClassification.isOnTopic && topicClassification.shouldUseRAG) {
-      chunks = await executeRAGPipeline(trimmedMessage);
+      pipelineResult = await executeRAGPipeline(trimmedMessage);
+
+      // Cache hit — return cached response directly
+      if (pipelineResult.fromCache && pipelineResult.cachedResponse) {
+        const encoder = new TextEncoder();
+        const cachedCitations = pipelineResult.cachedCitations || [];
+
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(pipelineResult!.cachedResponse!));
+            if (cachedCitations.length > 0) {
+              controller.enqueue(encoder.encode(`\n\n__CITATIONS__${JSON.stringify(cachedCitations)}`));
+            }
+            controller.close();
+          },
+        });
+
+        return new Response(stream, {
+          headers: {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Transfer-Encoding': 'chunked',
+            'Cache-Control': 'no-cache',
+          },
+        });
+      }
+
+      // CRAG failed — no good results found
+      if (pipelineResult.chunks.length === 0) {
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(CRAG_FAIL_RESPONSE));
+            controller.close();
+          },
+        });
+
+        return new Response(stream, {
+          headers: {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Transfer-Encoding': 'chunked',
+            'Cache-Control': 'no-cache',
+          },
+        });
+      }
     }
 
-    // Build context using centralized function from rag.ts
+    // Build context from chunks
+    const chunks = pipelineResult?.chunks || [];
     const context = buildContext(chunks);
 
     // Load conversation history
@@ -120,7 +164,7 @@ export async function POST(request: NextRequest) {
         .eq('session_id', sessionId)
         .order('created_at', { ascending: true })
         .limit(10);
-      
+
       if (messages) {
         conversationHistory = messages.map(m => ({
           role: m.role as 'user' | 'assistant',
@@ -129,16 +173,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Build messages
+    // Build messages for LLM
     const fullUserMessage = context
       ? `CONTEXT:\n${context.slice(0, MAX_CONTEXT_LENGTH)}\n\nQ: ${trimmedMessage}`
       : `Q: ${trimmedMessage}`;
 
     const langchainMessages = [
       new SystemMessage(COMPLIANCE_SYSTEM_PROMPT),
-      ...conversationHistory.slice(-10).map(msg => 
-        msg.role === 'user' 
-          ? new HumanMessage(msg.content) 
+      ...conversationHistory.slice(-10).map(msg =>
+        msg.role === 'user'
+          ? new HumanMessage(msg.content)
           : new AIMessage(msg.content)
       ),
       new HumanMessage(fullUserMessage),
@@ -146,13 +190,13 @@ export async function POST(request: NextRequest) {
 
     // Create streaming response
     const encoder = new TextEncoder();
-    
+
     const stream = new ReadableStream({
       async start(controller) {
         try {
           const streamResponse = await streamingModel.stream(langchainMessages);
           let fullContent = '';
-          
+
           for await (const chunk of streamResponse) {
             const text = chunk.content as string;
             if (text) {
@@ -160,25 +204,19 @@ export async function POST(request: NextRequest) {
               controller.enqueue(encoder.encode(text));
             }
           }
-          
-          // Send smart citations at the end using centralized functions
+
+          // v2: Chunk-based citations (0 API calls)
           if (chunks.length > 0) {
-            // Verification to get confidence score
-            let verificationConfidence = 30;
-            try {
-              const { verificationResult } = await verifyAIResponse(fullContent, chunks, trimmedMessage);
-              verificationConfidence = verificationResult.confidence;
-              console.log(`🔍 Verification: ${verificationResult.isVerified ? '✓' : '✗'} (${verificationConfidence}%)`);
-            } catch (e) {
-              console.error('Verification error:', e);
-            }
-            
-            // Use centralized citation generation
-            const citations = await generateCitations(fullContent, chunks, verificationConfidence);
-            
+            const citations = generateCitations(chunks);
             controller.enqueue(encoder.encode(`\n\n__CITATIONS__${JSON.stringify(citations)}`));
+
+            // Cache the response for future similar queries (fire-and-forget)
+            if (pipelineResult?.queryEmbedding) {
+              cacheResponse(trimmedMessage, pipelineResult.queryEmbedding, fullContent, citations)
+                .catch(err => console.warn('Cache store failed:', err));
+            }
           }
-          
+
           controller.close();
         } catch (error) {
           console.error('Streaming error:', error);

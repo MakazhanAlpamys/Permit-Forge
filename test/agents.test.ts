@@ -1,5 +1,5 @@
 // ============================================================================
-// AI Agents Tests - Topic Classification, Query Expansion, Reranking, Verification
+// AI Agents Tests - Topic Classification, Query Structure, Tree Reasoning
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -39,14 +39,14 @@ vi.mock('@langchain/core/messages', () => ({
 }));
 
 // Import after mocks
-import { 
-  classifyTopic, 
-  expandQuery, 
-  rerankChunks, 
-  verifyAnswer, 
-  detectQueryType 
+import {
+  classifyTopic,
+  detectQueryType,
+  classifyQueryStructure,
+  treeReasoner,
+  getPageRangesForNodes,
 } from '@/lib/agents';
-import type { MatchedChunk } from '@/types';
+import type { TreeNode } from '@/types';
 
 describe('AI Agents', () => {
   beforeEach(() => {
@@ -102,137 +102,94 @@ describe('AI Agents', () => {
     });
   });
 
-  describe('expandQuery', () => {
-    it('should return original query plus expanded variations', async () => {
-      mockInvokeFn.mockResolvedValueOnce({
-        content: '["parking space dimensions", "vehicle parking requirements", "parking area calculations"]',
-      });
-
-      const queries = await expandQuery('parking requirements');
-
-      expect(queries[0]).toBe('parking requirements'); // Original first
-      expect(queries.length).toBeGreaterThan(1);
-      expect(queries.length).toBeLessThanOrEqual(5);
+  describe('classifyQueryStructure', () => {
+    it('should detect structural queries with chapter/section references', () => {
+      const result = classifyQueryStructure('summarize chapter 3');
+      expect(result.isStructural).toBe(true);
+      expect(result.suggestedPath).toBe('tree');
     });
 
-    it('should handle invalid JSON response gracefully', async () => {
-      mockInvokeFn.mockResolvedValueOnce({ content: 'invalid response' });
-
-      const queries = await expandQuery('test query');
-
-      expect(queries).toEqual(['test query']); // Fallback to original
+    it('should detect non-structural queries', () => {
+      const result = classifyQueryStructure('what are parking requirements?');
+      expect(result.isStructural).toBe(false);
+      expect(result.suggestedPath).toBe('standard');
     });
 
-    it('should handle LLM errors gracefully', async () => {
-      mockInvokeFn.mockRejectedValueOnce(new Error('API Error'));
-
-      const queries = await expandQuery('test query');
-
-      expect(queries).toEqual(['test query']); // Fallback to original
-    });
-  });
-
-  describe('rerankChunks', () => {
-    const mockChunks: MatchedChunk[] = [
-      { id: 1, content: 'Parking spaces must be 2.5m wide', metadata: { page: 45, startPage: 45, endPage: 45, section: '3.1' }, similarity: 0.8 },
-      { id: 2, content: 'Fire exits should be clearly marked', metadata: { page: 100, startPage: 100, endPage: 100, section: '5.1' }, similarity: 0.7 },
-      { id: 3, content: 'Building heights are regulated', metadata: { page: 30, startPage: 30, endPage: 30, section: '2.1' }, similarity: 0.6 },
-    ];
-
-    it('should rerank chunks based on relevance scores', async () => {
-      // Scores use 1-based index (idx + 1), not chunk.id
-      // Chunk at index 0 gets id=1, index 1 gets id=2, etc.
-      mockInvokeFn.mockResolvedValueOnce({
-        content: '[{"id": 1, "score": 95}, {"id": 2, "score": 60}, {"id": 3, "score": 50}]',
-      });
-
-      const reranked = await rerankChunks('parking requirements', mockChunks, 2);
-
-      expect(reranked.length).toBe(2);
-      expect(reranked[0].id).toBe(1); // Highest score chunk (original index 0)
+    it('should detect contextual queries with building types and topics', () => {
+      const result = classifyQueryStructure('parking requirements for residential buildings');
+      expect(result.isStructural).toBe(true);
+      expect(result.structuralHints).toContain('contextual');
     });
 
-    it('should filter out low relevance chunks (below 40)', async () => {
-      // Need more chunks than topK to trigger reranking
-      const manyChunks: MatchedChunk[] = [
-        { id: 1, content: 'Parking spaces must be 2.5m wide', metadata: { page: 45, startPage: 45, endPage: 45, section: '3.1' }, similarity: 0.8 },
-        { id: 2, content: 'Fire exits should be clearly marked', metadata: { page: 100, startPage: 100, endPage: 100, section: '5.1' }, similarity: 0.7 },
-        { id: 3, content: 'Building heights are regulated', metadata: { page: 30, startPage: 30, endPage: 30, section: '2.1' }, similarity: 0.6 },
-        { id: 4, content: 'Extra chunk 1', metadata: { page: 40, startPage: 40, endPage: 40, section: '4.1' }, similarity: 0.5 },
-        { id: 5, content: 'Extra chunk 2', metadata: { page: 50, startPage: 50, endPage: 50, section: '5.1' }, similarity: 0.4 },
-        { id: 6, content: 'Extra chunk 3', metadata: { page: 60, startPage: 60, endPage: 60, section: '6.1' }, similarity: 0.3 },
-      ];
-      
-      // Only chunk at index 0 (id=1) has score >= 40
-      mockInvokeFn.mockResolvedValueOnce({
-        content: '[{"id": 1, "score": 95}, {"id": 2, "score": 30}, {"id": 3, "score": 10}, {"id": 4, "score": 20}, {"id": 5, "score": 15}, {"id": 6, "score": 5}]',
-      });
-
-      const reranked = await rerankChunks('parking requirements', manyChunks, 5);
-
-      expect(reranked.length).toBe(1);
-      expect(reranked[0].id).toBe(1);
+    it('should detect comparison queries', () => {
+      const result = classifyQueryStructure('compare residential and commercial requirements');
+      expect(result.isStructural).toBe(true);
+      expect(result.structuralHints).toContain('comparison');
     });
 
-    it('should return original chunks on error', async () => {
-      mockInvokeFn.mockRejectedValueOnce(new Error('API Error'));
-
-      const reranked = await rerankChunks('test', mockChunks, 2);
-
-      expect(reranked.length).toBe(2);
-    });
-
-    it('should return all chunks if count is less than topK', async () => {
-      const smallChunks = [mockChunks[0]];
-      
-      const result = await rerankChunks('test', smallChunks, 5);
-      
-      expect(result).toEqual(smallChunks);
-      expect(mockInvokeFn).not.toHaveBeenCalled();
+    it('should suggest exact path for section-number queries', () => {
+      const result = classifyQueryStructure('clause 4.5.2');
+      expect(result.suggestedPath).toBe('exact');
     });
   });
 
-  describe('verifyAnswer', () => {
-    const mockChunks: MatchedChunk[] = [
-      { id: 1, content: 'Parking spaces must be minimum 2.5m wide', metadata: { page: 45, startPage: 45, endPage: 45, section: '3.1' }, similarity: 0.9 },
+  describe('treeReasoner', () => {
+    const sampleTree: TreeNode[] = [
+      { id: 'n1', title: 'Parking Requirements', level: 1, startPage: 40, endPage: 50, path: 'Chapter 3 > Parking', section: '3.1' },
+      { id: 'n2', title: 'Fire Safety', level: 1, startPage: 90, endPage: 110, path: 'Chapter 5 > Fire Safety', section: '5.1' },
+      { id: 'n3', title: 'Structural Loads', level: 2, startPage: 150, endPage: 170, path: 'Chapter 7 > Structural > Loads', section: '7.2' },
     ];
 
-    it('should verify answer against source chunks', async () => {
-      mockInvokeFn.mockResolvedValueOnce({
-        content: JSON.stringify({
-          isVerified: true,
-          confidence: 85,
-          supportingQuotes: ['Parking spaces must be minimum 2.5m wide'],
-          unsupportedClaims: [],
-          suggestedCorrection: null,
-        }),
-      });
-
-      const result = await verifyAnswer(
-        'Parking spaces need to be at least 2.5m wide.',
-        mockChunks,
-        'How wide should parking spaces be?'
-      );
-
-      expect(result.isVerified).toBe(true);
-      expect(result.confidence).toBe(85);
-      expect(result.citations.length).toBeGreaterThan(0);
+    it('should score and select relevant nodes', () => {
+      const result = treeReasoner('parking requirements', sampleTree);
+      expect(result.selectedNodes.length).toBeGreaterThan(0);
+      expect(result.selectedNodes).toContain('n1');
+      expect(result.confidence).toBeGreaterThan(0);
     });
 
-    it('should return unverified result on LLM error', async () => {
-      mockInvokeFn.mockRejectedValueOnce(new Error('API Error'));
-
-      const result = await verifyAnswer('test answer', mockChunks, 'test question');
-
-      expect(result.isVerified).toBe(false);
+    it('should return empty for unrelated queries', () => {
+      const result = treeReasoner('cooking recipes', sampleTree);
+      expect(result.selectedNodes).toHaveLength(0);
       expect(result.confidence).toBe(0);
     });
 
-    it('should return low confidence for empty chunks', async () => {
-      const result = await verifyAnswer('test answer', [], 'test question');
+    it('should return empty for empty tree', () => {
+      const result = treeReasoner('parking', []);
+      expect(result.selectedNodes).toHaveLength(0);
+      expect(result.reasoning).toBe('No document tree available');
+    });
 
-      expect(result.isVerified).toBe(false);
-      expect(result.confidence).toBe(0);
+    it('should boost score for exact section matches', () => {
+      const result = treeReasoner('section 3.1 requirements', sampleTree);
+      expect(result.selectedNodes).toContain('n1');
+      expect(result.confidence).toBeGreaterThanOrEqual(100);
+    });
+  });
+
+  describe('getPageRangesForNodes', () => {
+    const sampleTree: TreeNode[] = [
+      { id: 'n1', title: 'Parking', level: 1, startPage: 40, endPage: 50, path: 'Chapter 3 > Parking', section: '3.1' },
+      { id: 'n2', title: 'Fire Safety', level: 1, startPage: 90, endPage: 110, path: 'Chapter 5 > Fire Safety', section: '5.1' },
+      { id: 'n3', title: 'Exits', level: 2, startPage: 48, endPage: 55, path: 'Chapter 3 > Exits', section: '3.2' },
+    ];
+
+    it('should return page ranges for selected nodes', () => {
+      const ranges = getPageRangesForNodes(['n1', 'n2'], sampleTree);
+      expect(ranges).toHaveLength(2);
+      expect(ranges[0]).toEqual({ startPage: 40, endPage: 50, section: '3.1' });
+    });
+
+    it('should merge overlapping ranges', () => {
+      const ranges = getPageRangesForNodes(['n1', 'n3'], sampleTree);
+      // n1: 40-50, n3: 48-55 → merged to 40-55
+      expect(ranges).toHaveLength(1);
+      expect(ranges[0].startPage).toBe(40);
+      expect(ranges[0].endPage).toBe(55);
+    });
+
+    it('should handle unknown node IDs', () => {
+      const ranges = getPageRangesForNodes(['unknown'], sampleTree);
+      expect(ranges).toHaveLength(0);
     });
   });
 

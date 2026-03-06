@@ -23,31 +23,6 @@ function sanitizeContent(content: string): string {
   });
 }
 
-/**
- * Strip inline citation references from text for clean display.
- * Removes patterns like [Page 10, Section 2.1], (Page 45), [Pages 10-12], etc.
- * The actual sources are shown separately in the citations section.
- */
-function stripInlineCitations(text: string): string {
-  return text
-    // [Page 45, Section 3.2.1] or [Page 45-46, Section 3.2]
-    .replace(/\[Pages?\s+\d+(?:\s*[-–,]\s*\d+)?,?\s*Section\s+[\d.]+\]/gi, '')
-    // [Page 45, §3.2.1]
-    .replace(/\[Pages?\s+\d+(?:\s*[-–,]\s*\d+)?,?\s*§\s*[\d.]+\]/gi, '')
-    // [Page 45] or [Page 45-46] or [Pages 45-46]
-    .replace(/\[Pages?\s+\d+(?:\s*[-–]\s*\d+)?\]/gi, '')
-    // (Page 45, Section 3.2.1)
-    .replace(/\(Pages?\s+\d+(?:\s*[-–,]\s*\d+)?,?\s*Section\s+[\d.]+\)/gi, '')
-    // (Page 45) or (Page 45-46)
-    .replace(/\(Pages?\s+\d+(?:\s*[-–]\s*\d+)?\)/gi, '')
-    // Section 3.2.1, Page 45
-    .replace(/Section\s+[\d.]+,?\s*Page\s+\d+/gi, '')
-    // Clean up double spaces and extra whitespace left over
-    .replace(/\s{2,}/g, ' ')
-    .replace(/\s+([.,;:])/g, '$1')
-    .trim();
-}
-
 interface MessageBubbleProps {
   message: ChatMessage;
 }
@@ -62,18 +37,13 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   // Sanitize content to prevent XSS attacks
   const sanitizedContent = useMemo(() => sanitizeContent(message.content), [message.content]);
 
-  // For assistant messages: strip inline citations for clean display
-  const displayContent = useMemo(() => {
-    if (isUser) return sanitizedContent;
-    return stripInlineCitations(sanitizedContent);
-  }, [sanitizedContent, isUser]);
+  // v2: LLM no longer writes inline citations, so no stripping needed
+  const displayContent = sanitizedContent;
 
   // Copy answer text to clipboard
   const handleCopy = useCallback(async () => {
     try {
-      // Copy the clean text (without citations markers)
-      const textToCopy = stripInlineCitations(message.content);
-      await navigator.clipboard.writeText(textToCopy);
+      await navigator.clipboard.writeText(message.content);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -255,8 +225,8 @@ interface StreamingMessageProps {
 }
 
 export function StreamingMessage({ content, isComplete }: StreamingMessageProps) {
-  // Strip inline citations during streaming for clean display
-  const displayContent = useMemo(() => stripInlineCitations(content), [content]);
+  // v2: LLM no longer writes inline citations
+  const displayContent = content;
 
   return (
     <div className="flex gap-3">

@@ -25,7 +25,7 @@ Pattern match: `npx vitest run -t "pattern"`
 
 - **Frontend:** Next.js 15 (App Router), React 18, TypeScript, Tailwind CSS 4, shadcn/ui
 - **AI:** Google Gemini 2.5 Flash via LangChain 0.3 (chat), gemini-embedding-001 via @google/genai SDK (embeddings, 768-dim vectors)
-- **Database:** Supabase (PostgreSQL) with pgvector (IVFFlat) + pg_trgm extensions, 26+ RPC functions
+- **Database:** Supabase (PostgreSQL) with pgvector (HNSW) + pg_trgm extensions, 30+ RPC functions
 - **Auth:** JWT (HS256, jose), bcrypt (12 rounds), CSRF tokens, HttpOnly cookies
 - **Testing:** Vitest 4 (node environment), @testing-library/react, 11 test suites in `test/`
 - **Email:** Resend API (optional, for permit notifications)
@@ -65,29 +65,43 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 | `analytics.ts` | Admin stats and analytics queries |
 | `notifications.ts` | In-app + email notifications (Resend) |
 
-### RAG Pipeline (`lib/chat-pipeline.ts` → central orchestrator)
+### RAG Pipeline v2 (`lib/chat-pipeline.ts` → central orchestrator)
 
 ```
 User Query
   → Topic Classification (regex + LLM fallback)
     ├─ OFF_TOPIC/GREETING → Short-circuit response
     └─ ON_TOPIC →
-        → Query Structure Classifier (regex-based, ~1ms, no LLM)
-          ├─ Structural ("in chapter", "summarize section")
-          │   → Tree Reasoning: deterministic keyword scoring on document hierarchy
-          │     → Filtered search within matched page ranges
-          │     → Falls back to standard if confidence < 45%
-          └─ Standard
-              → Query Expansion (LLM generates 3-5 variations)
-              → Hybrid Search (vector 0.7 + keyword FTS 0.3, RRF fusion)
-              → AI Re-ranking (threshold ≥ 40)
+        [1] Generate Embedding (1 API call, reused for cache + search)
+        [2] Semantic Cache Check (pgvector similarity > 0.95)
+          ├─ HIT → return cached response + citations (0 more API)
+          └─ MISS → continue
+        [3] Document Selector (keyword scoring, 0 API, ~1ms)
+        [4] Scope Detector (regex for page/section refs, 0 API)
+        [5] Hybrid Search (reuses embedding from step 1)
+          ├─ Scope-filtered search if page ranges detected
+          ├─ Tree Reasoning path for structural queries
+          └─ Standard hybrid search with document filter
+        [6] CRAG Check (top score < 0.3 → "info not found", 0 API)
+        [7] Heuristic Rerank (0 API, ~1ms, diversity-aware)
+        [8] Parent Chunk Expansion (DB lookup, 0 API)
         → Context Building ([SOURCE N] formatted chunks)
-        → LLM Generation (streaming via SSE)
-        → Answer Verification (hallucination check)
-        → Citation Parsing (9 regex patterns → match_citation RPC → DB lookup)
+        → LLM Generation (1 API call, streaming via SSE)
+        → Chunk-Based Citations (0 API, from chunk metadata)
+        → Cache Store (fire-and-forget)
 ```
 
-Feature flags in `CHAT_PIPELINE_CONFIG` control each stage (query expansion, reranking, verification, tree reasoning). All can be toggled independently.
+**API calls per scenario:**
+| Scenario | Embedding | LLM | Total |
+|---|---|---|---|
+| Cache hit | 1 | 0 | 1 |
+| Greeting (regex) | 0 | 0 | 0 |
+| Off-topic (LLM) | 0 | 1 | 1 |
+| Weak search (CRAG) | 1 | 0 | 1 |
+| Full pipeline | 1 | 1 | 2 |
+| Average (with cache) | ~0.8 | ~0.7 | ~1.5 |
+
+Feature flags in `CHAT_PIPELINE_CONFIG` control cache, tree reasoning, and parent expansion.
 
 ### PDF Ingestion Pipeline (`lib/pdf-ingestion.ts`)
 
@@ -96,12 +110,14 @@ PDF Upload (admin)
   → PDF.js parsing + TOC extraction (lib/pdf-parser.ts)
   → Document tree building (deterministic, no LLM)
   → Save tree to document_trees table
-  → Text chunking: RecursiveCharacterTextSplitter (800 chars, 150 overlap)
-  → FOR EACH CHUNK: generateEmbedding() → Gemini embedding API (768-dim vector)
-  → Batch insert to dubai_code_chunks (content + vector + metadata)
+  → Parent chunking: RecursiveCharacterTextSplitter (2000 chars) → parent_chunks table (no embeddings)
+  → Child chunking: RecursiveCharacterTextSplitter (400 chars, 100 overlap)
+  → Link child → parent by page overlap
+  → FOR EACH CHILD: generateEmbedding() → Gemini embedding API (768-dim vector)
+  → Batch insert to dubai_code_chunks (content + vector + metadata + parent_id)
 ```
 
-The **only AI call** during ingestion is embedding generation (gemini-embedding-001). No LLM text generation occurs. Free tier limit: 1000 embedding requests/day. Pipeline has resume support (skips already-ingested chunks).
+The **only AI call** during ingestion is embedding generation on child chunks (gemini-embedding-001). Parent chunks don't get embeddings (saves API). Free tier limit: 1000 embedding requests/day. Pipeline has resume support (skips already-ingested chunks).
 
 ### Multi-Document Support
 
@@ -128,11 +144,15 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 
 | Module | Purpose |
 |--------|---------|
-| `lib/chat-pipeline.ts` | RAG orchestration + feature flags (`CHAT_PIPELINE_CONFIG`) |
-| `lib/rag.ts` | Hybrid search (vector + FTS), multi-query fusion, RRF ranking |
-| `lib/agents.ts` | AI agents: classifier, expander, reranker, verifier, tree reasoner |
+| `lib/chat-pipeline.ts` | v2 RAG orchestration: cache → select → search → CRAG → rerank → expand |
+| `lib/rag.ts` | Hybrid search with pre-computed embeddings, document filter, CRAG check, parent expansion |
+| `lib/agents.ts` | Topic classifier, query type detector, tree reasoner (no more expander/reranker/verifier) |
 | `lib/gemini.ts` | Gemini model configuration: `chatModel` (temp=0), `streamingModel`, `generateEmbedding()` with retry/quota handling |
-| `lib/citation-parser.ts` | 9 citation extraction patterns, confidence scoring (60% match + 40% verify) |
+| `lib/citation-parser.ts` | Chunk-based citations from DB metadata (0 API, 100% accurate) |
+| `lib/semantic-cache.ts` | Semantic query caching via pgvector (cosine > 0.95, 1hr TTL) |
+| `lib/document-selector.ts` | Keyword-based document scoring to narrow search scope (0 API) |
+| `lib/scope-detector.ts` | Regex detection of page/section references in queries (0 API) |
+| `lib/heuristic-reranker.ts` | Deterministic reranking: hybrid*0.4 + keyword*0.3 + metadata*0.2 + position*0.1 |
 | `lib/pdf-ingestion.ts` | PDF chunking, embedding generation, batch DB insert with resume support |
 | `lib/pdf-parser.ts` | PDF.js-based text extraction with TOC/outline parsing |
 | `lib/tree-cache.ts` | Two-tier cache: L1 in-memory (5-min TTL) + L2 Supabase |
@@ -164,7 +184,9 @@ Matcher excludes: `api`, `_next/static`, `_next/image`, static assets (svg/png/j
 Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — drops and recreates everything). All tables use Row-Level Security (RLS). Service role bypasses RLS.
 
 **Key tables:**
-- `dubai_code_chunks` — document chunks with VECTOR(768) embeddings + TSVECTOR (GIN index) for FTS
+- `dubai_code_chunks` — child chunks with VECTOR(768) embeddings + TSVECTOR (GIN index) for FTS, `parent_id` FK
+- `parent_chunks` — larger chunks (2000 chars) for LLM context (no embeddings)
+- `semantic_cache` — cached query embeddings + responses (HNSW index, TTL-based)
 - `document_trees` — hierarchical document structure (JSONB tree_data)
 - `chat_sessions` / `chat_messages` — conversation history with citations (JSONB)
 - `users` — accounts with role (admin/user), block status, blocked_reason
@@ -172,9 +194,9 @@ Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — 
 - `rate_limits` — per-user per-endpoint request throttling
 - `notifications` — in-app notification storage
 
-**Key RPC functions:** `match_dubai_code` (vector search), `match_dubai_code_hybrid` (hybrid search with RRF), `match_dubai_code_hybrid_filtered` (filtered by page range), `search_dubai_code_keywords` (FTS), `match_citation` (citation verification), `check_rate_limit`, `get_document_tree`/`save_document_tree`, `get_admin_stats`, `get_weekly_activity`, `admin_block_user`, `admin_update_user_role`.
+**Key RPC functions:** `match_dubai_code` (vector search), `match_dubai_code_hybrid` (hybrid search with RRF), `match_dubai_code_hybrid_filtered` (filtered by page range), `search_dubai_code_keywords` (FTS), `search_semantic_cache`/`insert_semantic_cache` (cache operations), `get_parent_chunks` (parent expansion), `check_rate_limit`, `get_document_tree`/`save_document_tree`, `get_admin_stats`, `get_weekly_activity`.
 
-**Indexes:** IVFFlat on embedding (lists=100), GIN on tsvector, B-tree on metadata fields (startPage, endPage, section, contentType). Materialized view `analytics_daily` for dashboard stats.
+**Indexes:** HNSW on embeddings (m=16, ef_construction=64), HNSW on cache embeddings, GIN on tsvector, B-tree on metadata fields. Materialized view `analytics_daily` for dashboard stats.
 
 ### Components Structure
 

@@ -1,26 +1,14 @@
 // ============================================================================
-// Citation Parser Tests - Citation Extraction and Matching
+// Citation Parser Tests - Chunk-Based Citations (v2)
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mock Supabase client - must mock the actual import path used in citation-parser.ts
-const mockRpc = vi.fn();
-vi.mock('@/lib/supabase-server', () => ({
-  createServerClient: () => ({
-    rpc: mockRpc,
-  }),
-  createAdminClient: () => ({
-    rpc: mockRpc,
-  }),
-}));
-
-// Import after mocks
-import { 
-  parseCitationsFromResponse, 
-  matchCitationsToChunks, 
-  createSmartCitations,
-  getCitationStats 
+// Import directly — v2 citation-parser has no external dependencies (no Supabase RPC)
+import {
+  createChunkCitations,
+  getCitationStats,
+  getConfidenceTier,
 } from '@/lib/citation-parser';
 import type { MatchedChunk, Citation } from '@/types';
 
@@ -33,198 +21,92 @@ describe('Citation Parser', () => {
     vi.resetAllMocks();
   });
 
-  describe('parseCitationsFromResponse', () => {
-    it('should parse [Page X, Section Y] format', () => {
-      const response = 'According to [Page 45, Section 3.2.1] info.';
-      const citations = parseCitationsFromResponse(response);
+  describe('createChunkCitations', () => {
+    const mockChunks: MatchedChunk[] = [
+      { id: 1, content: 'Parking requirements text about 2.5m wide spaces...', metadata: { page: 45, startPage: 45, endPage: 46, section: '3.1', sectionTitle: 'Parking', contentType: 'text', documentName: 'dubai-building-code-2021' }, similarity: 0.9 },
+      { id: 2, content: 'Fire safety text about exits...', metadata: { page: 100, startPage: 100, endPage: 102, section: '5.1', sectionTitle: 'Fire Safety', contentType: 'text', documentName: 'code-of-safety' }, similarity: 0.8 },
+      { id: 3, content: 'Building heights are regulated by zone...', metadata: { page: 30, startPage: 30, endPage: 31, section: '2.1', sectionTitle: 'Heights', documentName: 'dubai-building-code-2021' }, similarity: 0.7 },
+    ];
 
-      expect(citations.some(c => c.page === 45 && c.section === '3.2.1')).toBe(true);
+    it('should create citations from chunks with correct metadata', () => {
+      const citations = createChunkCitations(mockChunks);
+
+      expect(citations).toHaveLength(3);
+      expect(citations[0].chunkId).toBe(1);
+      expect(citations[0].page).toBe(45);
+      expect(citations[0].section).toBe('3.1');
+      expect(citations[0].sectionTitle).toBe('Parking');
+      expect(citations[0].isVerified).toBe(true);
+      expect(citations[0].documentName).toBe('dubai-building-code-2021');
     });
 
-    it('should parse [Page X-Y] range format', () => {
-      const response = 'Fire safety requirements are detailed in [Page 100-102]';
-      const citations = parseCitationsFromResponse(response);
-
-      expect(citations).toHaveLength(1);
-      expect(citations[0].page).toBe(100);
-    });
-
-    it('should parse (Page X, Section Y) format', () => {
-      const response = 'Details (Page 30, Section 2.1) end.';
-      const citations = parseCitationsFromResponse(response);
-
-      expect(citations.some(c => c.page === 30 && c.section === '2.1')).toBe(true);
-    });
-
-    it('should parse simple [Page X] format', () => {
-      const response = 'See [Page 50] for more details.';
-      const citations = parseCitationsFromResponse(response);
-
-      expect(citations).toHaveLength(1);
-      expect(citations[0].page).toBe(50);
-      expect(citations[0].section).toBeUndefined();
-    });
-
-    it('should parse multiple citations with brackets', () => {
-      const response = 'See [Page 45] and [Page 100] for info.';
-      const citations = parseCitationsFromResponse(response);
+    it('should respect maxCitations parameter', () => {
+      const citations = createChunkCitations(mockChunks, 2);
 
       expect(citations).toHaveLength(2);
-      expect(citations[0].page).toBe(45);
-      expect(citations[1].page).toBe(100);
+      expect(citations[0].chunkId).toBe(1);
+      expect(citations[1].chunkId).toBe(2);
     });
 
-    it('should avoid duplicate citations', () => {
-      const response = 'See [Page 45] and again [Page 45] for the same info.';
-      const citations = parseCitationsFromResponse(response);
-
-      expect(citations).toHaveLength(1);
-    });
-
-    it('should handle response with no citations', () => {
-      const response = 'General information about parking without specific citations.';
-      const citations = parseCitationsFromResponse(response);
+    it('should return empty array for empty chunks', () => {
+      const citations = createChunkCitations([]);
 
       expect(citations).toHaveLength(0);
     });
 
-    it('should parse reversed Section X, Page Y format', () => {
-      const response = 'According to Section 5.1, Page 200, fire exits must...';
-      const citations = parseCitationsFromResponse(response);
+    it('should deduplicate by chunk id', () => {
+      const duplicateChunks: MatchedChunk[] = [
+        { id: 1, content: 'Content A', metadata: { page: 45, startPage: 45, endPage: 45, section: '3.1' }, similarity: 0.9 },
+        { id: 1, content: 'Content A duplicate', metadata: { page: 45, startPage: 45, endPage: 45, section: '3.1' }, similarity: 0.85 },
+        { id: 2, content: 'Content B', metadata: { page: 100, startPage: 100, endPage: 100, section: '5.1' }, similarity: 0.8 },
+      ];
 
-      expect(citations).toHaveLength(1);
-      expect(citations[0].page).toBe(200);
-      expect(citations[0].section).toBe('5.1');
+      const citations = createChunkCitations(duplicateChunks);
+
+      expect(citations).toHaveLength(2);
     });
 
-    it('should preserve citation order by position', () => {
-      const response = '[Page 100] comes first, then [Page 50], finally [Page 200].';
-      const citations = parseCitationsFromResponse(response);
+    it('should always set isVerified to true', () => {
+      const citations = createChunkCitations(mockChunks);
 
-      expect(citations[0].page).toBe(100);
-      expect(citations[1].page).toBe(50);
-      expect(citations[2].page).toBe(200);
+      expect(citations.every(c => c.isVerified === true)).toBe(true);
+    });
+
+    it('should set confidence from similarity', () => {
+      const citations = createChunkCitations(mockChunks);
+
+      expect(citations[0].confidence).toBe(90); // 0.9 * 100
+      expect(citations[1].confidence).toBe(80); // 0.8 * 100
+    });
+
+    it('should include excerpt from chunk content', () => {
+      const citations = createChunkCitations(mockChunks);
+
+      expect(citations[0].excerpt).toContain('Parking');
+    });
+
+    it('should include startPage and endPage', () => {
+      const citations = createChunkCitations(mockChunks);
+
+      expect(citations[0].startPage).toBe(45);
+      expect(citations[0].endPage).toBe(46);
     });
   });
 
-  describe('matchCitationsToChunks', () => {
-    const mockChunks: MatchedChunk[] = [
-      { id: 1, content: 'Parking requirements text...', metadata: { page: 45, startPage: 45, endPage: 45, section: '3.1' }, similarity: 0.9 },
-      { id: 2, content: 'Fire safety text...', metadata: { page: 100, startPage: 100, endPage: 100, section: '5.1' }, similarity: 0.8 },
-    ];
-
-    it('should return fallback chunks when no parsed citations', async () => {
-      const matched = await matchCitationsToChunks([], mockChunks, 50);
-
-      expect(matched).toHaveLength(2);
-      expect(matched[0].isVerified).toBe(false);
+  describe('getConfidenceTier', () => {
+    it('should return high for confidence >= 70', () => {
+      expect(getConfidenceTier(70)).toBe('high');
+      expect(getConfidenceTier(100)).toBe('high');
     });
 
-    it('should match parsed citations to database chunks', async () => {
-      const parsedCitations = [
-        { page: 45, section: '3.1', originalText: '[Page 45, Section 3.1]', position: 0 },
-      ];
-
-      mockRpc.mockResolvedValueOnce({
-        data: [{
-          id: 1,
-          content: 'Parking requirements text...',
-          metadata: { page: 45, section: '3.1' },
-          match_score: 90,
-        }],
-        error: null,
-      });
-
-      const matched = await matchCitationsToChunks(parsedCitations, mockChunks, 70);
-
-      expect(matched).toHaveLength(1);
-      expect(matched[0].isVerified).toBe(true);
-      expect(matched[0].matchScore).toBe(90);
+    it('should return medium for confidence 50-69', () => {
+      expect(getConfidenceTier(50)).toBe('medium');
+      expect(getConfidenceTier(69)).toBe('medium');
     });
 
-    it('should handle RPC errors gracefully', async () => {
-      const parsedCitations = [
-        { page: 45, section: '3.1', originalText: '[Page 45]', position: 0 },
-      ];
-
-      mockRpc.mockResolvedValueOnce({
-        data: null,
-        error: { message: 'RPC error' },
-      });
-
-      // Should not throw, should return fallback
-      const matched = await matchCitationsToChunks(parsedCitations, mockChunks, 50);
-      
-      expect(matched.length).toBeGreaterThan(0);
-    });
-
-    it('should avoid duplicate chunk IDs', async () => {
-      const parsedCitations = [
-        { page: 45, section: '3.1', originalText: '[Page 45]', position: 0 },
-        { page: 45, section: '3.1', originalText: '[Page 45, Section 3.1]', position: 50 },
-      ];
-
-      mockRpc
-        .mockResolvedValueOnce({
-          data: [{ id: 1, content: 'Content', metadata: { page: 45, section: '3.1' }, match_score: 90 }],
-          error: null,
-        })
-        .mockResolvedValueOnce({
-          data: [{ id: 1, content: 'Content', metadata: { page: 45, section: '3.1' }, match_score: 90 }],
-          error: null,
-        });
-
-      const matched = await matchCitationsToChunks(parsedCitations, mockChunks, 50);
-
-      expect(matched).toHaveLength(1); // Should dedupe
-    });
-  });
-
-  describe('createSmartCitations', () => {
-    const mockChunks: MatchedChunk[] = [
-      { id: 1, content: 'Relevant content about parking...', metadata: { page: 45, startPage: 45, endPage: 45, section: '3.1' }, similarity: 0.9 },
-      { id: 2, content: 'Another chunk about fire safety...', metadata: { page: 100, startPage: 100, endPage: 100, section: '5.1' }, similarity: 0.8 },
-    ];
-
-    it('should create citations from AI response with chunks', async () => {
-      const aiResponse = 'Parking spaces must be 2.5m wide [Page 45, Section 3.1].';
-      
-      mockRpc.mockResolvedValueOnce({
-        data: [{
-          id: 1,
-          content: 'Relevant content...',
-          metadata: { page: 45, section: '3.1' },
-          match_score: 85,
-        }],
-        error: null,
-      });
-
-      const citations = await createSmartCitations(aiResponse, mockChunks, 70, 30);
-
-      expect(citations.length).toBeGreaterThan(0);
-    });
-
-    it('should filter out low confidence citations', async () => {
-      const aiResponse = 'Some content without explicit citations.';
-
-      const citations = await createSmartCitations(aiResponse, mockChunks, 20, 50);
-
-      // With minConfidence of 50 and verificationConfidence of 20, 
-      // fallback citations may be filtered
-      expect(citations.every(c => (c.confidence ?? 0) >= 50 || c.isVerified)).toBe(true);
-    });
-
-    it('should limit to 10 citations max', async () => {
-      const largeChunks: MatchedChunk[] = Array.from({ length: 15 }, (_, i) => ({
-        id: i + 1,
-        content: `Content ${i}`,
-        metadata: { page: i + 1, startPage: i + 1, endPage: i + 1, section: `${i}.1` },
-        similarity: 0.9 - i * 0.01,
-      }));
-
-      const citations = await createSmartCitations('response', largeChunks, 80, 10);
-
-      expect(citations.length).toBeLessThanOrEqual(10);
+    it('should return low for confidence < 50', () => {
+      expect(getConfidenceTier(49)).toBe('low');
+      expect(getConfidenceTier(0)).toBe('low');
     });
   });
 

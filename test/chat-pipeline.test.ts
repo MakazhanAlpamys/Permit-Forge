@@ -3,46 +3,33 @@
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { MatchedChunk, VerifiedAnswer } from '@/types';
+import type { MatchedChunk } from '@/types';
 
 // Mock dependencies
 const mockClassifyQueryStructure = vi.fn();
 const mockTreeReasoner = vi.fn();
 const mockGetPageRangesForNodes = vi.fn();
-const mockExpandQuery = vi.fn();
-const mockDetectQueryType = vi.fn();
 const mockClassifyTopic = vi.fn();
 
 vi.mock('@/lib/agents', () => ({
   classifyQueryStructure: (...args: unknown[]) => mockClassifyQueryStructure(...args),
   treeReasoner: (...args: unknown[]) => mockTreeReasoner(...args),
   getPageRangesForNodes: (...args: unknown[]) => mockGetPageRangesForNodes(...args),
-  expandQuery: (...args: unknown[]) => mockExpandQuery(...args),
-  rerankChunks: vi.fn((_q: string, chunks: MatchedChunk[]) => Promise.resolve(chunks.slice(0, 5))),
-  detectQueryType: (...args: unknown[]) => mockDetectQueryType(...args),
-  verifyAnswer: vi.fn().mockResolvedValue({
-    answer: 'Verified answer',
-    isVerified: true,
-    confidence: 80,
-    supportingQuotes: [],
-    unsupportedClaims: [],
-    citations: [],
-  } as VerifiedAnswer),
   classifyTopic: (...args: unknown[]) => mockClassifyTopic(...args),
 }));
 
 const mockQueryDubaiCode = vi.fn();
-const mockMultiQuerySearch = vi.fn();
 const mockQueryDubaiCodeFiltered = vi.fn();
 const mockBuildContext = vi.fn();
-const mockDiversifyChunks = vi.fn((chunks: MatchedChunk[]) => chunks);
+const mockPassesCRAGCheck = vi.fn().mockReturnValue(true);
+const mockExpandToParentChunks = vi.fn((chunks: MatchedChunk[]) => Promise.resolve(chunks));
 
 vi.mock('@/lib/rag', () => ({
   queryDubaiCode: (...args: unknown[]) => mockQueryDubaiCode(...args),
-  multiQuerySearch: (...args: unknown[]) => mockMultiQuerySearch(...args),
   queryDubaiCodeFiltered: (...args: unknown[]) => mockQueryDubaiCodeFiltered(...args),
   buildContext: (...args: unknown[]) => mockBuildContext(...args),
-  diversifyChunks: (chunks: MatchedChunk[]) => mockDiversifyChunks(chunks),
+  passesCRAGCheck: (...args: unknown[]) => mockPassesCRAGCheck(...args),
+  expandToParentChunks: (chunks: MatchedChunk[]) => mockExpandToParentChunks(chunks),
 }));
 
 vi.mock('@/lib/tree-cache', () => ({
@@ -50,13 +37,36 @@ vi.mock('@/lib/tree-cache', () => ({
 }));
 
 vi.mock('@/lib/citation-parser', () => ({
-  createSmartCitations: vi.fn().mockResolvedValue([]),
-  getCitationStats: vi.fn().mockReturnValue({ total: 0, verified: 0 }),
+  createChunkCitations: vi.fn().mockReturnValue([]),
+  getCitationStats: vi.fn().mockReturnValue({ total: 0, verified: 0, unverified: 0, uniquePages: 0, uniqueSections: 0 }),
   getConfidenceTier: vi.fn().mockReturnValue('low'),
 }));
 
+const mockGenerateEmbedding = vi.fn().mockResolvedValue(new Array(768).fill(0));
+vi.mock('@/lib/gemini', () => ({
+  generateEmbedding: (...args: unknown[]) => mockGenerateEmbedding(...args),
+}));
+
+vi.mock('@/lib/heuristic-reranker', () => ({
+  heuristicRerank: vi.fn((_q: string, chunks: MatchedChunk[]) => chunks.slice(0, 7)),
+}));
+
+vi.mock('@/lib/document-selector', () => ({
+  selectDocuments: vi.fn().mockReturnValue(['dubai-building-code-2021']),
+  getSelectedDocumentNames: vi.fn().mockReturnValue(['Dubai Building Code 2021']),
+}));
+
+vi.mock('@/lib/scope-detector', () => ({
+  detectScope: vi.fn().mockReturnValue({ hasScope: false, pageRanges: [] }),
+}));
+
+vi.mock('@/lib/semantic-cache', () => ({
+  searchCache: vi.fn().mockResolvedValue({ hit: false }),
+  storeInCache: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Import after mocks
-import { executeRAGPipeline, verifyAIResponse, generateCitations } from '@/lib/chat-pipeline';
+import { executeRAGPipeline, generateCitations } from '@/lib/chat-pipeline';
 
 const sampleChunks: MatchedChunk[] = [
   {
@@ -82,30 +92,27 @@ describe('Chat Pipeline', () => {
       suggestedPath: 'standard',
       structuralHints: [],
     });
-    mockDetectQueryType.mockReturnValue('general');
-    mockExpandQuery.mockResolvedValue(['parking requirements', 'car parking Dubai']);
     mockQueryDubaiCode.mockResolvedValue({ chunks: sampleChunks });
-    mockMultiQuerySearch.mockResolvedValue(sampleChunks);
-    mockDiversifyChunks.mockImplementation((chunks: MatchedChunk[]) => chunks);
+    mockPassesCRAGCheck.mockReturnValue(true);
+    mockExpandToParentChunks.mockImplementation((chunks: MatchedChunk[]) => Promise.resolve(chunks));
+    mockGenerateEmbedding.mockResolvedValue(new Array(768).fill(0));
   });
 
   describe('executeRAGPipeline', () => {
-    it('should use standard pipeline for non-structural queries', async () => {
+    it('should return PipelineResult with chunks and queryEmbedding', async () => {
       const result = await executeRAGPipeline('What are parking requirements?');
 
       expect(mockClassifyQueryStructure).toHaveBeenCalledWith('What are parking requirements?');
-      expect(result).toHaveLength(2);
-      expect(result[0].content).toContain('Parking');
+      expect(result.chunks).toHaveLength(2);
+      expect(result.chunks[0].content).toContain('Parking');
+      expect(result.queryEmbedding).toBeDefined();
+      expect(result.fromCache).toBe(false);
     });
 
-    it('should expand query and do multi-query search when expansion enabled', async () => {
-      mockExpandQuery.mockResolvedValue(['parking', 'car parking', 'vehicle spaces']);
+    it('should generate embedding for each query', async () => {
+      await executeRAGPipeline('parking requirements');
 
-      const result = await executeRAGPipeline('parking requirements');
-
-      expect(mockExpandQuery).toHaveBeenCalledWith('parking requirements');
-      expect(mockMultiQuerySearch).toHaveBeenCalled();
-      expect(result.length).toBeGreaterThan(0);
+      expect(mockGenerateEmbedding).toHaveBeenCalledWith('parking requirements');
     });
 
     it('should route structural queries to tree reasoning', async () => {
@@ -120,7 +127,7 @@ describe('Chat Pipeline', () => {
 
       expect(mockClassifyQueryStructure).toHaveBeenCalledWith('summarize chapter 3');
       // Falls back to standard since no trees are available (mocked empty Map)
-      expect(result.length).toBeGreaterThanOrEqual(0);
+      expect(result.chunks.length).toBeGreaterThanOrEqual(0);
     });
 
     it('should fall back to standard pipeline when tree reasoning fails', async () => {
@@ -134,44 +141,31 @@ describe('Chat Pipeline', () => {
 
       // Should still return results via fallback
       expect(result).toBeDefined();
+      expect(result.chunks).toBeDefined();
     });
 
-    it('should skip query expansion for exact queries', async () => {
-      mockDetectQueryType.mockReturnValue('exact');
-      mockQueryDubaiCode.mockResolvedValue({ chunks: [sampleChunks[0]] });
+    it('should return empty chunks when CRAG check fails', async () => {
+      mockPassesCRAGCheck.mockReturnValue(false);
 
-      const result = await executeRAGPipeline('"minimum parking spaces"');
+      const result = await executeRAGPipeline('parking requirements');
 
-      expect(mockExpandQuery).not.toHaveBeenCalled();
-      expect(mockQueryDubaiCode).toHaveBeenCalled();
-      expect(result).toHaveLength(1);
-    });
-  });
-
-  describe('verifyAIResponse', () => {
-    it('should return verification result', async () => {
-      const { verifiedResponse, verificationResult } = await verifyAIResponse(
-        'Parking requires 1 space per unit',
-        sampleChunks,
-        'parking requirements'
-      );
-
-      expect(verifiedResponse).toContain('Parking');
-      expect(verificationResult.isVerified).toBe(true);
-      expect(verificationResult.confidence).toBe(80);
+      expect(result.chunks).toHaveLength(0);
+      expect(result.fromCache).toBe(false);
     });
   });
 
   describe('generateCitations', () => {
-    it('should call citation parser with correct params', async () => {
-      const citations = await generateCitations(
-        'AI response about parking',
-        sampleChunks,
-        80
-      );
+    it('should call citation parser with chunks only', () => {
+      const citations = generateCitations(sampleChunks);
 
       expect(citations).toBeDefined();
       expect(Array.isArray(citations)).toBe(true);
+    });
+
+    it('should return empty array for empty chunks', () => {
+      const citations = generateCitations([]);
+
+      expect(citations).toEqual([]);
     });
   });
 });

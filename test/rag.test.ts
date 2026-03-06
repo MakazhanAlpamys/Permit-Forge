@@ -32,7 +32,7 @@ vi.mock('@/lib/document-registry', () => ({
 }));
 
 // Import after mocks
-import { hybridSearch, queryDubaiCode, multiQuerySearch } from '@/lib/rag';
+import { hybridSearch, queryDubaiCode } from '@/lib/rag';
 
 describe('RAG Module', () => {
   beforeEach(() => {
@@ -146,45 +146,36 @@ describe('RAG Module', () => {
     });
   });
 
-  describe('multiQuerySearch', () => {
-    it('should merge results from multiple queries using RRF', async () => {
-      // First query results
-      mockRpc.mockResolvedValueOnce({
-        data: [
-          { id: 1, content: 'Content A', metadata: {}, vector_similarity: 0.9, keyword_rank: 1, hybrid_score: 0.85 },
-          { id: 2, content: 'Content B', metadata: {}, vector_similarity: 0.8, keyword_rank: 2, hybrid_score: 0.75 },
-        ],
-        error: null,
-      });
+  describe('hybridSearch with options', () => {
+    it('should accept precomputedEmbedding option', async () => {
+      const precomputed = [0.5, 0.6, 0.7];
+      mockRpc.mockResolvedValueOnce({ data: [], error: null });
 
-      // Second query results
-      mockRpc.mockResolvedValueOnce({
-        data: [
-          { id: 2, content: 'Content B', metadata: {}, vector_similarity: 0.85, keyword_rank: 1, hybrid_score: 0.8 },
-          { id: 3, content: 'Content C', metadata: {}, vector_similarity: 0.7, keyword_rank: 2, hybrid_score: 0.65 },
-        ],
-        error: null,
-      });
+      await hybridSearch('test query', 10, { precomputedEmbedding: precomputed });
 
-      const results = await multiQuerySearch(['query 1', 'query 2'], 5);
-
-      // Chunk 2 should rank higher due to appearing in both queries
-      expect(results.length).toBeGreaterThan(0);
-      expect(results.some(r => r.id === 2)).toBe(true);
+      expect(mockRpc).toHaveBeenCalledWith('match_dubai_code_hybrid', expect.objectContaining({
+        query_embedding: precomputed,
+      }));
     });
 
-    it('should handle query failures gracefully', async () => {
-      mockRpc
-        .mockResolvedValueOnce({ data: [], error: { message: 'Error' } })
-        .mockResolvedValueOnce({
-          data: [{ id: 1, content: 'Content', metadata: {}, vector_similarity: 0.9, keyword_rank: 1, hybrid_score: 0.8 }],
-          error: null,
-        });
+    it('should accept documentFilter option with single document', async () => {
+      mockRpc.mockResolvedValueOnce({ data: [], error: null });
 
-      // Should not throw, should continue with successful queries
-      const results = await multiQuerySearch(['failing query', 'working query'], 5);
-      
-      expect(results.length).toBeGreaterThanOrEqual(0);
+      await hybridSearch('test query', 10, { documentFilter: ['dubai-building-code-2021'] });
+
+      expect(mockRpc).toHaveBeenCalledWith('match_dubai_code_hybrid', expect.objectContaining({
+        filter_document: 'dubai-building-code-2021',
+      }));
+    });
+
+    it('should pass null filter_document when no documentFilter', async () => {
+      mockRpc.mockResolvedValueOnce({ data: [], error: null });
+
+      await hybridSearch('test query', 10);
+
+      expect(mockRpc).toHaveBeenCalledWith('match_dubai_code_hybrid', expect.objectContaining({
+        filter_document: null,
+      }));
     });
   });
 });

@@ -111,6 +111,43 @@ export interface HybridSearchResult {
 }
 
 // -----------------------------------------------------------------------------
+// Semantic Cache Types (v2 Pipeline)
+// -----------------------------------------------------------------------------
+
+export interface SemanticCacheEntry {
+  id: string;
+  queryEmbedding: number[];
+  queryText: string;
+  response: string;
+  citations: Citation[];
+  createdAt: string;
+  ttlSeconds: number;
+}
+
+export interface SemanticCacheResult {
+  hit: boolean;
+  response?: string;
+  citations?: Citation[];
+  similarity?: number;
+}
+
+// -----------------------------------------------------------------------------
+// Parent-Child Chunking Types (v2 Pipeline)
+// -----------------------------------------------------------------------------
+
+export interface ParentChunk {
+  id: number;
+  content: string;
+  metadata: ChunkMetadata;
+  createdAt: string;
+}
+
+export interface ChildChunkWithParent extends MatchedChunk {
+  parentId?: number;
+  parentContent?: string;
+}
+
+// -----------------------------------------------------------------------------
 // Chat History Types
 // -----------------------------------------------------------------------------
 

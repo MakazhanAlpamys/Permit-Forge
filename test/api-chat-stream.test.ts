@@ -33,9 +33,13 @@ vi.mock('@/lib/supabase-server', () => {
 // Mock chat pipeline
 vi.mock('@/lib/chat-pipeline', () => ({
   classifyUserTopic: vi.fn().mockResolvedValue({ isOnTopic: false, shouldUseRAG: false }),
-  executeRAGPipeline: vi.fn().mockResolvedValue([]),
-  verifyAIResponse: vi.fn().mockResolvedValue({ verificationResult: { isVerified: true, confidence: 80 } }),
-  generateCitations: vi.fn().mockResolvedValue([]),
+  executeRAGPipeline: vi.fn().mockResolvedValue({ chunks: [], queryEmbedding: new Array(768).fill(0), fromCache: false }),
+  generateCitations: vi.fn().mockReturnValue([]),
+  cacheResponse: vi.fn().mockResolvedValue(undefined),
+  buildContext: vi.fn().mockReturnValue(''),
+  OFF_TOPIC_RESPONSE: 'Off topic response',
+  GREETING_RESPONSE: 'Greeting response',
+  CRAG_FAIL_RESPONSE: 'CRAG fail response',
 }));
 
 // Mock rag
