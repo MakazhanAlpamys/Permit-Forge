@@ -2,7 +2,7 @@
 // Citation Parser - Extract and Match Citations from AI Responses
 // ============================================================================
 
-import { createServerClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-server';
 import type { Citation, MatchedChunk, ChunkMetadata } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -140,7 +140,7 @@ export async function matchCitationsToChunks(
     }));
   }
 
-  const supabase = createServerClient();
+  const supabase = createAdminClient();
   const matchedCitations: MatchedCitation[] = [];
   const seenChunkIds = new Set<number>();
 

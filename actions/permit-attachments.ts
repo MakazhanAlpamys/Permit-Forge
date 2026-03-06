@@ -4,7 +4,7 @@
 // Permit Attachment Server Actions
 // ============================================================================
 
-import { createServerClient, createAdminClient, checkRateLimit } from '@/lib/supabase-server';
+import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { requireAuth } from '@/lib/security';
 import { uuidSchema } from '@/lib/validations';
@@ -52,7 +52,7 @@ export async function uploadPermitAttachment(
     }
 
     // Verify ownership
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data: permit } = await supabase
       .from('permit_applications')
       .select('user_id, status')
@@ -162,7 +162,7 @@ export async function deletePermitAttachment(
       return { success: false, error: 'Invalid attachment ID' };
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
 
     // Fetch attachment with permit info
     const { data: attachment } = await supabase
@@ -236,7 +236,7 @@ export async function getPermitAttachments(
 
     // Verify ownership or admin
     if (user.role !== 'admin') {
-      const supabase = createServerClient();
+      const supabase = createAdminClient();
       const { data: permit } = await supabase
         .from('permit_applications')
         .select('user_id')
@@ -248,7 +248,7 @@ export async function getPermitAttachments(
       }
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data, error } = await supabase
       .from('permit_attachments')
       .select('*')

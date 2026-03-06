@@ -4,7 +4,7 @@
 // Notification Server Actions
 // ============================================================================
 
-import { createServerClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-server';
 import { getQuickSession } from '@/lib/auth';
 import { requireAuth } from '@/lib/security';
 import { uuidSchema } from '@/lib/validations';
@@ -37,7 +37,7 @@ export async function getNotifications(
       return { data: [], unreadCount: 0, error: 'Not authenticated' };
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
 
     // Fetch notifications
     const { data, error } = await supabase
@@ -88,7 +88,7 @@ export async function markNotificationRead(
       return { success: false, error: 'Invalid notification ID' };
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { error } = await supabase
       .from('notifications')
       .update({ read: true })
@@ -118,7 +118,7 @@ export async function markAllNotificationsRead(): Promise<{ success: boolean; er
       return { success: false, error: authCheck.error };
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { error } = await supabase
       .from('notifications')
       .update({ read: true })

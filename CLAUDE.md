@@ -29,7 +29,7 @@ Pattern match: `npx vitest run -t "pattern"`
 - **Auth:** JWT (HS256, jose), bcrypt (12 rounds), CSRF tokens, HttpOnly cookies
 - **Testing:** Vitest 4 (node environment), @testing-library/react, 7 test suites in `test/`
 - **Email:** Resend API (optional, for permit notifications)
-- **PDF Generation:** @react-pdf/renderer (permit certificates)
+- **PDF Generation:** PDFKit (permit certificates)
 
 ## Architecture
 
@@ -119,7 +119,7 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 - Multi-step form: project info → building details → compliance requirements
 - AI compliance check (`lib/permit-compliance.ts`): queries RAG → feeds context to Gemini → returns structured JSON analysis
 - File attachments: up to 10 files, 10MB each (PDF, PNG, JPG, DWG, DXF)
-- PDF certificate generation (`lib/permit-certificate.ts`): @react-pdf/renderer, certificate number format `EF-CERT-{YEAR}-{ID}`
+- PDF certificate generation (`lib/permit-certificate.ts`): PDFKit, certificate number format `EF-CERT-{YEAR}-{ID}`
 - Status timeline tracking with admin review interface
 
 ### Key Modules
@@ -136,7 +136,7 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/tree-cache.ts` | Two-tier cache: L1 in-memory (5-min TTL) + L2 Supabase |
 | `lib/document-registry.ts` | Registry of 5 documents with metadata, path resolution, prompt helpers |
 | `lib/permit-compliance.ts` | RAG-powered compliance checking → structured JSON from Gemini |
-| `lib/permit-certificate.ts` | PDF certificate generation via @react-pdf/renderer |
+| `lib/permit-certificate.ts` | PDF certificate generation via PDFKit |
 | `lib/constants.ts` | All app constants: cookie names, rate limits, file upload limits, status configs |
 | `lib/auth.ts` | JWT create/verify, bcrypt, CSRF, audit logging, session management |
 | `lib/security.ts` | `requireAuth`/`requireAdmin` middleware guards for server actions |

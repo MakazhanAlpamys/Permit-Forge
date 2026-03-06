@@ -4,7 +4,7 @@
 
 import { NextRequest } from 'next/server';
 import { getQuickSession } from '@/lib/auth';
-import { createServerClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-server';
 import { uuidSchema } from '@/lib/validations';
 
 export async function GET(request: NextRequest) {
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       return Response.json({ error: 'Invalid session ID' }, { status: 400 });
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
 
     // Verify session ownership
     const { data: session } = await supabase

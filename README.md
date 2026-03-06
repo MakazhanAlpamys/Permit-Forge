@@ -97,7 +97,7 @@
 - **3-step multi-step form:** project info → building details → compliance requirements
 - **AI compliance check** — queries RAG → feeds context to Gemini → returns structured JSON analysis
 - **File attachments** — up to 10 files, 10 MB each (PDF, PNG, JPG, DWG, DXF)
-- **PDF certificate generation** — `EF-CERT-{YEAR}-{ID}` format via @react-pdf/renderer
+- **PDF certificate generation** — `EF-CERT-{YEAR}-{ID}` format via PDFKit
 - **Status timeline** tracking with full admin review interface
 - **Revision workflow** — admins can request revisions; users resubmit with incremented count
 - **In-app + email notifications** via Resend API on every status change
@@ -109,7 +109,7 @@
 - **JWT** (HS256, 7-day expiry) with HttpOnly cookies
 - **bcrypt** (12 rounds) password hashing
 - **Timing-safe CSRF** token validation
-- **Rate limiting** — database-backed (10 req/min, 2s interval)
+- **Rate limiting** — in-memory (login) + database-backed (API, 10 req/min)
 - **Zod v4** schema validation on all inputs
 - **XSS protection** via isomorphic-dompurify
 - **RLS** — PostgreSQL Row-Level Security on all 12 tables
@@ -328,7 +328,7 @@ Open [http://localhost:3000](http://localhost:3000)
 │  └─ Structured AI analysis│
 │                           │
 │  permit-certificate.ts    │
-│  └─ @react-pdf/renderer   │
+│  └─ PDFKit                │
 │                           │
 │  citation-parser.ts       │
 │  auth.ts · security.ts    │
@@ -647,7 +647,7 @@ When triggered by the user (`runComplianceCheck`):
 ### PDF Certificates
 
 Generated for approved permits via `GET /api/permits/[id]/certificate`:
-- A4 PDF via `@react-pdf/renderer`
+- A4 PDF via `PDFKit`
 - Certificate number: `EF-CERT-{YEAR}-{8-char-ID}`
 - Includes project info, building details, approval status, review comments
 
@@ -755,7 +755,7 @@ Emirate-Forge/
 │   ├── pdf-ingestion.ts               #   Chunking, embedding, tree building
 │   ├── tree-cache.ts                  #   Two-tier document tree cache
 │   ├── permit-compliance.ts           #   RAG-powered compliance analysis
-│   ├── permit-certificate.ts          #   PDF certificate via @react-pdf/renderer
+│   ├── permit-certificate.ts          #   PDF certificate via PDFKit
 │   ├── notifications.ts               #   In-app + email (Resend) notifications
 │   ├── file-upload.ts                 #   File validation, storage path generation
 │   ├── supabase-server.ts             #   Supabase client factory (anon + admin)
@@ -824,7 +824,7 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 | **Validation** | [Zod](https://zod.dev/) | 4 |
 | **XSS** | [isomorphic-dompurify](https://github.com/kkomelin/isomorphic-dompurify) | — |
 | **PDF Parse** | [PDF.js](https://mozilla.github.io/pdf.js/) (pdfjs-dist) | — |
-| **PDF Generate** | [@react-pdf/renderer](https://react-pdf.org/) (permit certificates) | — |
+| **PDF Generate** | [PDFKit](https://pdfkit.org/) (permit certificates) | 0.17 |
 | **Email** | [Resend](https://resend.com/) (optional, permit notifications) | — |
 | **Charts** | [Recharts](https://recharts.org/) (admin analytics) | — |
 | **Icons** | [Lucide React](https://lucide.dev/) | — |

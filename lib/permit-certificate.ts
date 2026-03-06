@@ -1,9 +1,8 @@
 // ============================================================================
-// Permit Certificate PDF Generation
+// Permit Certificate PDF Generation (PDFKit — no React dependency)
 // ============================================================================
 
-import React from 'react';
-import { renderToBuffer, Document, Page, View, Text, StyleSheet } from '@react-pdf/renderer';
+import PDFDocument from 'pdfkit';
 import type { BuildingDetails } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -26,10 +25,6 @@ export interface CertificateData {
 // Certificate Number Generation
 // -----------------------------------------------------------------------------
 
-/**
- * Generate a unique certificate number
- * Format: EF-CERT-{YEAR}-{SHORT_ID}
- */
 export function generateCertificateNumber(permitId: string): string {
   const year = new Date().getFullYear();
   const shortId = permitId.replace(/-/g, '').substring(0, 8).toUpperCase();
@@ -37,254 +32,224 @@ export function generateCertificateNumber(permitId: string): string {
 }
 
 // -----------------------------------------------------------------------------
-// PDF Styles
+// Helpers
 // -----------------------------------------------------------------------------
 
-const styles = StyleSheet.create({
-  page: {
-    padding: 40,
-    fontFamily: 'Helvetica',
-    backgroundColor: '#FFFFFF',
-  },
-  header: {
-    textAlign: 'center' as const,
-    marginBottom: 30,
-    paddingBottom: 20,
-    borderBottom: '2px solid #1a365d',
-  },
-  title: {
-    fontSize: 24,
-    fontFamily: 'Helvetica-Bold',
-    color: '#1a365d',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: '#4a5568',
-    marginBottom: 8,
-  },
-  certificateTitle: {
-    fontSize: 20,
-    fontFamily: 'Helvetica-Bold',
-    color: '#2d3748',
-    textAlign: 'center' as const,
-    marginTop: 20,
-    marginBottom: 8,
-  },
-  certNumber: {
-    fontSize: 12,
-    color: '#718096',
-    textAlign: 'center' as const,
-    marginBottom: 24,
-  },
-  section: {
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontFamily: 'Helvetica-Bold',
-    color: '#1a365d',
-    marginBottom: 8,
-    paddingBottom: 4,
-    borderBottom: '1px solid #e2e8f0',
-  },
-  row: {
-    flexDirection: 'row' as const,
-    marginBottom: 4,
-    paddingVertical: 3,
-  },
-  label: {
-    fontSize: 10,
-    color: '#718096',
-    width: '40%',
-  },
-  value: {
-    fontSize: 10,
-    color: '#2d3748',
-    width: '60%',
-    fontFamily: 'Helvetica-Bold',
-  },
-  statusBadge: {
-    textAlign: 'center' as const,
-    padding: '8px 16px',
-    backgroundColor: '#e9d5ff',
-    borderRadius: 4,
-    marginVertical: 16,
-  },
-  statusText: {
-    fontSize: 14,
-    fontFamily: 'Helvetica-Bold',
-    color: '#4c1d95',
-  },
-  commentsBox: {
-    backgroundColor: '#f7fafc',
-    padding: 12,
-    borderRadius: 4,
-    marginTop: 8,
-  },
-  commentsText: {
-    fontSize: 10,
-    color: '#4a5568',
-    lineHeight: 1.5,
-  },
-  footer: {
-    position: 'absolute' as const,
-    bottom: 40,
-    left: 40,
-    right: 40,
-    textAlign: 'center' as const,
-    paddingTop: 16,
-    borderTop: '1px solid #e2e8f0',
-  },
-  footerText: {
-    fontSize: 8,
-    color: '#a0aec0',
-  },
-});
+const s = (val: unknown): string => {
+  if (val === null || val === undefined) return 'N/A';
+  if (typeof val === 'object') return JSON.stringify(val);
+  return String(val);
+};
 
-// -----------------------------------------------------------------------------
-// PDF Document Component
-// -----------------------------------------------------------------------------
-
-function CertificateDocument({ data }: { data: CertificateData }) {
-  const formatProjectType = (type: string) =>
-    type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-
-  return React.createElement(
-    Document,
-    null,
-    React.createElement(
-      Page,
-      { size: 'A4', style: styles.page },
-      // Header
-      React.createElement(
-        View,
-        { style: styles.header },
-        React.createElement(Text, { style: styles.title }, 'EMIRATE FORGE'),
-        React.createElement(Text, { style: styles.subtitle }, 'Dubai Building Code 2021 Compliance System'),
-      ),
-      // Certificate Title
-      React.createElement(Text, { style: styles.certificateTitle }, 'BUILDING PERMIT CERTIFICATE'),
-      React.createElement(Text, { style: styles.certNumber }, `Certificate No: ${data.certificateNumber}`),
-      // Approval Status
-      React.createElement(
-        View,
-        { style: styles.statusBadge },
-        React.createElement(Text, { style: styles.statusText }, data.complianceStatus.toUpperCase()),
-      ),
-      // Project Information
-      React.createElement(
-        View,
-        { style: styles.section },
-        React.createElement(Text, { style: styles.sectionTitle }, 'Project Information'),
-        React.createElement(
-          View,
-          { style: styles.row },
-          React.createElement(Text, { style: styles.label }, 'Project Name:'),
-          React.createElement(Text, { style: styles.value }, data.projectName),
-        ),
-        React.createElement(
-          View,
-          { style: styles.row },
-          React.createElement(Text, { style: styles.label }, 'Project Type:'),
-          React.createElement(Text, { style: styles.value }, formatProjectType(data.projectType)),
-        ),
-        React.createElement(
-          View,
-          { style: styles.row },
-          React.createElement(Text, { style: styles.label }, 'Address:'),
-          React.createElement(Text, { style: styles.value }, data.projectAddress),
-        ),
-        data.plotNumber
-          ? React.createElement(
-            View,
-            { style: styles.row },
-            React.createElement(Text, { style: styles.label }, 'Plot Number:'),
-            React.createElement(Text, { style: styles.value }, data.plotNumber),
-          )
-          : null,
-        React.createElement(
-          View,
-          { style: styles.row },
-          React.createElement(Text, { style: styles.label }, 'Approval Date:'),
-          React.createElement(Text, { style: styles.value }, new Date(data.approvalDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })),
-        ),
-      ),
-      // Building Details
-      React.createElement(
-        View,
-        { style: styles.section },
-        React.createElement(Text, { style: styles.sectionTitle }, 'Building Details'),
-        React.createElement(
-          View,
-          { style: styles.row },
-          React.createElement(Text, { style: styles.label }, 'Number of Floors:'),
-          React.createElement(Text, { style: styles.value }, String(data.buildingDetails.numberOfFloors)),
-        ),
-        React.createElement(
-          View,
-          { style: styles.row },
-          React.createElement(Text, { style: styles.label }, 'Building Height:'),
-          React.createElement(Text, { style: styles.value }, `${data.buildingDetails.buildingHeight} m`),
-        ),
-        React.createElement(
-          View,
-          { style: styles.row },
-          React.createElement(Text, { style: styles.label }, 'Total Built-Up Area:'),
-          React.createElement(Text, { style: styles.value }, `${data.buildingDetails.totalBuiltUpArea.toLocaleString()} m\u00B2`),
-        ),
-        React.createElement(
-          View,
-          { style: styles.row },
-          React.createElement(Text, { style: styles.label }, 'Plot Area:'),
-          React.createElement(Text, { style: styles.value }, `${data.buildingDetails.plotArea.toLocaleString()} m\u00B2`),
-        ),
-        React.createElement(
-          View,
-          { style: styles.row },
-          React.createElement(Text, { style: styles.label }, 'Occupancy Type:'),
-          React.createElement(Text, { style: styles.value }, data.buildingDetails.occupancyType),
-        ),
-        React.createElement(
-          View,
-          { style: styles.row },
-          React.createElement(Text, { style: styles.label }, 'Construction Type:'),
-          React.createElement(Text, { style: styles.value }, data.buildingDetails.constructionType),
-        ),
-      ),
-      // Review Comments
-      data.reviewComments
-        ? React.createElement(
-          View,
-          { style: styles.section },
-          React.createElement(Text, { style: styles.sectionTitle }, 'Review Comments'),
-          React.createElement(
-            View,
-            { style: styles.commentsBox },
-            React.createElement(Text, { style: styles.commentsText }, data.reviewComments),
-          ),
-        )
-        : null,
-      // Footer
-      React.createElement(
-        View,
-        { style: styles.footer },
-        React.createElement(Text, { style: styles.footerText }, `Generated on ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} | Emirate Forge - Dubai Building Code Compliance System`),
-        React.createElement(Text, { style: styles.footerText }, 'This is a system-generated document. Please verify with the relevant authorities.'),
-      ),
-    ),
-  );
+function formatProjectType(type: string): string {
+  return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
+
+// Colors
+const NAVY = '#1a365d';
+const DARK = '#2d3748';
+const GRAY = '#718096';
+const LIGHT_GRAY = '#a0aec0';
+const BORDER = '#e2e8f0';
+const GREEN_BG = '#dcfce7';
+const GREEN_TEXT = '#166534';
+const LIGHT_BG = '#f7fafc';
 
 // -----------------------------------------------------------------------------
 // PDF Generation
 // -----------------------------------------------------------------------------
 
-/**
- * Generate a PDF certificate buffer for an approved permit
- */
 export async function generateCertificatePDF(data: CertificateData): Promise<Buffer> {
-  const doc = React.createElement(CertificateDocument, { data }) as React.ReactElement;
-  const buffer = await renderToBuffer(doc);
-  return Buffer.from(buffer);
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ size: 'A4', margin: 40 });
+      const chunks: Buffer[] = [];
+
+      doc.on('data', (chunk: Buffer) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      const pageWidth = doc.page.width - 80; // margins
+
+      // ── Header ──────────────────────────────────────────────────────────
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(24)
+        .fillColor(NAVY)
+        .text('EMIRATE FORGE', { align: 'center' });
+
+      doc
+        .font('Helvetica')
+        .fontSize(12)
+        .fillColor(GRAY)
+        .text('AI-Powered Building Permit Platform', { align: 'center' })
+        .moveDown(0.5);
+
+      // Header border
+      doc
+        .strokeColor(NAVY)
+        .lineWidth(2)
+        .moveTo(40, doc.y)
+        .lineTo(40 + pageWidth, doc.y)
+        .stroke()
+        .moveDown(1.5);
+
+      // ── Certificate Title ───────────────────────────────────────────────
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(20)
+        .fillColor(DARK)
+        .text('BUILDING PERMIT CERTIFICATE', { align: 'center' })
+        .moveDown(0.3);
+
+      doc
+        .font('Helvetica')
+        .fontSize(12)
+        .fillColor(GRAY)
+        .text(`Certificate No: ${s(data.certificateNumber)}`, { align: 'center' })
+        .moveDown(1);
+
+      // ── Status Badge ────────────────────────────────────────────────────
+      const statusText = s(data.complianceStatus).toUpperCase();
+      const badgeY = doc.y;
+      const badgeHeight = 32;
+      const badgeWidth = 200;
+      const badgeX = (doc.page.width - badgeWidth) / 2;
+
+      doc
+        .roundedRect(badgeX, badgeY, badgeWidth, badgeHeight, 4)
+        .fill(GREEN_BG);
+
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(14)
+        .fillColor(GREEN_TEXT)
+        .text(statusText, badgeX, badgeY + 8, { width: badgeWidth, align: 'center' });
+
+      doc.y = badgeY + badgeHeight + 16;
+
+      // ── Section: Project Information ────────────────────────────────────
+      drawSectionTitle(doc, 'Project Information', pageWidth);
+
+      drawRow(doc, 'Project Name:', s(data.projectName), pageWidth);
+      drawRow(doc, 'Project Type:', formatProjectType(s(data.projectType)), pageWidth);
+      drawRow(doc, 'Address:', s(data.projectAddress), pageWidth);
+      if (data.plotNumber) {
+        drawRow(doc, 'Plot Number:', s(data.plotNumber), pageWidth);
+      }
+      drawRow(doc, 'Approval Date:', new Date(s(data.approvalDate)).toLocaleDateString('en-US', {
+        year: 'numeric', month: 'long', day: 'numeric',
+      }), pageWidth);
+
+      doc.moveDown(0.8);
+
+      // ── Section: Building Details ───────────────────────────────────────
+      drawSectionTitle(doc, 'Building Details', pageWidth);
+
+      const bd = data.buildingDetails;
+      drawRow(doc, 'Number of Floors:', s(bd.numberOfFloors), pageWidth);
+      drawRow(doc, 'Building Height:', `${s(bd.buildingHeight)} m`, pageWidth);
+      drawRow(doc, 'Total Built-Up Area:', `${s(bd.totalBuiltUpArea)} m\u00B2`, pageWidth);
+      drawRow(doc, 'Plot Area:', `${s(bd.plotArea)} m\u00B2`, pageWidth);
+      drawRow(doc, 'Occupancy Type:', s(bd.occupancyType), pageWidth);
+      drawRow(doc, 'Construction Type:', s(bd.constructionType), pageWidth);
+      if (bd.totalBuiltUpArea && bd.plotArea && Number(bd.plotArea) > 0) {
+        const far = (Number(bd.totalBuiltUpArea) / Number(bd.plotArea)).toFixed(2);
+        const coverage = ((Number(bd.totalBuiltUpArea) / Number(bd.numberOfFloors || 1) / Number(bd.plotArea)) * 100).toFixed(1);
+        drawRow(doc, 'FAR / Coverage:', `${far} / ${coverage}%`, pageWidth);
+      }
+
+      doc.moveDown(0.8);
+
+      // ── Section: Review Comments (optional) ─────────────────────────────
+      if (data.reviewComments) {
+        drawSectionTitle(doc, 'Review Comments', pageWidth);
+
+        const boxY = doc.y;
+        const textOpts = { width: pageWidth - 24 };
+        const textHeight = doc.font('Helvetica').fontSize(10).heightOfString(s(data.reviewComments), textOpts);
+
+        doc
+          .roundedRect(40, boxY, pageWidth, textHeight + 24, 4)
+          .fill(LIGHT_BG);
+
+        doc
+          .font('Helvetica')
+          .fontSize(10)
+          .fillColor(GRAY)
+          .text(s(data.reviewComments), 52, boxY + 12, textOpts);
+
+        doc.y = boxY + textHeight + 36;
+      }
+
+      // ── Footer ──────────────────────────────────────────────────────────
+      const footerY = doc.page.height - 80;
+      doc
+        .strokeColor(BORDER)
+        .lineWidth(1)
+        .moveTo(40, footerY)
+        .lineTo(40 + pageWidth, footerY)
+        .stroke();
+
+      doc
+        .font('Helvetica')
+        .fontSize(8)
+        .fillColor(LIGHT_GRAY)
+        .text(
+          `Generated on ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} | Emirate Forge`,
+          40, footerY + 8,
+          { width: pageWidth, align: 'center' },
+        )
+        .text(
+          'This is a system-generated document. Please verify with the relevant authorities.',
+          40, footerY + 20,
+          { width: pageWidth, align: 'center' },
+        );
+
+      doc.end();
+    } catch (err) {
+      reject(err);
+    }
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Drawing Helpers
+// -----------------------------------------------------------------------------
+
+function drawSectionTitle(doc: PDFKit.PDFDocument, title: string, pageWidth: number) {
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(13)
+    .fillColor(NAVY)
+    .text(title)
+    .moveDown(0.2);
+
+  doc
+    .strokeColor(BORDER)
+    .lineWidth(1)
+    .moveTo(40, doc.y)
+    .lineTo(40 + pageWidth, doc.y)
+    .stroke()
+    .moveDown(0.5);
+}
+
+function drawRow(doc: PDFKit.PDFDocument, label: string, value: string, pageWidth: number) {
+  const y = doc.y;
+  const labelWidth = pageWidth * 0.4;
+  const valueWidth = pageWidth * 0.6;
+
+  doc
+    .font('Helvetica')
+    .fontSize(10)
+    .fillColor(GRAY)
+    .text(label, 40, y, { width: labelWidth });
+
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(10)
+    .fillColor(DARK)
+    .text(value, 40 + labelWidth, y, { width: valueWidth });
+
+  doc.y = Math.max(doc.y, y + 16);
 }

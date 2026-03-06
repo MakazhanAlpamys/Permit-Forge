@@ -5,7 +5,7 @@
 import { NextRequest } from 'next/server';
 import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { uuidSchema } from '@/lib/validations';
-import { createServerClient, createAdminClient, checkRateLimit } from '@/lib/supabase-server';
+import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 import { generateCertificateNumber, generateCertificatePDF, type CertificateData } from '@/lib/permit-certificate';
 
 export async function GET(
@@ -34,7 +34,7 @@ export async function GET(
     }
 
     // Fetch permit data
-    const supabase = user.role === 'admin' ? createAdminClient() : createServerClient();
+    const supabase = createAdminClient();
     let query = supabase
       .from('permit_applications')
       .select('*')

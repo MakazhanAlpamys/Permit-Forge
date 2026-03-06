@@ -2,7 +2,7 @@
 // RAG (Retrieval-Augmented Generation) Query Engine - Advanced Hybrid Search
 // ============================================================================
 
-import { createServerClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-server';
 import { embeddingsModel } from '@/lib/gemini';
 import { getDocumentById } from '@/lib/document-registry';
 import type { MatchedChunk, RAGQuery, RAGResult, ChunkMetadata, HybridSearchResult } from '@/types';
@@ -26,7 +26,7 @@ export async function hybridSearch(
   query: string,
   matchCount: number = DEFAULT_MATCH_COUNT
 ): Promise<HybridSearchResult[]> {
-  const supabase = createServerClient();
+  const supabase = createAdminClient();
 
   // Generate embedding for the query
   const queryEmbedding = await embeddingsModel.embedQuery(query);
@@ -76,7 +76,7 @@ async function exactSearch(
   pattern: string,
   matchCount: number = 10
 ): Promise<MatchedChunk[]> {
-  const supabase = createServerClient();
+  const supabase = createAdminClient();
 
   const { data, error } = await supabase.rpc('search_dubai_code_exact', {
     search_pattern: pattern,
@@ -336,7 +336,7 @@ export async function filteredHybridSearch(
   pageRanges: PageRange[],
   matchCount: number = DEFAULT_MATCH_COUNT
 ): Promise<HybridSearchResult[]> {
-  const supabase = createServerClient();
+  const supabase = createAdminClient();
 
   // Generate embedding for the query
   const queryEmbedding = await embeddingsModel.embedQuery(query);

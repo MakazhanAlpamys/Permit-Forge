@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { createServerClient, checkRateLimit } from '@/lib/supabase-server';
+import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 import { getQuickSession, validateCSRFToken } from '@/lib/auth';
 import { chatMessageSchema } from '@/lib/validations';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
     // SECURITY: Session ownership verification
     // =========================================================================
     if (sessionId) {
-      const supabase = createServerClient();
+      const supabase = createAdminClient();
       const { data: session, error } = await supabase
         .from('chat_sessions')
         .select('user_id')
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
     // Load conversation history
     let conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     if (sessionId) {
-      const supabase = createServerClient();
+      const supabase = createAdminClient();
       const { data: messages } = await supabase
         .from('chat_messages')
         .select('role, content')

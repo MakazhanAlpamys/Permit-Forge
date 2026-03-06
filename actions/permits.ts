@@ -4,7 +4,7 @@
 // Permit Application Server Actions (User-Facing)
 // ============================================================================
 
-import { createServerClient, createAdminClient } from '@/lib/supabase-server';
+import { createAdminClient } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { requireAuth, requireCSRF } from '@/lib/security';
 import {
@@ -32,7 +32,7 @@ async function verifyPermitOwnership(permitId: string, userId: string): Promise<
   const validation = uuidSchema.safeParse(permitId);
   if (!validation.success) return false;
 
-  const supabase = createServerClient();
+  const supabase = createAdminClient();
   const { data, error } = await supabase
     .from('permit_applications')
     .select('user_id')
@@ -94,7 +94,7 @@ export async function createPermit(
       return { success: false, error: validation.error.issues[0].message };
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data: permit, error } = await supabase
       .from('permit_applications')
       .insert({
@@ -166,7 +166,7 @@ export async function updatePermitBuildingDetails(
     }
 
     // Verify status is draft
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data: permit } = await supabase
       .from('permit_applications')
       .select('status')
@@ -222,7 +222,7 @@ export async function updatePermitComplianceRequirements(
       return { success: false, error: 'Access denied' };
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data: permit } = await supabase
       .from('permit_applications')
       .select('status')
@@ -278,7 +278,7 @@ export async function submitPermit(
       return { success: false, error: 'Access denied' };
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data: permit } = await supabase
       .from('permit_applications')
       .select('status, building_details, compliance_requirements, project_name, revision_count')
@@ -363,7 +363,7 @@ export async function getMyPermits(): Promise<{ data: PermitApplication[]; error
       return { data: [], error: 'Not authenticated' };
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data, error } = await supabase
       .from('permit_applications')
       .select('*')
@@ -400,8 +400,7 @@ export async function getPermitById(
       return { data: null, error: 'Invalid permit ID' };
     }
 
-    // Admin can view any permit, users can only view their own
-    const supabase = user.role === 'admin' ? createAdminClient() : createServerClient();
+    const supabase = createAdminClient();
 
     let query = supabase
       .from('permit_applications')
@@ -454,7 +453,7 @@ export async function getPermitHistory(
       }
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data, error } = await supabase
       .from('permit_status_history')
       .select('*')
@@ -509,7 +508,7 @@ export async function deletePermit(
       return { success: false, error: 'Access denied' };
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data: permit } = await supabase
       .from('permit_applications')
       .select('status')
@@ -583,7 +582,7 @@ export async function runComplianceCheck(
       return { success: false, error: 'Access denied' };
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data: permit } = await supabase
       .from('permit_applications')
       .select('status, building_details, compliance_requirements, project_type')
@@ -665,7 +664,7 @@ export async function revisePermit(
       return { success: false, error: 'Access denied' };
     }
 
-    const supabase = createServerClient();
+    const supabase = createAdminClient();
     const { data: permit } = await supabase
       .from('permit_applications')
       .select('status')
