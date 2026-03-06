@@ -15,7 +15,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![Tailwind](https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Zod](https://img.shields.io/badge/Zod-4-3E67B1?style=flat-square&logo=zod&logoColor=white)](https://zod.dev/)
-[![Tests](https://img.shields.io/badge/Tests-158_passing-22c55e?style=flat-square)](./test)
+[![Tests](https://img.shields.io/badge/Tests-156_passing-22c55e?style=flat-square)](./test)
 [![License](https://img.shields.io/badge/License-MIT-eab308?style=flat-square)](./LICENSE)
 
 <br />
@@ -28,24 +28,24 @@
 
 ---
 
-## 📋 Overview
+## Overview
 
 **Emirate Forge** is an enterprise-grade AI assistant for Dubai Municipality building code compliance. It combines two major subsystems:
 
-1. **Hybrid RAG Chat Pipeline** — vector + keyword search with Reciprocal Rank Fusion, deterministic Tree Reasoning for structure-aware document navigation, and Gemini 2.5 Flash for real-time streaming responses across **5 official Dubai Municipality documents**.
+1. **Hybrid RAG Chat Pipeline (v2)** — optimized to **1-2 API calls per question** (~1.5 average with semantic caching). Uses vector + keyword hybrid search with RRF, deterministic Tree Reasoning, heuristic reranking, parent-child chunking, and chunk-based citations across **dynamically managed Dubai Municipality documents**.
 2. **Permit Application System** — full lifecycle permit management with AI-powered compliance checks, multi-step forms, file attachments, admin review workflow, and PDF certificate generation.
 
 > **Who is it for?** — Architects, engineers, construction professionals, and regulatory consultants working with Dubai Municipality building codes.
 
 <br />
 
-## ✨ Features
+## Features
 
 <table>
 <tr>
 <td width="50%">
 
-### 🤖 Streaming AI Chat
+### Streaming AI Chat
 - **Gemini 2.5 Flash** via LangChain streaming
 - Context-aware conversation memory (last 10 messages)
 - Multilingual — English, Russian, Arabic
@@ -56,20 +56,21 @@
 </td>
 <td width="50%">
 
-### 📚 Hybrid RAG Pipeline
+### Hybrid RAG Pipeline (v2)
+- **1-2 API calls** per question (down from 3-9 in v1)
+- **Semantic cache** — cosine similarity > 0.95, 1hr TTL, 30-40% hit rate
 - **Vector similarity** (0.7) + **keyword FTS** (0.3) via RRF
-- Multi-query search with LLM-generated expansions
-- AI-powered re-ranking (score ≥ 40 threshold)
-- Exact section/table lookup via regex detection
-- **5 official documents** cross-referenced simultaneously
-- Feature flags for toggling each pipeline stage
+- **CRAG check** — pre-generation quality gate (threshold 0.3)
+- **Heuristic reranker** — deterministic scoring, 0 API, ~1ms
+- **Parent-child chunking** — 400-char search precision, 2000-char LLM context
+- **Document selector** — keyword-based routing to 1-3 documents (0 API)
 
 </td>
 </tr>
 <tr>
 <td>
 
-### 🌳 Tree Reasoning
+### Tree Reasoning
 - **Deterministic** keyword-scoring algorithm (no LLM call)
 - Structure-aware search using document hierarchy & TOC
 - Regex-based query classifier (~1 ms)
@@ -79,20 +80,20 @@
 </td>
 <td>
 
-### 📍 Smart Citations
-- 9 regex patterns for citation extraction from AI responses
-- Database-backed matching via `match_citation` RPC
-- Confidence scoring: match score (60%) + verification (40%)
-- Dynamic 1–10 citation count — only what the AI actually used
-- Supplemental high-relevance chunks appended (max 2)
-- Document attribution across all 5 registered documents
+### Chunk-Based Citations (v2)
+- Citations from **DB metadata** — 100% accurate, 0 API calls
+- No LLM parsing needed — each chunk has exact page, section, document info
+- Top 5-7 chunks after reranking become the sources
+- Confidence scoring from search relevance scores
+- Document attribution across all registered documents
+- System prompt instructs LLM: "Sources are displayed separately"
 
 </td>
 </tr>
 <tr>
 <td>
 
-### 🏗️ Permit Application System
+### Permit Application System
 - **6-status lifecycle:** draft → submitted → under_review → approved / rejected / revision_requested
 - **3-step multi-step form:** project info → building details → compliance requirements
 - **AI compliance check** — queries RAG → feeds context to Gemini → returns structured JSON analysis
@@ -105,14 +106,14 @@
 </td>
 <td>
 
-### 🛡️ Enterprise Security
+### Enterprise Security
 - **JWT** (HS256, 7-day expiry) with HttpOnly cookies
 - **bcrypt** (12 rounds) password hashing
 - **Timing-safe CSRF** token validation
 - **Rate limiting** — in-memory (login) + database-backed (API, 10 req/min)
 - **Zod v4** schema validation on all inputs
 - **XSS protection** via isomorphic-dompurify
-- **RLS** — PostgreSQL Row-Level Security on all 12 tables
+- **RLS** — PostgreSQL Row-Level Security on all 15 tables
 - **Real-time block check** in Edge middleware (5-min cache)
 - Security headers: `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`
 
@@ -121,39 +122,36 @@
 <tr>
 <td>
 
-### 🛠️ Admin Dashboard
-- **5-tab panel:** Overview · Users · Permits · PDF Ingestion · Audit Logs
+### Admin Dashboard
+- **5-tab panel:** Overview · Users · Permits · Documents · Audit Logs
 - User CRUD with block/unblock & role management
 - Permit review with approve / reject / request revision workflow
+- **Dynamic document management** — register, edit, ingest, delete documents
 - Real-time analytics: active users, total queries, permit stats
 - Weekly activity charts, document usage, top users, permit status breakdown (Recharts)
-- PDF ingestion with SSE progress streaming
 - Full audit log history (12 event types tracked)
 - Health check endpoint for monitoring
 
 </td>
 <td>
 
-### 📄 PDF Ingestion & Multi-Document Support
+### PDF Ingestion & Dynamic Documents
 - **PDF.js**-based parsing with TOC/bookmark extraction
-- Smart chunking (800 chars, 150 overlap) with page tracking
+- **Parent-child chunking** — child (400 chars) for search, parent (2000 chars) for LLM context
 - Section hierarchy mapping & content type detection
 - Automatic document tree generation for Tree Reasoning
 - Batch embedding via `gemini-embedding-001` (768-dim, rate-limit-aware)
 - Resume support — skips already-ingested chunks
-- **5 registered documents:**
-  - Dubai Building Code 2021 (DBC)
-  - Dubai Code of Safety
-  - Al Sa'fat Green Building System (2023)
-  - Dubai Universal Design Code (UDC)
-  - Sewerage & Stormwater Design Guidelines (2025)
+- **Dynamic document registry** — add any PDF via admin panel
+- **5 default documents** seeded (DBC, Safety, Al Sa'fat, UDC, Sewerage)
+- Per-document stats, re-ingestion, deactivation/restore
 
 </td>
 </tr>
 <tr>
 <td>
 
-### 🔔 Notification System
+### Notification System
 - In-app notifications with unread badges
 - Email notifications via Resend API (optional)
 - 5 notification types: permit submitted, under review, approved, rejected, revision requested
@@ -163,7 +161,7 @@
 </td>
 <td>
 
-### 🎨 Modern UI
+### Modern UI
 - Dark / Light theme with system preference detection
 - **shadcn/ui** + **Radix UI** component library
 - Markdown rendering with formatted tables & lists
@@ -180,14 +178,14 @@
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
 | Tool | Version | Link |
 |------|---------|------|
-| Node.js | ≥ 20.x | [nodejs.org](https://nodejs.org/) |
-| npm | ≥ 10.x | Included with Node.js |
+| Node.js | >= 20.x | [nodejs.org](https://nodejs.org/) |
+| npm | >= 10.x | Included with Node.js |
 | Supabase Account | — | [supabase.com](https://supabase.com/) |
 | Google AI API Key | — | [ai.google.dev](https://ai.google.dev/) |
 
@@ -220,16 +218,16 @@ RESEND_API_KEY=your_resend_api_key       # Email notifications for permit update
 LOG_LEVEL=info                           # debug | info | warn | error
 ```
 
-> ⚠️ Never commit `.env.local` to version control.
+> Never commit `.env.local` to version control.
 
 ### 3. Set Up Database
 
 1. Create a project in [Supabase Dashboard](https://supabase.com/dashboard)
-2. Open **SQL Editor** and run the migrations.
+2. Open **SQL Editor** and run `supabase/migrations/000_full_setup.sql`
 
-Run `000_full_setup.sql` — a single idempotent script that drops and recreates the entire schema from scratch.
+This single idempotent script drops and recreates the entire schema: **15 tables**, **29+ RPC functions**, HNSW vector indexes, GIN full-text search, and RLS policies. Seeds 5 default documents and an admin user.
 
-This sets up **12 tables**, **26+ RPC functions**, IVFFlat vector index, GIN full-text search, and complete RLS policies. Default admin credentials: `admin` / `Admin123!`
+Default admin credentials: `admin` / `Admin123!`
 
 ### 4. Run
 
@@ -247,7 +245,7 @@ Open [http://localhost:3000](http://localhost:3000)
 
 1. **Login** at `/login` — `admin` / `Admin123!`
 2. **Change the default password** immediately (Admin Panel → Users)
-3. **Ingest PDFs** — Admin Panel → PDF Ingestion → Upload Dubai Municipality documents
+3. **Ingest PDFs** — Admin Panel → Documents → place PDFs in `public/` → click Ingest
 4. **Create users** — Admin Panel → Users → Create User
 5. **Start chatting** — return to dashboard and ask questions about building codes
 
@@ -255,7 +253,7 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## 🏛️ Architecture
+## Architecture
 
 ### System Overview
 
@@ -276,6 +274,7 @@ Open [http://localhost:3000](http://localhost:3000)
 │  actions/permits.ts ────── CRUD · Submit · Compliance Check      │
 │  actions/permit-attachments.ts  Upload · Download · Delete       │
 │  actions/chat-history.ts ─ Sessions · Messages                   │
+│  actions/documents.ts ──── Document Registry CRUD                │
 │  actions/notifications.ts  Read · Mark Read                      │
 │  actions/analytics.ts ──── Dashboard Stats · Charts              │
 │  actions/ingest-pdf.ts ─── PDF Ingestion · Status                │
@@ -293,94 +292,120 @@ Open [http://localhost:3000](http://localhost:3000)
 │     CORE LIBRARY          │              │   EXTERNAL SERVICES    │
 │                           │              │                        │
 │  chat-pipeline.ts         │              │  Supabase              │
-│  ├─ Topic Classifier      │◄────────────►│  ├─ PostgreSQL + RLS   │
-│  ├─ Tree / Standard route │              │  ├─ pgvector (IVFFlat) │
-│  └─ Feature flags         │              │  ├─ Full-Text Search   │
-│                           │              │  └─ Storage (files)    │
-│  rag.ts                   │              │                        │
-│  ├─ Hybrid Search (RRF)   │◄────────────►│  Google Gemini         │
-│  ├─ Filtered Search       │              │  ├─ 2.5 Flash (chat)   │
-│  └─ Multi-Query Search    │              │  └─ embedding-001      │
-│                           │              │                        │
-│  agents.ts                │              │  Resend (optional)     │
-│  ├─ Topic Classifier      │              │  └─ Email notifications│
-│  ├─ Query Expander        │              │                        │
-│  ├─ Chunk Re-ranker       │              └────────────────────────┘
-│  ├─ Answer Verifier       │
+│  ├─ Semantic Cache        │◄────────────►│  ├─ PostgreSQL + RLS   │
+│  ├─ Document Selector     │              │  ├─ pgvector (HNSW)    │
+│  ├─ Scope Detector        │              │  ├─ Full-Text Search   │
+│  ├─ CRAG Check            │              │  └─ Storage (files)    │
+│  ├─ Heuristic Reranker    │              │                        │
+│  └─ Parent Expansion      │◄────────────►│  Google Gemini         │
+│                           │              │  ├─ 2.5 Flash (chat)   │
+│  rag.ts                   │              │  └─ embedding-001      │
+│  ├─ Hybrid Search (RRF)   │              │                        │
+│  └─ Filtered Search       │              │  Resend (optional)     │
+│                           │              │  └─ Email notifications │
+│  agents.ts                │              │                        │
+│  ├─ Topic Classifier      │              └────────────────────────┘
 │  └─ Tree Reasoner (det.)  │
 │                           │
-│  permit-compliance.ts     │
-│  ├─ RAG query generation  │
-│  ├─ Parallel hybrid search│
-│  └─ Structured AI analysis│
-│                           │
-│  permit-certificate.ts    │
-│  └─ PDFKit                │
-│                           │
+│  semantic-cache.ts        │
+│  document-selector.ts     │
+│  scope-detector.ts        │
+│  heuristic-reranker.ts    │
 │  citation-parser.ts       │
-│  auth.ts · security.ts    │
-│  pdf-parser.ts            │
-│  pdf-ingestion.ts         │
 │  document-registry.ts     │
+│                           │
+│  permit-compliance.ts     │
+│  permit-certificate.ts    │
+│  pdf-ingestion.ts         │
+│  pdf-parser.ts            │
 │  tree-cache.ts            │
-│  notifications.ts         │
+│  auth.ts · security.ts    │
 │  gemini.ts · validations  │
 └───────────────────────────┘
 ```
 
-### RAG Pipeline Flow
+### RAG Pipeline v2 Flow
 
 ```
 User Query
     │
     ▼
 ┌──────────────────────┐
-│  Topic Classifier    │ ──► Off-topic / Greeting → Short-circuit response
+│  Topic Classifier    │ ──► Off-topic / Greeting → Short-circuit response (0 API)
 └──────────────────────┘
     │ On-topic
     ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  [1] GENERATE EMBEDDING (1 API call — reused for cache + search) │
+└─────────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌──────────────────────┐
+│  [2] Semantic Cache  │ ──► HIT → cached response + citations (0 more API, done)
+│  cosine > 0.95, 1hr  │
+└──────────────────────┘
+    │ MISS
+    ▼
+┌──────────────────────┐      ┌──────────────────────────────┐
+│  [3] Document Selector│      │  [4] Scope Detector          │
+│  keyword scoring     │      │  regex: chapter/section/page  │
+│  narrows to 1-3 docs │      │  adds page range filters     │
+│  (0 API, ~1ms)       │      │  (0 API, ~1ms)               │
+└──────────────────────┘      └──────────────────────────────┘
+    │                                   │
+    └──────────────┬────────────────────┘
+                   ▼
 ┌──────────────────────────────────────────────────────────────┐
-│  QUERY STRUCTURE CLASSIFIER  (regex-based, ~1 ms, no LLM)    │
+│  [5] SEARCH (reuses embedding from step 1)                    │
 │                                                              │
-│  "in chapter/section X" ───────► Structural                  │
-│  "summarize chapter" ──────────► Structural                  │
-│  "parking for residential" ────► Structural (topic+context)  │
-│  "compare fire and parking" ───► Structural (comparison)     │
-│  "What are requirements?" ─────► Standard                    │
+│  ┌─────────────────────┐     ┌──────────────────────────┐    │
+│  │  Tree Reasoning     │     │  Standard Hybrid Search  │    │
+│  │  (structural query) │     │  (vector + keyword RRF)  │    │
+│  │  keyword scoring    │     │                          │    │
+│  │  → filtered search  │     │                          │    │
+│  │  [conf < 45%] ──────────► │                          │    │
+│  └─────────────────────┘     └──────────────────────────┘    │
 └──────────────────────────────────────────────────────────────┘
-         │                              │
-    Structural                     Standard
-         │                              │
-         ▼                              ▼
-┌───────────────────────┐    ┌─────────────────────────┐
-│  🌳 TREE REASONING    │    │  STANDARD PATH          │
-│                       │    │                         │
-│  1. Load cached tree  │    │  Query Expansion (LLM)  │
-│  2. Deterministic     │    │  3-5 query variations   │
-│     keyword scoring   │    │         ↓               │
-│  3. Select top nodes  │    │  Hybrid Search (RRF)    │
-│  4. Filtered search   │    │  ─ vector similarity    │
-│     (within pages)    │    │  ─ keyword FTS          │
-│                       │    │         ↓               │
-│  [conf < 45%] ───────────► │  AI Re-ranking          │
-└───────────────────────┘    └─────────────────────────┘
-         │                              │
-         └──────────┬───────────────────┘
-                    ▼
-         Context Building (formatted [SOURCE N] chunks)
-                    │
-                    ▼
-         LLM Generation (Gemini 2.5 Flash, streaming via SSE)
-                    │
-                    ▼
-         Answer Verification (hallucination check)
-                    │
-                    ▼
-         Citation Parsing & Matching (9 regex patterns → DB lookup)
-                    │
-                    ▼
-              Response to User (tokens + citations)
+    │
+    ▼
+┌──────────────────────┐
+│  [6] CRAG Check      │ ──► top chunk score < 0.3 → "info not found" (0 API)
+│  (0 API)             │
+└──────────────────────┘
+    │ passes
+    ▼
+┌──────────────────────┐
+│  [7] Heuristic       │      score = hybrid*0.4 + keyword*0.3
+│  Reranker            │              + metadata*0.2 + position*0.1
+│  (0 API, ~1ms)       │      max 3/doc, max 2/page range
+└──────────────────────┘
+    │
+    ▼
+┌──────────────────────┐
+│  [8] Parent Expansion│      child (400 chars) → parent (2000 chars)
+│  (DB lookup, 0 API)  │      richer context for LLM
+└──────────────────────┘
+    │
+    ▼
+Context Building → LLM Generation (1 API call, streaming SSE)
+    │
+    ▼
+Chunk-Based Citations (from DB metadata, 0 API) → Cache Store (fire-and-forget)
+    │
+    ▼
+Response to User (tokens + citations)
 ```
+
+**API calls per scenario:**
+
+| Scenario | Embedding | LLM | Total |
+|----------|:---------:|:---:|:-----:|
+| Cache hit | 1 | 0 | **1** |
+| Greeting (regex) | 0 | 0 | **0** |
+| Greeting (LLM fallback) | 0 | 1 | **1** |
+| Weak search (CRAG fails) | 1 | 0 | **1** |
+| Full pipeline | 1 | 1 | **2** |
+| **Average (with cache)** | ~0.8 | ~0.7 | **~1.5** |
 
 ### Permit Lifecycle
 
@@ -420,83 +445,99 @@ User Query
 │      users          │          │  dubai_code_chunks   │
 │ ─────────────────── │          │ ──────────────────── │
 │  id (UUID, PK)      │          │  id (BIGINT, PK)     │
-│  username (UNIQUE)  │          │  content (TEXT)      │
-│  email              │          │  metadata (JSONB)    │
-│  password_hash      │          │  embedding (VECTOR)  │ ◄── pgvector
-│  full_name          │          │  fts (TSVECTOR)      │ ◄── GIN index
-│  role (admin/user)  │          │  document_name       │
-│  blocked (BOOL)     │          └──────────────────────┘
-│  blocked_reason     │
+│  username (UNIQUE)  │          │  content (TEXT)       │
+│  email              │          │  metadata (JSONB)     │
+│  password_hash      │          │  embedding (VECTOR)   │ ◄── HNSW index
+│  full_name          │          │  fts (TSVECTOR)       │ ◄── GIN index
+│  role (admin/user)  │          │  document_name        │
+│  blocked (BOOL)     │          │  parent_id (FK)       │ ──► parent_chunks
+│  blocked_reason     │          └──────────────────────┘
 │  last_login         │
-│  created_at         │
-└──────────┬──────────┘          ┌──────────────────────┐
-           │ 1:N                 │  document_trees      │
-           ▼                     │ ──────────────────── │
-┌─────────────────────┐          │  id (UUID, PK)       │
-│   chat_sessions     │          │  document_name       │
-│ ─────────────────── │          │  total_pages (INT)   │
-│  id (UUID, PK)      │          │  tree_data (JSONB)   │
-│  user_id (FK)       │          │  updated_at          │
-│  title              │          └──────────────────────┘
-│  created_at         │
-│  updated_at         │          ┌──────────────────────┐
-└──────────┬──────────┘          │  permit_applications │
+│  created_at         │          ┌──────────────────────┐
+└──────────┬──────────┘          │  parent_chunks       │
            │ 1:N                 │ ──────────────────── │
-           ▼                     │  id (UUID, PK)       │
-┌─────────────────────┐          │  user_id (FK)        │
-│   chat_messages     │          │  project_name        │
-│ ─────────────────── │          │  project_type        │
-│  id (UUID, PK)      │          │  project_address     │
-│  session_id (FK)    │          │  building_details    │ ◄── JSONB
-│  role               │          │  compliance_reqs     │ ◄── JSONB
-│  content (TEXT)     │          │  compliance_result   │ ◄── JSONB
-│  citations (JSONB)  │          │  status (6 states)   │
-│  created_at         │          │  reviewed_by (FK)    │
-└─────────────────────┘          │  revision_count      │
-                                 │  revision_notes      │
-┌─────────────────────┐          └──────────┬───────────┘
-│   audit_logs        │                     │ 1:N
-│ ─────────────────── │          ┌──────────▼───────────┐
-│  id (UUID, PK)      │          │ permit_status_history│
-│  user_id (FK)       │          │ ──────────────────── │
-│  action (12 types)  │          │  id, permit_id (FK)  │
-│  target_user_id(FK) │          │  from_status         │
-│  metadata (JSONB)   │          │  to_status           │
-│  ip_address         │          │  changed_by (FK)     │
-│  user_agent         │          │  comment             │
-│  created_at         │          │  created_at          │
-└─────────────────────┘          └──────────────────────┘
-
-┌─────────────────────┐          ┌──────────────────────┐
-│  permit_attachments │          │  permit_certificates │
-│ ─────────────────── │          │ ──────────────────── │
-│  id (UUID, PK)      │          │  id (UUID, PK)       │
-│  permit_id (FK)     │          │  permit_id (FK)      │
-│  file_name          │          │  certificate_number  │ ◄── UNIQUE
-│  file_size          │          │  generated_by (FK)   │
-│  file_type          │          │  generated_at        │
-│  storage_path       │          └──────────────────────┘
-│  uploaded_by (FK)   │
-└─────────────────────┘          ┌──────────────────────┐
-                                 │   notifications      │
+           ▼                     │  id (BIGINT, PK)     │
+┌─────────────────────┐          │  content (TEXT)       │ ◄── 2000 chars
+│   chat_sessions     │          │  metadata (JSONB)     │
+│ ─────────────────── │          │  document_name        │
+│  id (UUID, PK)      │          └──────────────────────┘
+│  user_id (FK)       │
+│  title              │          ┌──────────────────────┐
+│  created_at         │          │  semantic_cache      │
+│  updated_at         │          │ ──────────────────── │
+└──────────┬──────────┘          │  id (UUID, PK)       │
+           │ 1:N                 │  query_text          │
+           ▼                     │  query_embedding     │ ◄── HNSW index
+┌─────────────────────┐          │  response (TEXT)     │
+│   chat_messages     │          │  citations (JSONB)   │
+│ ─────────────────── │          │  ttl_seconds         │
+│  id (UUID, PK)      │          │  created_at          │
+│  session_id (FK)    │          └──────────────────────┘
+│  role               │
+│  content (TEXT)     │          ┌──────────────────────┐
+│  citations (JSONB)  │          │  document_registry   │
+│  created_at         │          │ ──────────────────── │
+└─────────────────────┘          │  id (TEXT, PK)       │
+                                 │  display_name        │
+┌─────────────────────┐          │  short_name          │
+│  document_trees     │          │  file_name           │
+│ ─────────────────── │          │  keywords (TEXT[])   │
+│  id (UUID, PK)       │          │  categories (TEXT[]) │
+│  document_name       │          │  badge_color         │
+│  total_pages (INT)   │          │  is_active (BOOL)   │
+│  tree_data (JSONB)   │          └──────────────────────┘
+│  updated_at          │
+└──────────────────────┘          ┌──────────────────────┐
+                                 │  permit_applications │
 ┌─────────────────────┐          │ ──────────────────── │
-│   rate_limits       │          │  id (UUID, PK)       │
+│   audit_logs        │          │  id (UUID, PK)       │
 │ ─────────────────── │          │  user_id (FK)        │
-│  id (BIGINT, PK)    │          │  type (5 types)      │
-│  user_id (FK)       │          │  title, body         │
-│  request_timestamp  │          │  data (JSONB)        │
-└─────────────────────┘          │  read (BOOL)         │
-                                 │  created_at          │
+│  id (UUID, PK)      │          │  project_name        │
+│  user_id (FK)       │          │  project_type        │
+│  action (12 types)  │          │  building_details    │ ◄── JSONB
+│  target_user_id(FK) │          │  compliance_reqs     │ ◄── JSONB
+│  metadata (JSONB)   │          │  status (6 states)   │
+│  ip_address         │          │  reviewed_by (FK)    │
+│  user_agent         │          │  revision_count      │
+│  created_at         │          └──────────┬───────────┘
+└─────────────────────┘                     │ 1:N
+                                 ┌──────────▼───────────┐
+┌─────────────────────┐          │ permit_status_history │
+│  permit_attachments │          │ ──────────────────── │
+│ ─────────────────── │          │  id, permit_id (FK)  │
+│  id (UUID, PK)      │          │  from_status         │
+│  permit_id (FK)     │          │  to_status           │
+│  file_name          │          │  changed_by (FK)     │
+│  file_size          │          │  comment             │
+│  storage_path       │          │  created_at          │
+│  uploaded_by (FK)   │          └──────────────────────┘
+└─────────────────────┘
+                                 ┌──────────────────────┐
+┌─────────────────────┐          │  permit_certificates │
+│   notifications     │          │ ──────────────────── │
+│ ─────────────────── │          │  id (UUID, PK)       │
+│  id (UUID, PK)      │          │  permit_id (FK)      │
+│  user_id (FK)       │          │  certificate_number  │ ◄── UNIQUE
+│  type (5 types)     │          │  generated_by (FK)   │
+│  title, body        │          │  generated_at        │
+│  read (BOOL)        │          └──────────────────────┘
+│  created_at         │
+└─────────────────────┘          ┌──────────────────────┐
+                                 │   rate_limits        │
+                                 │ ─────────────────── │
+                                 │  id (BIGINT, PK)    │
+                                 │  user_id (FK)       │
+                                 │  request_timestamp  │
                                  └──────────────────────┘
 ```
 
-**12 tables** · 26+ RPC functions · Row-Level Security on all tables · IVFFlat vector index (lists=100) · GIN full-text search · B-tree indexes on metadata fields
+**15 tables** · 29+ RPC functions · Row-Level Security on all tables · HNSW vector indexes (m=16, ef_construction=64) · GIN full-text search · B-tree indexes on metadata fields
 
 <br />
 
 ---
 
-## 📡 API Reference
+## API Reference
 
 ### API Routes
 
@@ -514,6 +555,7 @@ User Query
 POST /api/chat/stream
 Content-Type: application/json
 Cookie: ef_token=<jwt>
+X-CSRF-Token: <csrf_token>
 
 {
   "message": "What are parking requirements for residential buildings?",
@@ -521,29 +563,32 @@ Cookie: ef_token=<jwt>
 }
 ```
 
-**Response** (`text/event-stream`):
+**Response** (`text/plain`, streamed):
 
 ```
-data: {"type":"token","content":"According to "}
-data: {"type":"token","content":"Section 5.2..."}
-data: {"type":"citations","citations":[...]}
-data: {"type":"done"}
+According to Section 5.2 of the Dubai Building Code...
+
+[tokens stream in real-time]
+
+__CITATIONS__[{"chunkId":123,"page":45,"section":"5.2","documentName":"dubai-building-code-2021",...}]
 ```
 
 ### PDF Ingestion — `POST /api/ingest`
 
 ```http
 POST /api/ingest
-Content-Type: multipart/form-data
+Content-Type: application/json
 Cookie: ef_token=<admin-jwt>
+
+{ "documentId": "dubai-building-code-2021" }
 ```
 
 **Response** (`text/event-stream`):
 
 ```
-data: {"type":"progress","message":"Parsing PDF...","percent":10}
-data: {"type":"progress","message":"Generating embeddings...","percent":50}
-data: {"type":"complete","chunksProcessed":1250}
+data: {"stage":"parsing","progress":5,"total":100,"message":"Parsing PDF..."}
+data: {"stage":"embedding","progress":50,"total":100,"message":"Generating embeddings...","chunksProcessed":250}
+data: {"stage":"complete","progress":100,"total":100,"done":true,"chunksProcessed":1250}
 ```
 
 ### Server Actions
@@ -573,6 +618,10 @@ data: {"type":"complete","chunksProcessed":1250}
 | `reviewPermit()` | `actions/admin-permits.ts` | Approve / reject / request revision |
 | `setPermitUnderReview()` | `actions/admin-permits.ts` | Start review (submitted → under_review) |
 | `getPermitStats()` | `actions/admin-permits.ts` | Permit counts by status |
+| `getAllRegisteredDocuments()` | `actions/documents.ts` | List all documents from registry |
+| `upsertDocument()` | `actions/documents.ts` | Add or update document metadata |
+| `deleteDocument()` | `actions/documents.ts` | Soft-delete document (optional chunk purge) |
+| `restoreDocument()` | `actions/documents.ts` | Re-activate deleted document |
 | `getNotifications()` | `actions/notifications.ts` | User's notifications + unread count |
 | `markNotificationRead()` | `actions/notifications.ts` | Mark single notification as read |
 | `markAllNotificationsRead()` | `actions/notifications.ts` | Mark all notifications as read |
@@ -581,7 +630,6 @@ data: {"type":"complete","chunksProcessed":1250}
 | `getDocumentUsageStats()` | `actions/analytics.ts` | Document chunk usage breakdown |
 | `getPermitStatusBreakdown()` | `actions/analytics.ts` | Permit status distribution |
 | `getTopActiveUsers()` | `actions/analytics.ts` | Most active users leaderboard |
-| `getDashboardStats()` | `actions/admin.ts` | Overview statistics |
 | `getAllUsers()` | `actions/admin.ts` | List all users (admin) |
 | `adminCreateUser()` | `actions/admin.ts` | Create user (admin) |
 | `blockUser()` | `actions/admin.ts` | Block/unblock user (admin) |
@@ -595,7 +643,7 @@ data: {"type":"complete","chunksProcessed":1250}
 
 ---
 
-## 🏗️ Permit System
+## Permit System
 
 ### Lifecycle
 
@@ -649,9 +697,9 @@ Generated for approved permits via `GET /api/permits/[id]/certificate`:
 
 ---
 
-## 🧪 Testing
+## Testing
 
-**158 tests** across **11 test suites** with comprehensive coverage of all critical systems.
+**156 tests** across **11 test suites** with comprehensive coverage of all critical systems.
 
 ```bash
 npm test              # Run all tests (watch mode)
@@ -665,13 +713,13 @@ Pattern match: `npx vitest run -t "pattern"`
 | Suite | File | Tests | Covers |
 |-------|------|:-----:|--------|
 | **Auth** | `test/auth.test.ts` | 8 | JWT create/verify, CSRF tokens, password hashing |
-| **Agents** | `test/agents.test.ts` | 18 | Topic classification, query expansion, re-ranking, verification |
+| **Agents** | `test/agents.test.ts` | 20 | Topic classification, query structure, tree reasoning |
 | **API Chat Stream** | `test/api-chat-stream.test.ts` | 9 | Auth (401), rate limit (429), validation (400), CSRF, streaming (200) |
-| **Chat Pipeline** | `test/chat-pipeline.test.ts` | 7 | RAG pipeline execution, answer verification, citation generation |
-| **Citations** | `test/citation-parser.test.ts` | 19 | 9 extraction patterns, matching, confidence scoring, stats |
+| **Chat Pipeline** | `test/chat-pipeline.test.ts` | 7 | RAG pipeline v2, semantic cache, CRAG, citation generation |
+| **Citations** | `test/citation-parser.test.ts` | 19 | Chunk-based citations, confidence scoring, stats |
 | **Permit Compliance** | `test/permit-compliance.test.ts` | 6 | AI compliance check, error fallback, malformed JSON handling |
 | **Permit Actions** | `test/permits-actions.test.ts` | 18 | Create, submit, list, get, delete permits |
-| **RAG** | `test/rag.test.ts` | 7 | Hybrid search, multi-query, RRF fusion |
+| **RAG** | `test/rag.test.ts` | 7 | Hybrid search with pre-computed embeddings, document filter |
 | **Tree Reasoning** | `test/tree-reasoning.test.ts` | 28 | Query structure classification, keyword scoring, page ranges |
 | **Validations** | `test/validations.test.ts` | 17 | Zod schemas, sanitization, edge cases |
 | **Admin** | `test/admin.test.ts` | 20 | User creation, password rules, admin operations |
@@ -682,17 +730,18 @@ Test setup (`test/setup.ts`) mocks Supabase clients, Next.js headers/cookies, an
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 Emirate-Forge/
-├── actions/                           # Server Actions (9 files)
+├── actions/                           # Server Actions (10 files)
 │   ├── auth.ts                        #   Login / Logout with audit logging
 │   ├── admin.ts                       #   User CRUD, stats, audit logs
 │   ├── admin-permits.ts               #   Permit review & approval workflow
 │   ├── permits.ts                     #   Permit CRUD, submit, compliance check
 │   ├── permit-attachments.ts          #   File upload, download, delete
 │   ├── chat-history.ts                #   Session & message management
+│   ├── documents.ts                   #   Document registry CRUD (add, edit, delete, restore)
 │   ├── notifications.ts               #   Notification read/unread management
 │   ├── analytics.ts                   #   Dashboard charts & statistics
 │   └── ingest-pdf.ts                  #   PDF ingestion trigger + status
@@ -703,6 +752,7 @@ Emirate-Forge/
 │   ├── globals.css                    #   Global styles
 │   ├── login/page.tsx                 #   Login page
 │   ├── admin/page.tsx                 #   Admin panel (5 tabs)
+│   ├── not-found.tsx                  #   Custom 404 page
 │   ├── permits/
 │   │   ├── page.tsx                   #   Permit list
 │   │   ├── new/page.tsx               #   Multi-step permit form (3 steps)
@@ -718,7 +768,7 @@ Emirate-Forge/
 │   ├── theme-provider.tsx             #   Dark/light theme context
 │   ├── theme-toggle.tsx               #   Theme switcher
 │   ├── chat/                          #   ChatInterface, MessageBubble, SourceCitation
-│   ├── admin/                         #   UserManagement, PermitManagement, PDFIngestion,
+│   ├── admin/                         #   UserManagement, DocumentManagement, PermitManagement,
 │   │                                  #   AuditLogs, StatsCards, Charts (6 chart components)
 │   ├── dashboard/                     #   Header, Sidebar
 │   ├── notifications/                 #   NotificationBell
@@ -727,17 +777,21 @@ Emirate-Forge/
 │   │                                  #   StatusBadge, StatusTimeline, AttachmentList
 │   └── ui/                            #   shadcn/ui primitives (20+ components)
 │
-├── lib/                               # Core Business Logic (18 modules)
-│   ├── chat-pipeline.ts               #   RAG orchestration + feature flags
-│   ├── rag.ts                         #   Hybrid search, multi-query, RRF
-│   ├── agents.ts                      #   AI agents + Tree Reasoner
-│   ├── citation-parser.ts             #   Citation extraction & matching
-│   ├── document-registry.ts           #   5-document registry with metadata
+├── lib/                               # Core Business Logic (22 modules)
+│   ├── chat-pipeline.ts               #   v2 RAG orchestration + feature flags
+│   ├── rag.ts                         #   Hybrid search, CRAG check, parent expansion
+│   ├── agents.ts                      #   Topic classifier + Tree Reasoner
+│   ├── semantic-cache.ts              #   Semantic query caching via pgvector
+│   ├── document-selector.ts           #   Keyword-based document scoring (0 API)
+│   ├── scope-detector.ts              #   Regex page/section/chapter detection (0 API)
+│   ├── heuristic-reranker.ts          #   Deterministic reranking (0 API, ~1ms)
+│   ├── citation-parser.ts             #   Chunk-based citations (0 API, 100% accurate)
+│   ├── document-registry.ts           #   Document registry (hardcoded + DB-backed)
 │   ├── auth.ts                        #   JWT, sessions, passwords, CSRF
 │   ├── security.ts                    #   requireAuth / requireAdmin guards
 │   ├── gemini.ts                      #   Gemini + LangChain configuration
 │   ├── pdf-parser.ts                  #   PDF.js text & TOC extraction
-│   ├── pdf-ingestion.ts               #   Chunking, embedding, tree building
+│   ├── pdf-ingestion.ts               #   Parent-child chunking, embedding, tree building
 │   ├── tree-cache.ts                  #   Two-tier document tree cache
 │   ├── permit-compliance.ts           #   RAG-powered compliance analysis
 │   ├── permit-certificate.ts          #   PDF certificate via PDFKit
@@ -750,17 +804,17 @@ Emirate-Forge/
 │   └── utils.ts                       #   Utilities (cn, etc.)
 │
 ├── types/index.ts                     # Shared TypeScript definitions
-├── test/                              # Vitest test suites (11 files, 158 tests)
+├── test/                              # Vitest test suites (11 files, 156 tests)
 ├── supabase/migrations/               # Database schema (single 000_full_setup.sql)
 ├── middleware.ts                       # Edge auth + block check + security headers
-└── public/                            # Static assets
+└── public/                            # Static assets + PDF documents for ingestion
 ```
 
 <br />
 
 ---
 
-## 🛣️ Routes
+## Routes
 
 | Route | Access | Purpose |
 |-------|--------|---------|
@@ -769,7 +823,7 @@ Emirate-Forge/
 | `/permits` | User | Permit application list |
 | `/permits/new` | User | Multi-step permit creation (3 steps: project → building → compliance) |
 | `/permits/[id]` | User | Permit detail view with status timeline, attachments, compliance results |
-| `/admin` | Admin | Admin dashboard — 5 tabs: overview, users, permits, PDF ingestion, audit logs |
+| `/admin` | Admin | Admin dashboard — 5 tabs: overview, users, permits, documents, audit logs |
 
 Admin users are redirected away from user pages (`/`, `/permits`). Non-admins are redirected away from `/admin`. Blocked users are cleared and redirected to `/login`.
 
@@ -777,15 +831,15 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 
 ---
 
-## ⚙️ Environment Variables
+## Environment Variables
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | ✅ | Supabase project URL |
-| `SUPABASE_ANON_KEY` | ✅ | Supabase anonymous key (public, RLS-bound) |
-| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Supabase service role key (private, bypasses RLS) |
-| `GEMINI_API_KEY` | ✅ | Google Gemini API key |
-| `JWT_SECRET` | ✅ | JWT signing secret (min 32 chars, 64+ for production) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
+| `SUPABASE_ANON_KEY` | Yes | Supabase anonymous key (public, RLS-bound) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key (private, bypasses RLS) |
+| `GEMINI_API_KEY` | Yes | Google Gemini API key |
+| `JWT_SECRET` | Yes | JWT signing secret (min 32 chars, 64+ for production) |
 | `RESEND_API_KEY` | — | Resend API key for email notifications |
 | `LOG_LEVEL` | — | Logging verbosity: `debug` / `info` / `warn` / `error` |
 | `NODE_ENV` | — | `development` / `production` |
@@ -794,7 +848,7 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 
 ---
 
-## 🔧 Tech Stack
+## Tech Stack
 
 | Layer | Technology | Version |
 |-------|-----------|---------|
@@ -804,7 +858,7 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 | **Language** | [TypeScript](https://www.typescriptlang.org/) | 5 |
 | **AI / LLM** | [Google Gemini 2.5 Flash](https://ai.google.dev/) via [LangChain](https://js.langchain.com/) 0.3 | — |
 | **Embeddings** | Google `gemini-embedding-001` (768 dim) via [@google/genai](https://www.npmjs.com/package/@google/genai) SDK | — |
-| **Database** | [Supabase](https://supabase.com/) (PostgreSQL + [pgvector](https://github.com/pgvector/pgvector) + pg_trgm) | — |
+| **Database** | [Supabase](https://supabase.com/) (PostgreSQL + [pgvector](https://github.com/pgvector/pgvector) HNSW + pg_trgm) | — |
 | **Auth** | [jose](https://github.com/panva/jose) (JWT HS256) + [bcryptjs](https://github.com/dcodeIO/bcrypt.js) (12 rounds) | — |
 | **Validation** | [Zod](https://zod.dev/) | 4 |
 | **XSS** | [isomorphic-dompurify](https://github.com/kkomelin/isomorphic-dompurify) | — |
@@ -820,7 +874,7 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 
 ---
 
-## 🔨 Available Scripts
+## Available Scripts
 
 | Command | Description |
 |---------|-------------|
@@ -836,7 +890,7 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repo
 2. Create a branch — `git checkout -b feature/my-feature`
@@ -848,11 +902,11 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 
 ---
 
-## 📄 License
+## License
 
 MIT © 2026 Makazhan Alpamys — see [LICENSE](./LICENSE)
 
-## 👤 Author
+## Author
 
 **Makazhan Alpamys** — [@MakazhanAlpamys](https://github.com/MakazhanAlpamys) · makazanalpamys@gmail.com
 
@@ -861,7 +915,7 @@ MIT © 2026 Makazhan Alpamys — see [LICENSE](./LICENSE)
 <div align="center">
 <br />
 
-Built with ❤️ for the construction industry
+Built with care for the construction industry
 
 <br />
 </div>
