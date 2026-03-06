@@ -70,8 +70,15 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // SECURITY: file_name from DB — validate no path traversal
-      const fileName = (dbDoc.file_name as string).replace(/[\/\\]/g, '');
+      // SECURITY: strict filename validation — only allow safe PDF filenames
+      const rawName = dbDoc.file_name as string;
+      const fileName = rawName.split(/[\/\\]/).pop() || '';
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.pdf$/i.test(fileName)) {
+        return new Response(JSON.stringify({ error: 'Invalid file name in document registry' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
       pdfPath = `public/${fileName}`;
     }
   } catch {

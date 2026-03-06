@@ -59,7 +59,16 @@ export async function ingestPDF(
       };
     }
 
-    const fileName = (dbDoc.file_name as string).replace(/[\/\\]/g, '');
+    // SECURITY: strict filename validation — only allow safe PDF filenames
+    const rawName = dbDoc.file_name as string;
+    const fileName = rawName.split(/[\/\\]/).pop() || '';
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.pdf$/i.test(fileName)) {
+      return {
+        success: false,
+        chunksProcessed: 0,
+        error: 'Invalid file name in document registry',
+      };
+    }
     pdfPath = `public/${fileName}`;
   }
 

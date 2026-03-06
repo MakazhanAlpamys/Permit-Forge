@@ -97,13 +97,23 @@ export function MessageBubble({ message }: MessageBubbleProps) {
                   h1: ({ children }) => <h1 className="text-lg font-bold mb-2">{children}</h1>,
                   h2: ({ children }) => <h2 className="text-base font-semibold mb-2">{children}</h2>,
                   h3: ({ children }) => <h3 className="text-sm font-semibold mb-1">{children}</h3>,
-                  // Sanitize links to prevent javascript: URLs
+                  // Sanitize links — only allow http: and https: protocols
                   a: ({ href, children }) => {
-                    const safeHref = href && !href.startsWith('javascript:') ? href : '#';
+                    let safeHref = '#';
+                    if (href) {
+                      try {
+                        const url = new URL(href, 'https://placeholder.invalid');
+                        if (url.protocol === 'http:' || url.protocol === 'https:') {
+                          safeHref = href;
+                        }
+                      } catch {
+                        // Invalid URL — keep as '#'
+                      }
+                    }
                     return (
-                      <a 
-                        href={safeHref} 
-                        target="_blank" 
+                      <a
+                        href={safeHref}
+                        target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary hover:underline"
                       >

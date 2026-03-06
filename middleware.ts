@@ -18,7 +18,9 @@ function clearSessionAndRedirect(request: NextRequest, reason?: string): NextRes
   response.cookies.delete('ef_csrf');
   if (reason) {
     // Set a cookie to show blocked message on login page
-    response.cookies.set('ef_blocked_reason', reason, {
+    // SECURITY: sanitize reason — strip HTML/scripts, limit length
+    const safeReason = reason.replace(/[<>"'&]/g, '').slice(0, 100);
+    response.cookies.set('ef_blocked_reason', safeReason, {
       httpOnly: false,
       maxAge: 60, // 1 minute to display message
       path: '/',
@@ -121,6 +123,11 @@ async function checkUserBlocked(userId: string): Promise<{ blocked: boolean; rea
 }
 
 export async function middleware(request: NextRequest) {
+  // SECURITY: Strip x-middleware-subrequest header from external requests (CVE-2025-29927 defense-in-depth)
+  if (request.headers.get('x-middleware-subrequest')) {
+    return new NextResponse(null, { status: 403 });
+  }
+
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const { pathname } = request.nextUrl;
 

@@ -28,8 +28,27 @@ export async function POST(request: NextRequest) {
     }
 
     // =========================================================================
-    // SECURITY: CSRF validation (mandatory)
+    // SECURITY: Origin validation + CSRF (mandatory)
     // =========================================================================
+    const origin = request.headers.get('origin');
+    if (origin) {
+      const allowedHost = request.nextUrl.host;
+      try {
+        const originHost = new URL(origin).host;
+        if (originHost !== allowedHost) {
+          return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+      } catch {
+        return new Response(JSON.stringify({ error: 'Invalid origin' }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    }
+
     const csrfToken = request.headers.get('x-csrf-token');
     if (!csrfToken) {
       return new Response(JSON.stringify({ error: 'CSRF token required' }), {
