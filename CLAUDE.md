@@ -27,7 +27,7 @@ Pattern match: `npx vitest run -t "pattern"`
 - **AI:** Google Gemini 2.5 Flash via LangChain 0.3 (chat), gemini-embedding-001 via @google/genai SDK (embeddings, 768-dim vectors)
 - **Database:** Supabase (PostgreSQL) with pgvector (IVFFlat) + pg_trgm extensions, 26+ RPC functions
 - **Auth:** JWT (HS256, jose), bcrypt (12 rounds), CSRF tokens, HttpOnly cookies
-- **Testing:** Vitest 4 (node environment), @testing-library/react, 7 test suites in `test/`
+- **Testing:** Vitest 4 (node environment), @testing-library/react, 11 test suites in `test/`
 - **Email:** Resend API (optional, for permit notifications)
 - **PDF Generation:** PDFKit (permit certificates)
 
@@ -44,8 +44,10 @@ Pattern match: `npx vitest run -t "pattern"`
 | `/permits/[id]` | User | Permit detail view with status timeline and attachments |
 | `/admin` | Admin | Admin dashboard — user management, analytics, PDF ingestion, permit review, audit logs |
 | `POST /api/chat/stream` | Auth | SSE streaming chat endpoint → chat-pipeline |
+| `GET /api/chat/export` | Auth | Chat session export to Markdown |
 | `POST /api/ingest` | Admin | PDF ingestion endpoint → SSE progress events |
 | `GET /api/permits/[id]/certificate` | Auth | PDF certificate generation for approved permits |
+| `GET /api/health` | Public | Health check (env vars + DB connectivity) |
 
 Admin users are redirected away from user pages (`/`, `/permits`). Non-admins are redirected away from `/admin`.
 
@@ -159,7 +161,7 @@ Matcher excludes: `api`, `_next/static`, `_next/image`, static assets (svg/png/j
 
 ### Database
 
-Schema in `supabase/migrations/001_complete_setup.sql`. All tables use Row-Level Security (RLS). Service role bypasses RLS.
+Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — drops and recreates everything). All tables use Row-Level Security (RLS). Service role bypasses RLS.
 
 **Key tables:**
 - `dubai_code_chunks` — document chunks with VECTOR(768) embeddings + TSVECTOR (GIN index) for FTS
@@ -189,7 +191,7 @@ Schema in `supabase/migrations/001_complete_setup.sql`. All tables use Row-Level
 
 ## Testing
 
-7 test suites in `test/`: auth, validations, citation-parser, admin, agents, tree-reasoning, rag.
+11 test suites in `test/`: auth, validations, citation-parser, admin, agents, tree-reasoning, rag, chat-pipeline, api-chat-stream, permit-compliance, permits-actions.
 
 Test setup (`test/setup.ts`) mocks:
 - `@/lib/supabase-server` — both `createServerClient` and `createAdminClient` with chainable query builder

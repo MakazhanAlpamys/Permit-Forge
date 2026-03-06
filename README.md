@@ -129,7 +129,7 @@
 - Weekly activity charts, document usage, top users, permit status breakdown (Recharts)
 - PDF ingestion with SSE progress streaming
 - Full audit log history (12 event types tracked)
-- Database cleanup with configurable retention
+- Health check endpoint for monitoring
 
 </td>
 <td>
@@ -227,19 +227,7 @@ LOG_LEVEL=info                           # debug | info | warn | error
 1. Create a project in [Supabase Dashboard](https://supabase.com/dashboard)
 2. Open **SQL Editor** and run the migrations.
 
-**Option A — Single file (recommended for fresh setup):**
-Run `000_full_setup.sql` — it contains everything from 001–006 merged into one idempotent script.
-
-**Option B — Incremental migrations (001 → 006):**
-
-| Migration | Purpose |
-|-----------|---------|
-| `001_complete_setup.sql` | Core tables, extensions (pgvector, pg_trgm, pgcrypto), RLS, RPC functions, seed admin user |
-| `002_permit_applications.sql` | Permit applications and status history tables |
-| `003_permit_enhancements.sql` | Attachments, notifications, certificates, revision support |
-| `004_multi_document_support.sql` | Multi-document search & document registry |
-| `005_analytics_functions.sql` | Analytics RPCs and materialized views |
-| `006_cleanup_functions.sql` | Automated data retention cleanup |
+Run `000_full_setup.sql` — a single idempotent script that drops and recreates the entire schema from scratch.
 
 This sets up **12 tables**, **26+ RPC functions**, IVFFlat vector index, GIN full-text search, and complete RLS policies. Default admin credentials: `admin` / `Admin123!`
 
@@ -297,7 +285,6 @@ Open [http://localhost:3000](http://localhost:3000)
 │  /api/ingest ─────── SSE PDF ingestion with progress             │
 │  /api/permits/[id]/certificate ── PDF certificate generation     │
 │  /api/health ─────── Health check (env + DB connectivity)        │
-│  /api/cleanup ────── Database cleanup (admin, configurable)      │
 └────────────────────────────────┬─────────────────────────────────┘
                                  │
           ┌──────────────────────┴──────────────────────┐
@@ -520,7 +507,6 @@ User Query
 | `POST` | `/api/ingest` | Admin | PDF ingestion with SSE progress streaming |
 | `GET` | `/api/permits/[id]/certificate` | User | Download approved permit PDF certificate |
 | `GET` | `/api/health` | Public | Health check — env vars + DB connectivity |
-| `POST` | `/api/cleanup` | Admin | Database cleanup (90d sessions, 365d audit logs) |
 
 ### Streaming Chat — `POST /api/chat/stream`
 
@@ -726,8 +712,7 @@ Emirate-Forge/
 │       ├── chat/export/route.ts       #   Chat export to Markdown
 │       ├── ingest/route.ts            #   SSE PDF ingestion
 │       ├── permits/[id]/certificate/  #   PDF certificate generation
-│       ├── health/route.ts            #   Health check endpoint
-│       └── cleanup/route.ts           #   Database cleanup (admin)
+│       └── health/route.ts            #   Health check endpoint
 │
 ├── components/
 │   ├── theme-provider.tsx             #   Dark/light theme context
@@ -766,7 +751,7 @@ Emirate-Forge/
 │
 ├── types/index.ts                     # Shared TypeScript definitions
 ├── test/                              # Vitest test suites (11 files, 158 tests)
-├── supabase/migrations/               # Database schema (7 migration files, 000 = merged all)
+├── supabase/migrations/               # Database schema (single 000_full_setup.sql)
 ├── middleware.ts                       # Edge auth + block check + security headers
 └── public/                            # Static assets
 ```
