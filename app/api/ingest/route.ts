@@ -6,7 +6,8 @@ import { NextRequest } from 'next/server';
 import { getQuickSession } from '@/lib/auth';
 import { checkRateLimit } from '@/lib/supabase-server';
 import { runIngestionPipeline, type IngestionProgress } from '@/lib/pdf-ingestion';
-import { getDocumentById, getDocumentPdfPath } from '@/lib/document-registry';
+import { getDocumentById } from '@/lib/document-registry';
+import { createAdminClient } from '@/lib/supabase-server';
 
 // -----------------------------------------------------------------------------
 // Streaming API Route
@@ -49,17 +50,30 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // SECURITY: Validate documentId against registry — prevents path traversal
+    // SECURITY: Validate documentId — check hardcoded registry first, then DB
     const docInfo = getDocumentById(documentId);
-    if (!docInfo) {
-      return new Response(JSON.stringify({ error: 'Unknown document ID' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    if (docInfo) {
+      pdfPath = `public/${docInfo.fileName}`;
+    } else {
+      // Check DB registry for dynamically-added documents
+      const supabase = createAdminClient();
+      const { data: dbDoc } = await supabase
+        .from('document_registry')
+        .select('file_name, is_active')
+        .eq('id', documentId)
+        .single();
 
-    // Derive pdfPath from the trusted registry instead of user input
-    pdfPath = getDocumentPdfPath(documentId);
+      if (!dbDoc || !dbDoc.is_active) {
+        return new Response(JSON.stringify({ error: 'Unknown document ID' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      // SECURITY: file_name from DB — validate no path traversal
+      const fileName = (dbDoc.file_name as string).replace(/[\/\\]/g, '');
+      pdfPath = `public/${fileName}`;
+    }
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid request body' }), {
       status: 400,

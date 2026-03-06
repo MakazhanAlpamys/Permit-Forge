@@ -32,7 +32,7 @@ import {
   UserManagement,
   AuditLogs,
   CreateUserDialog,
-  PdfIngestionTab,
+  DocumentManagement,
   PermitManagement,
   EnhancedStatsCards,
   MessageActivityChart,
@@ -41,17 +41,17 @@ import {
   TopUsersTable,
 } from '@/components/admin';
 import {
-  FileText,
   RefreshCw,
   LogOut,
   LayoutDashboard,
   Users,
   History,
   ClipboardCheck,
+  BookOpen,
 } from 'lucide-react';
 import type { PermitApplication, PermitStats } from '@/types';
 
-type Tab = 'overview' | 'users' | 'permits' | 'pdf' | 'logs';
+type Tab = 'overview' | 'users' | 'permits' | 'documents' | 'logs';
 
 export default function AdminPage() {
   // Tab state
@@ -142,7 +142,7 @@ export default function AdminPage() {
     { id: 'overview' as Tab, label: 'Overview', icon: LayoutDashboard },
     { id: 'users' as Tab, label: 'Users', icon: Users },
     { id: 'permits' as Tab, label: 'Permits', icon: ClipboardCheck },
-    { id: 'pdf' as Tab, label: 'PDF Ingestion', icon: FileText },
+    { id: 'documents' as Tab, label: 'Documents', icon: BookOpen },
     { id: 'logs' as Tab, label: 'Audit Logs', icon: History },
   ];
 
@@ -296,8 +296,8 @@ export default function AdminPage() {
               </>
             )}
 
-            {/* PDF Ingestion Tab */}
-            {activeTab === 'pdf' && <PdfIngestionTab />}
+            {/* Documents Tab */}
+            {activeTab === 'documents' && <DocumentManagement />}
 
             {/* Audit Logs Tab */}
             {activeTab === 'logs' && (

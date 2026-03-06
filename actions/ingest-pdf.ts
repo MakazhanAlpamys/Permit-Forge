@@ -9,7 +9,7 @@ import { requireAdmin } from '@/lib/security';
 import { runIngestionPipeline } from '@/lib/pdf-ingestion';
 import { clearDocumentTreeCache } from '@/lib/tree-cache';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
-import { getDocumentById, getDocumentPdfPath } from '@/lib/document-registry';
+import { getDocumentById } from '@/lib/document-registry';
 import type { ChunkMetadata, IngestionResult } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -37,17 +37,31 @@ export async function ingestPDF(
     };
   }
 
-  // SECURITY: Validate documentId against registry — prevents path traversal
+  // SECURITY: Validate documentId — check hardcoded registry, then DB
+  let pdfPath: string;
   const docInfo = getDocumentById(documentId);
-  if (!docInfo) {
-    return {
-      success: false,
-      chunksProcessed: 0,
-      error: 'Unknown document ID',
-    };
-  }
+  if (docInfo) {
+    pdfPath = `public/${docInfo.fileName}`;
+  } else {
+    // Check DB registry for dynamically-added documents
+    const supabase = createAdminClient();
+    const { data: dbDoc } = await supabase
+      .from('document_registry')
+      .select('file_name, is_active')
+      .eq('id', documentId)
+      .single();
 
-  const pdfPath = getDocumentPdfPath(documentId);
+    if (!dbDoc || !dbDoc.is_active) {
+      return {
+        success: false,
+        chunksProcessed: 0,
+        error: 'Unknown document ID',
+      };
+    }
+
+    const fileName = (dbDoc.file_name as string).replace(/[\/\\]/g, '');
+    pdfPath = `public/${fileName}`;
+  }
 
   console.log(`📄 Starting PDF ingestion for document: ${documentId}...`);
 

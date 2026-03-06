@@ -12,6 +12,7 @@
 
 DROP TABLE IF EXISTS semantic_cache CASCADE;
 DROP TABLE IF EXISTS parent_chunks CASCADE;
+DROP TABLE IF EXISTS document_registry CASCADE;
 DROP TABLE IF EXISTS permit_certificates CASCADE;
 DROP TABLE IF EXISTS permit_attachments CASCADE;
 DROP TABLE IF EXISTS notifications CASCADE;
@@ -46,7 +47,8 @@ BEGIN
       'get_top_active_users', 'cleanup_old_sessions', 'cleanup_old_audit_logs',
       'cleanup_expired_rate_limits', 'run_all_cleanup',
       'search_semantic_cache', 'insert_semantic_cache', 'cleanup_semantic_cache',
-      'get_parent_chunks'
+      'get_parent_chunks',
+      'get_all_documents', 'upsert_document', 'delete_document'
     )
     AND pg_function_is_visible(oid)
   LOOP
@@ -339,6 +341,63 @@ CREATE TABLE semantic_cache (
 CREATE INDEX semantic_cache_embedding_idx
   ON semantic_cache USING hnsw (query_embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 CREATE INDEX semantic_cache_created_at_idx ON semantic_cache(created_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- 2.14 DOCUMENT REGISTRY (Dynamic document management)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE document_registry (
+  id TEXT PRIMARY KEY,                          -- e.g. 'dubai-building-code-2021'
+  display_name TEXT NOT NULL,
+  short_name TEXT NOT NULL,
+  file_name TEXT NOT NULL,                      -- PDF filename (stored in public/ or uploads/)
+  source_url TEXT DEFAULT '',
+  authority TEXT DEFAULT 'Dubai Municipality',
+  description TEXT DEFAULT '',
+  badge_color TEXT DEFAULT 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  keywords TEXT[] DEFAULT '{}',                 -- For document selector scoring
+  categories TEXT[] DEFAULT '{}',               -- Category tags
+  is_active BOOLEAN DEFAULT TRUE,               -- Soft delete / disable
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_document_registry_active ON document_registry(is_active) WHERE is_active = TRUE;
+
+-- Seed with the 5 default documents
+INSERT INTO document_registry (id, display_name, short_name, file_name, source_url, authority, description, badge_color, keywords, categories)
+VALUES
+  ('dubai-building-code-2021', 'Dubai Building Code 2021', 'DBC', 'dubai-code.pdf',
+   'https://dm.gov.ae/wp-content/uploads/2021/12/Dubai%20Building%20Code_English_2021%20Edition_compressed.pdf',
+   'Dubai Municipality', 'Comprehensive building regulations for construction in Dubai',
+   'bg-blue-500/20 text-blue-400 border-blue-500/30',
+   ARRAY['building','code','construction','parking','height','setback','floor','area','ratio','plot','structural','foundation','concrete','steel','load','seismic','occupancy','classification','permit','inspection','glazing','facade','cladding','roofing','insulation','waterproofing','balcony','basement','podium','tower','corridor','stairway','ramp','high-rise','low-rise','residential','commercial','industrial','mixed-use','villa','apartment','office','retail','hotel','warehouse'],
+   ARRAY['structural','general','parking','construction']),
+  ('code-of-safety', 'Dubai Code of Safety', 'Safety', 'code_of_safety_EN.pdf',
+   'https://www.dm.gov.ae/wp-content/uploads/2022/04/code_of_safety_EN.pdf',
+   'Dubai Municipality', 'Safety regulations and requirements for buildings in Dubai',
+   'bg-red-500/20 text-red-400 border-red-500/30',
+   ARRAY['safety','fire','egress','exit','stair','alarm','smoke','sprinkler','detector','extinguisher','evacuation','emergency','firewall','fire-resistance','fire-rated','fire-separation','escape','refuge','hazard','flammable','combustible','fire-fighting','hydrant','hose','suppression','compartment'],
+   ARRAY['safety','fire','emergency']),
+  ('al-safat-green-building', 'Al Sa''fat Green Building System (2nd Ed, 2023)', 'Al Sa''fat', 'Al-Safat-–-Dubai-Green-Building-System-2nd-editionJan2023.pdf',
+   'https://www.dm.gov.ae/wp-content/uploads/2023/01/Al-Safat-%E2%80%93-Dubai-Green-Building-System-2nd-editionJan2023.pdf',
+   'Dubai Municipality', 'Mandatory green building rating system with Silver, Gold, and Platinum tiers',
+   'bg-violet-500/20 text-violet-400 border-violet-500/30',
+   ARRAY['green','safat','energy','efficiency','solar','renewable','sustainability','environment','carbon','emission','water','conservation','recycling','waste','landscape','vegetation','thermal','insulation','hvac','cooling','lighting','daylight','silver','gold','platinum','rating','tier','indoor','air quality','material','leed'],
+   ARRAY['environmental','energy','green']),
+  ('universal-design-code', 'Dubai Universal Design Code', 'UDC', 'Dubai-Guide-for-Built-Environment-Universal-Design-1_compressed.pdf',
+   'https://www.dm.gov.ae/wp-content/uploads/2020/11/Dubai-Guide-for-Built-Environment-Universal-Design-1_compressed.pdf',
+   'Dubai Municipality', 'Accessibility and universal design requirements for the built environment',
+   'bg-purple-500/20 text-purple-400 border-purple-500/30',
+   ARRAY['accessibility','universal','design','disability','wheelchair','ramp','handrail','tactile','braille','signage','elevator','lift','restroom','toilet','washroom','door','width','clearance','reach','grab bar','accessible','determination','inclusive','mobility','visual','hearing','impairment'],
+   ARRAY['accessibility','universal-design']),
+  ('sewerage-stormwater-guidelines', 'Sewerage & Stormwater Design Guidelines (2025)', 'Sewerage', 'comp-DM_Sewerage-Guidelines-F.24.01.25.pdf',
+   'https://www.dm.gov.ae/wp-content/uploads/2025/01/comp-DM_Sewerage-Guidelines-F.24.01.25.pdf',
+   'Dubai Municipality', 'Technical guidelines for sewerage and stormwater drainage design',
+   'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+   ARRAY['sewerage','sewer','stormwater','drainage','plumbing','pipe','manhole','pumping','station','wastewater','effluent','grease','trap','interceptor','backflow','valve','vent','fixture','sanitary','rainwater','runoff','catchment','flood','retention','infiltration','outfall','tss'],
+   ARRAY['mep','plumbing','drainage'])
+ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
 -- 3. TRIGGERS
@@ -1372,6 +1431,10 @@ GRANT ALL ON permit_certificates TO authenticated, service_role;
 -- Notifications
 GRANT ALL ON notifications TO authenticated, service_role;
 
+-- Document Registry
+GRANT SELECT ON document_registry TO anon, authenticated;
+GRANT ALL ON document_registry TO service_role;
+
 -- Trigger function
 GRANT EXECUTE ON FUNCTION update_session_timestamp TO authenticated, service_role;
 
@@ -1408,6 +1471,7 @@ ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE permit_certificates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE parent_chunks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE semantic_cache ENABLE ROW LEVEL SECURITY;
+ALTER TABLE document_registry ENABLE ROW LEVEL SECURITY;
 
 -- Users: authenticated can read/update only own profile
 CREATE POLICY "Authenticated users can view own profile" ON users
@@ -1460,6 +1524,12 @@ CREATE POLICY "Allow all notifications operations" ON notifications
 -- permit_certificates: full access
 CREATE POLICY "Allow all permit_certificates operations" ON permit_certificates
   FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+
+-- document_registry: read for all, write via service_role only
+CREATE POLICY "Allow read document registry" ON document_registry
+  FOR SELECT TO anon, authenticated, service_role USING (true);
+CREATE POLICY "Service role full access to document registry" ON document_registry
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- ============================================================================
 -- 11. REVOKE — Harden sensitive tables & admin functions
@@ -1582,6 +1652,97 @@ BEGIN
     AND c.parent_id IS NOT NULL;
 END;
 $$;
+
+-- ============================================================================
+-- 11.6 DOCUMENT REGISTRY FUNCTIONS
+-- ============================================================================
+
+-- Get all active documents
+CREATE OR REPLACE FUNCTION get_all_documents()
+RETURNS TABLE (
+  id TEXT,
+  display_name TEXT,
+  short_name TEXT,
+  file_name TEXT,
+  source_url TEXT,
+  authority TEXT,
+  description TEXT,
+  badge_color TEXT,
+  keywords TEXT[],
+  categories TEXT[],
+  is_active BOOLEAN,
+  created_at TIMESTAMP WITH TIME ZONE,
+  updated_at TIMESTAMP WITH TIME ZONE
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT dr.id, dr.display_name, dr.short_name, dr.file_name,
+         dr.source_url, dr.authority, dr.description, dr.badge_color,
+         dr.keywords, dr.categories, dr.is_active, dr.created_at, dr.updated_at
+  FROM document_registry dr
+  ORDER BY dr.created_at;
+END;
+$$;
+
+-- Upsert document (insert or update)
+CREATE OR REPLACE FUNCTION upsert_document(
+  p_id TEXT,
+  p_display_name TEXT,
+  p_short_name TEXT,
+  p_file_name TEXT,
+  p_source_url TEXT DEFAULT '',
+  p_authority TEXT DEFAULT 'Dubai Municipality',
+  p_description TEXT DEFAULT '',
+  p_badge_color TEXT DEFAULT 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  p_keywords TEXT[] DEFAULT '{}',
+  p_categories TEXT[] DEFAULT '{}'
+)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO document_registry (id, display_name, short_name, file_name, source_url, authority, description, badge_color, keywords, categories)
+  VALUES (p_id, p_display_name, p_short_name, p_file_name, p_source_url, p_authority, p_description, p_badge_color, p_keywords, p_categories)
+  ON CONFLICT (id) DO UPDATE SET
+    display_name = EXCLUDED.display_name,
+    short_name = EXCLUDED.short_name,
+    file_name = EXCLUDED.file_name,
+    source_url = EXCLUDED.source_url,
+    authority = EXCLUDED.authority,
+    description = EXCLUDED.description,
+    badge_color = EXCLUDED.badge_color,
+    keywords = EXCLUDED.keywords,
+    categories = EXCLUDED.categories,
+    updated_at = NOW();
+  RETURN p_id;
+END;
+$$;
+
+-- Delete (soft) a document — sets is_active = false
+CREATE OR REPLACE FUNCTION delete_document(p_id TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  UPDATE document_registry SET is_active = FALSE, updated_at = NOW()
+  WHERE document_registry.id = p_id;
+  RETURN FOUND;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_all_documents TO service_role;
+GRANT EXECUTE ON FUNCTION upsert_document TO service_role;
+GRANT EXECUTE ON FUNCTION delete_document TO service_role;
+REVOKE EXECUTE ON FUNCTION upsert_document FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION delete_document FROM anon, authenticated;
 
 REVOKE ALL ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) FROM public, anon;
 GRANT EXECUTE ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) TO authenticated;
@@ -1708,4 +1869,5 @@ SELECT
   (SELECT COUNT(*) FROM permit_applications) AS permits_count,
   (SELECT COUNT(*) FROM notifications) AS notifications_count,
   EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'document_trees') AS tree_reasoning_enabled,
-  EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'permit_certificates') AS certificates_enabled;
+  EXISTS(SELECT 1 FROM information_schema.tables WHERE table_name = 'permit_certificates') AS certificates_enabled,
+  (SELECT COUNT(*) FROM document_registry) AS registered_documents;

@@ -14,6 +14,24 @@ interface DocumentSearchProfile {
   categories: string[];
 }
 
+// Runtime-injected profiles from DB (loaded on first use via loadDynamicProfiles)
+let dynamicProfiles: Record<string, DocumentSearchProfile> = {};
+let dynamicProfilesLoaded = false;
+
+/**
+ * Inject additional document profiles from DB at runtime.
+ * Called by chat-pipeline on startup or when documents change.
+ */
+export function injectDocumentProfiles(profiles: Record<string, DocumentSearchProfile>) {
+  dynamicProfiles = profiles;
+  dynamicProfilesLoaded = true;
+}
+
+/** Check if dynamic profiles have been loaded */
+export function hasDynamicProfiles(): boolean {
+  return dynamicProfilesLoaded;
+}
+
 const DOCUMENT_PROFILES: Record<string, DocumentSearchProfile> = {
   'dubai-building-code-2021': {
     keywords: [
@@ -95,7 +113,10 @@ export function selectDocuments(query: string): string[] {
 
   const scores: DocumentScore[] = [];
 
-  for (const [docId, profile] of Object.entries(DOCUMENT_PROFILES)) {
+  // Merge hardcoded + dynamic profiles (dynamic overrides hardcoded)
+  const allProfiles = { ...DOCUMENT_PROFILES, ...dynamicProfiles };
+
+  for (const [docId, profile] of Object.entries(allProfiles)) {
     let score = 0;
     const matched: string[] = [];
 
@@ -144,7 +165,8 @@ export function selectDocuments(query: string): string[] {
  * Get all document IDs from registry
  */
 function getAllDocumentIds(): string[] {
-  return Object.keys(DOCUMENT_REGISTRY);
+  const ids = new Set([...Object.keys(DOCUMENT_REGISTRY), ...Object.keys(dynamicProfiles)]);
+  return Array.from(ids);
 }
 
 /**

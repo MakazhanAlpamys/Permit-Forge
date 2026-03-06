@@ -1,5 +1,6 @@
 // ============================================================================
 // Document Registry - Central registry of all ingested documents
+// Supports both hardcoded defaults and DB-backed dynamic documents
 // ============================================================================
 
 export interface DocumentInfo {
@@ -22,10 +23,11 @@ export interface DocumentInfo {
 }
 
 // -----------------------------------------------------------------------------
-// Document Registry
+// Default Document Registry (hardcoded fallback)
+// Used when DB is unavailable or for initial seeding
 // -----------------------------------------------------------------------------
 
-export const DOCUMENT_REGISTRY: Record<string, DocumentInfo> = {
+const DEFAULT_REGISTRY: Record<string, DocumentInfo> = {
   'dubai-building-code-2021': {
     id: 'dubai-building-code-2021',
     displayName: 'Dubai Building Code 2021',
@@ -78,40 +80,81 @@ export const DOCUMENT_REGISTRY: Record<string, DocumentInfo> = {
   },
 };
 
+// Re-export as DOCUMENT_REGISTRY for backward compatibility
+export const DOCUMENT_REGISTRY: Record<string, DocumentInfo> = DEFAULT_REGISTRY;
+
 // -----------------------------------------------------------------------------
-// Helper Functions
+// Helper Functions (synchronous — use hardcoded registry)
+// These are used in hot paths (RAG pipeline, chat, client components)
 // -----------------------------------------------------------------------------
 
 /** Get all registered documents as array */
 export function getAllDocuments(): DocumentInfo[] {
-  return Object.values(DOCUMENT_REGISTRY);
+  return Object.values(DEFAULT_REGISTRY);
 }
 
 /** Get document info by ID */
 export function getDocumentById(id: string): DocumentInfo | undefined {
-  return DOCUMENT_REGISTRY[id];
+  return DEFAULT_REGISTRY[id];
 }
 
 /** Get document info by filename */
 export function getDocumentByFileName(fileName: string): DocumentInfo | undefined {
-  return Object.values(DOCUMENT_REGISTRY).find(doc => doc.fileName === fileName);
+  return Object.values(DEFAULT_REGISTRY).find(doc => doc.fileName === fileName);
 }
 
 /** Get PDF path for a document */
 export function getDocumentPdfPath(docId: string): string {
-  const doc = DOCUMENT_REGISTRY[docId];
+  const doc = DEFAULT_REGISTRY[docId];
   if (!doc) throw new Error(`Unknown document: ${docId}`);
   return `public/${doc.fileName}`;
 }
 
 /** Get all document IDs */
 export function getAllDocumentIds(): string[] {
-  return Object.keys(DOCUMENT_REGISTRY);
+  return Object.keys(DEFAULT_REGISTRY);
 }
 
 /** Build a display string listing all available documents */
 export function getDocumentListForPrompt(): string {
-  return Object.values(DOCUMENT_REGISTRY)
+  return Object.values(DEFAULT_REGISTRY)
     .map(doc => `- ${doc.displayName} (${doc.authority})`)
     .join('\n');
+}
+
+// -----------------------------------------------------------------------------
+// Dynamic Registry — Fetches from DB (async, for admin UI)
+// Falls back to hardcoded defaults if DB is unavailable
+// -----------------------------------------------------------------------------
+
+/** Dynamically load registry from DB and merge with defaults */
+export async function loadDocumentRegistryFromDB(): Promise<DocumentInfo[]> {
+  try {
+    // Dynamic import to avoid circular deps and keep client-safe
+    const { createAdminClient } = await import('@/lib/supabase-server');
+    const supabase = createAdminClient();
+
+    const { data, error } = await supabase
+      .from('document_registry')
+      .select('*')
+      .eq('is_active', true)
+      .order('created_at');
+
+    if (error || !data || data.length === 0) {
+      return getAllDocuments(); // Fallback
+    }
+
+    return data.map((row: Record<string, unknown>) => ({
+      id: row.id as string,
+      displayName: (row.display_name as string) || '',
+      shortName: (row.short_name as string) || '',
+      fileName: (row.file_name as string) || '',
+      sourceUrl: (row.source_url as string) || '',
+      authority: (row.authority as string) || '',
+      description: (row.description as string) || '',
+      badgeColor: (row.badge_color as string) || '',
+    }));
+  } catch {
+    return getAllDocuments(); // Fallback
+  }
 }

@@ -3,6 +3,7 @@ export { UserManagement } from './user-management';
 export { AuditLogs } from './audit-logs';
 export { CreateUserDialog } from './create-user-dialog';
 export { PdfIngestionTab } from './pdf-ingestion-tab';
+export { DocumentManagement } from './document-management';
 export { PermitManagement } from './permit-management';
 
 // Analytics Dashboard Components

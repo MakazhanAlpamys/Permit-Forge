@@ -62,6 +62,7 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 | `permit-attachments.ts` | File upload/download for permit documents |
 | `chat-history.ts` | Session CRUD, message loading |
 | `ingest-pdf.ts` | PDF ingestion trigger with cache invalidation |
+| `documents.ts` | Document registry CRUD: add, update, delete, restore |
 | `analytics.ts` | Admin stats and analytics queries |
 | `notifications.ts` | In-app + email notifications (Resend) |
 
@@ -121,14 +122,11 @@ The **only AI call** during ingestion is embedding generation on child chunks (g
 
 ### Multi-Document Support
 
-The system supports 5 documents registered in `lib/document-registry.ts`:
-- Dubai Building Code 2021 (DBC)
-- Code of Safety
-- Al Sa'fat Green Building System (2023)
-- Universal Design Code (UDC)
-- Sewerage & Stormwater Design Guidelines (2025)
+The system supports dynamic documents via the `document_registry` DB table (seeded with 5 defaults). Hardcoded fallback in `lib/document-registry.ts` ensures the system works even without the DB table.
 
-Each document is identified by `document_name` in the database. RAG search operates across all documents; citations include document attribution.
+**Default documents:** DBC 2021, Code of Safety, Al Sa'fat Green Building (2023), Universal Design Code, Sewerage & Stormwater (2025).
+
+Admin panel "Documents" tab allows: register new documents, edit metadata/keywords, ingest/re-ingest PDFs, clear chunks, deactivate/restore documents. Each document is identified by `document_name` in the database. RAG search operates across all active documents; citations include document attribution.
 
 ### Permit System
 
@@ -156,7 +154,7 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/pdf-ingestion.ts` | PDF chunking, embedding generation, batch DB insert with resume support |
 | `lib/pdf-parser.ts` | PDF.js-based text extraction with TOC/outline parsing |
 | `lib/tree-cache.ts` | Two-tier cache: L1 in-memory (5-min TTL) + L2 Supabase |
-| `lib/document-registry.ts` | Registry of 5 documents with metadata, path resolution, prompt helpers |
+| `lib/document-registry.ts` | Document registry with hardcoded defaults + async DB loader for dynamic docs |
 | `lib/permit-compliance.ts` | RAG-powered compliance checking → structured JSON from Gemini |
 | `lib/permit-certificate.ts` | PDF certificate generation via PDFKit |
 | `lib/constants.ts` | All app constants: cookie names, rate limits, file upload limits, status configs |
@@ -187,6 +185,7 @@ Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — 
 - `dubai_code_chunks` — child chunks with VECTOR(768) embeddings + TSVECTOR (GIN index) for FTS, `parent_id` FK
 - `parent_chunks` — larger chunks (2000 chars) for LLM context (no embeddings)
 - `semantic_cache` — cached query embeddings + responses (HNSW index, TTL-based)
+- `document_registry` — dynamic document metadata, keywords, categories, soft-delete (seeded with 5 defaults)
 - `document_trees` — hierarchical document structure (JSONB tree_data)
 - `chat_sessions` / `chat_messages` — conversation history with citations (JSONB)
 - `users` — accounts with role (admin/user), block status, blocked_reason
@@ -194,7 +193,7 @@ Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — 
 - `rate_limits` — per-user per-endpoint request throttling
 - `notifications` — in-app notification storage
 
-**Key RPC functions:** `match_dubai_code` (vector search), `match_dubai_code_hybrid` (hybrid search with RRF), `match_dubai_code_hybrid_filtered` (filtered by page range), `search_dubai_code_keywords` (FTS), `search_semantic_cache`/`insert_semantic_cache` (cache operations), `get_parent_chunks` (parent expansion), `check_rate_limit`, `get_document_tree`/`save_document_tree`, `get_admin_stats`, `get_weekly_activity`.
+**Key RPC functions:** `match_dubai_code` (vector search), `match_dubai_code_hybrid` (hybrid search with RRF), `match_dubai_code_hybrid_filtered` (filtered by page range), `search_dubai_code_keywords` (FTS), `search_semantic_cache`/`insert_semantic_cache` (cache operations), `get_parent_chunks` (parent expansion), `get_all_documents`/`upsert_document`/`delete_document` (document registry CRUD), `check_rate_limit`, `get_document_tree`/`save_document_tree`, `get_admin_stats`, `get_weekly_activity`.
 
 **Indexes:** HNSW on embeddings (m=16, ef_construction=64), HNSW on cache embeddings, GIN on tsvector, B-tree on metadata fields. Materialized view `analytics_daily` for dashboard stats.
 
@@ -204,7 +203,7 @@ Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — 
 - `components/chat/` — ChatInterface, MessageBubble, SourceCitation
 - `components/dashboard/` — Header, Sidebar
 - `components/permits/` — Multi-step form (3 steps), permit list/card/detail, compliance panel, file upload, status timeline
-- `components/admin/` — User management, audit logs, PDF ingestion, permit management, analytics charts (recharts)
+- `components/admin/` — User management, audit logs, document management (CRUD + ingestion), permit management, analytics charts (recharts)
 - `components/notifications/` — NotificationBell
 
 ### Types
