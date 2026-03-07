@@ -1832,6 +1832,26 @@ VALUES (
 ) ON CONFLICT (username) DO NOTHING;
 
 -- ============================================================================
+-- 14. STORAGE BUCKET FOR DOCUMENT PDFs
+-- ============================================================================
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'document-pdfs',
+  'document-pdfs',
+  FALSE,
+  104857600,  -- 100MB
+  ARRAY['application/pdf']
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- Policy: only service_role can manage files (our server actions use adminClient)
+CREATE POLICY "Service role full access to document-pdfs"
+  ON storage.objects FOR ALL TO service_role
+  USING (bucket_id = 'document-pdfs')
+  WITH CHECK (bucket_id = 'document-pdfs');
+
+-- ============================================================================
 -- VERIFICATION
 -- ============================================================================
 
