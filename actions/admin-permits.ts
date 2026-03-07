@@ -8,7 +8,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { requireAdmin, requireCSRF } from '@/lib/security';
 import { uuidSchema, reviewPermitSchema, type ReviewPermitInput } from '@/lib/validations';
-import type { PermitStats } from '@/types';
+import type { PermitApplication, PermitStats } from '@/types';
 import { transformPermit } from '@/lib/transforms';
 
 export type { ReviewPermitInput };

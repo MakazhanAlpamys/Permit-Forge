@@ -17,6 +17,7 @@ import {
   type UpdateComplianceRequirementsInput,
 } from '@/lib/validations';
 import type {
+  PermitApplication,
   PermitStatusHistoryEntry,
 } from '@/types';
 import { transformPermit } from '@/lib/transforms';
