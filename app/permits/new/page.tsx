@@ -171,7 +171,7 @@ export default function NewPermitPage() {
       complianceRequirements: step3Data,
     }, csrfToken || '');
 
-    const result = await runComplianceCheck(permitId);
+    const result = await runComplianceCheck(permitId, csrfToken || '');
     setCheckLoading(false);
 
     if (result.success && result.data) {

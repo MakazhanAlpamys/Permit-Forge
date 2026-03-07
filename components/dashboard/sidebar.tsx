@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { getChatSessions, deleteChatSession, searchChatHistory } from '@/actions/chat-history';
+import { getCSRFTokenAction } from '@/actions/auth';
 import { Input } from '@/components/ui/input';
 import type { ChatSession } from '@/types';
 import {
@@ -78,12 +79,14 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
   const [searchResults, setSearchResults] = useState<Array<{ sessionId: string; sessionTitle: string; snippet: string }>>([]);
   const [isSearching, setIsSearching] = useState(false);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const csrfTokenRef = useRef<string | null>(null);
   const pathname = usePathname();
 
   // Load chat sessions on mount and whenever active session changes
   // (including when it becomes null after "New Chat" click)
   useEffect(() => {
     loadSessions();
+    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
   }, [currentSessionId]);
 
   const loadSessions = async () => {
@@ -102,7 +105,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
   const confirmDelete = async () => {
     if (!sessionToDelete) return;
     
-    const result = await deleteChatSession(sessionToDelete);
+    const result = await deleteChatSession(sessionToDelete, csrfTokenRef.current || '');
     if (result.success) {
       setSessions(prev => prev.filter(s => s.id !== sessionToDelete));
       if (currentSessionId === sessionToDelete && onNewChat) {

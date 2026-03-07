@@ -6,6 +6,7 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent } from '@/lib/auth';
+import { requireAuth, requireCSRF } from '@/lib/security';
 import { uuidSchema, paginationSchema, citationsArraySchema } from '@/lib/validations';
 import type { ChatSession, ChatMessage, Citation } from '@/types';
 
@@ -294,19 +295,24 @@ export async function getSessionMessages(
 // Delete Chat Session (with Ownership Check)
 // -----------------------------------------------------------------------------
 
-export async function deleteChatSession(sessionId: string): Promise<{ success: boolean; error?: string }> {
+export async function deleteChatSession(sessionId: string, csrfToken: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const user = await getQuickSession();
-    if (!user) {
-      return { success: false, error: 'Not authenticated' };
+    const authCheck = await requireAuth();
+    if (!authCheck.success || !authCheck.user) {
+      return { success: false, error: authCheck.error };
     }
-    
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
+
+    const user = authCheck.user;
+
     // Validate sessionId
     const validation = uuidSchema.safeParse(sessionId);
     if (!validation.success) {
       return { success: false, error: 'Invalid session ID' };
     }
-    
+
     // Verify ownership
     const isOwner = await verifySessionOwnership(sessionId, user.id);
     if (!isOwner) {
@@ -344,19 +350,24 @@ export async function deleteChatSession(sessionId: string): Promise<{ success: b
 // Update Session Title (with Ownership Check)
 // -----------------------------------------------------------------------------
 
-export async function updateSessionTitle(sessionId: string, title: string): Promise<{ success: boolean; error?: string }> {
+export async function updateSessionTitle(sessionId: string, title: string, csrfToken: string): Promise<{ success: boolean; error?: string }> {
   try {
-    const user = await getQuickSession();
-    if (!user) {
-      return { success: false, error: 'Not authenticated' };
+    const authCheck = await requireAuth();
+    if (!authCheck.success || !authCheck.user) {
+      return { success: false, error: authCheck.error };
     }
-    
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
+
+    const user = authCheck.user;
+
     // Validate sessionId
     const validation = uuidSchema.safeParse(sessionId);
     if (!validation.success) {
       return { success: false, error: 'Invalid session ID' };
     }
-    
+
     // Verify ownership
     const isOwner = await verifySessionOwnership(sessionId, user.id);
     if (!isOwner) {

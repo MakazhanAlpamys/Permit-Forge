@@ -66,7 +66,7 @@ export async function getAuditLogs(
     
     const supabase = createAdminClient();
     const { data, error } = await supabase.rpc('get_recent_audit_logs', {
-      p_limit: Math.min(limit, 500),
+      p_limit: Math.max(1, Math.min(limit, 500)),
       p_action_filter: actionFilter || null,
     });
     
@@ -128,8 +128,8 @@ export async function getAllUsers(
     const supabase = createAdminClient();
     const { data, error } = await supabase.rpc('get_all_users_admin', {
       p_admin_id: authCheck.user.id,
-      p_limit: Math.min(limit, 100),
-      p_offset: offset,
+      p_limit: Math.max(1, Math.min(limit, 100)),
+      p_offset: Math.max(0, offset),
       p_search: search || null,
     });
     

@@ -4,8 +4,9 @@
 // PDF Ingestion Tab Component — Multi-Document Support
 // ============================================================================
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { clearDocumentChunks, getIngestionStatus, testRAGQuery } from '@/actions/ingest-pdf';
+import { getCSRFTokenAction } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -56,6 +57,7 @@ export function PdfIngestionTab() {
   const [ingestionStatus, setIngestionStatus] = useState<Record<string, IngestionStatus>>({});
   const [ingestionMessages, setIngestionMessages] = useState<Record<string, string>>({});
   const [activeProgress, setActiveProgress] = useState<Record<string, ProgressInfo>>({});
+  const csrfTokenRef = useRef<string | null>(null);
 
   const [diagnostic, setDiagnostic] = useState<DiagnosticInfo>({
     dbConnected: false,
@@ -177,7 +179,7 @@ export function PdfIngestionTab() {
     setIngestionStatus(prev => ({ ...prev, [documentId]: 'loading' }));
 
     try {
-      const result = await clearDocumentChunks(documentId);
+      const result = await clearDocumentChunks(documentId, csrfTokenRef.current || '');
       if (result.success) {
         setIngestionStatus(prev => ({ ...prev, [documentId]: 'idle' }));
         setIngestionMessages(prev => ({ ...prev, [documentId]: `Cleared ${result.deletedCount || 0} chunks` }));
@@ -195,6 +197,7 @@ export function PdfIngestionTab() {
   useEffect(() => {
     getAllRegisteredDocuments().then(r => setDocuments(r.data.filter(d => d.isActive)));
     runDiagnostics();
+    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
   }, []);
 
   const getDocChunkCount = (docId: string) => {

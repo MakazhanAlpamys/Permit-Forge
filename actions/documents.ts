@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase-server';
-import { requireAdmin } from '@/lib/security';
+import { requireAdmin, requireCSRF } from '@/lib/security';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { clearDocumentTreeCache } from '@/lib/tree-cache';
 import { invalidateRegistryCache } from '@/lib/document-registry';
@@ -95,12 +95,16 @@ export async function getAllRegisteredDocuments(): Promise<{
 // -----------------------------------------------------------------------------
 
 export async function upsertDocument(
-  input: DocumentInput
+  input: DocumentInput,
+  csrfToken: string
 ): Promise<{ success: boolean; error?: string }> {
   const authCheck = await requireAdmin();
   if (!authCheck.success || !authCheck.user) {
     return { success: false, error: authCheck.error || 'Unauthorized' };
   }
+
+  const csrf = await requireCSRF(csrfToken);
+  if (!csrf.valid) return { success: false, error: csrf.error };
 
   if (!input.id || !input.displayName || !input.shortName || !input.fileName) {
     return { success: false, error: 'Missing required fields: id, displayName, shortName, fileName' };
@@ -176,12 +180,16 @@ export async function upsertDocument(
 
 export async function deleteDocument(
   documentId: string,
-  clearChunks: boolean = false
+  clearChunks: boolean = false,
+  csrfToken: string = ''
 ): Promise<{ success: boolean; error?: string }> {
   const authCheck = await requireAdmin();
   if (!authCheck.success || !authCheck.user) {
     return { success: false, error: authCheck.error || 'Unauthorized' };
   }
+
+  const csrf = await requireCSRF(csrfToken);
+  if (!csrf.valid) return { success: false, error: csrf.error };
 
   if (!documentId) {
     return { success: false, error: 'Missing documentId' };
@@ -253,12 +261,16 @@ export async function deleteDocument(
 // -----------------------------------------------------------------------------
 
 export async function restoreDocument(
-  documentId: string
+  documentId: string,
+  csrfToken: string
 ): Promise<{ success: boolean; error?: string }> {
   const authCheck = await requireAdmin();
   if (!authCheck.success || !authCheck.user) {
     return { success: false, error: authCheck.error || 'Unauthorized' };
   }
+
+  const csrf = await requireCSRF(csrfToken);
+  if (!csrf.valid) return { success: false, error: csrf.error };
 
   try {
     const supabase = createAdminClient();

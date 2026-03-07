@@ -120,9 +120,13 @@ export async function uploadPermitAttachment(
 
     if (insertError) {
       // Clean up uploaded file on DB error
-      await adminClient.storage
-        .from(FILE_UPLOAD_LIMITS.storageBucket)
-        .remove([storagePath]);
+      try {
+        await adminClient.storage
+          .from(FILE_UPLOAD_LIMITS.storageBucket)
+          .remove([storagePath]);
+      } catch (cleanupErr) {
+        console.error('Failed to cleanup orphaned file:', cleanupErr);
+      }
       throw insertError;
     }
 
@@ -267,9 +271,11 @@ export async function getPermitAttachments(
     const attachments: PermitAttachment[] = [];
 
     for (const row of data || []) {
-      const { data: signedData } = await adminClient.storage
+      const { data: signedData, error: signedError } = await adminClient.storage
         .from(FILE_UPLOAD_LIMITS.storageBucket)
         .createSignedUrl(row.storage_path, 3600); // 1 hour
+
+      if (signedError) console.warn('Failed to generate signed URL:', signedError.message);
 
       attachments.push({
         ...transformAttachment(row),

@@ -63,7 +63,7 @@ export default function PermitDetailPage() {
   const handleRunCheck = async () => {
     setActionLoading('check');
     setError('');
-    const result = await runComplianceCheck(permitId);
+    const result = await runComplianceCheck(permitId, csrfToken || '');
     setActionLoading(null);
 
     if (result.success) {

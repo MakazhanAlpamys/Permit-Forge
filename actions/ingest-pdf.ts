@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase-server';
-import { requireAdmin } from '@/lib/security';
+import { requireAdmin, requireCSRF } from '@/lib/security';
 import { runIngestionPipeline } from '@/lib/pdf-ingestion';
 import { clearDocumentTreeCache } from '@/lib/tree-cache';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
@@ -16,7 +16,8 @@ import type { ChunkMetadata, IngestionResult } from '@/types';
 // -----------------------------------------------------------------------------
 
 export async function ingestPDF(
-  documentId: string
+  documentId: string,
+  csrfToken: string
 ): Promise<IngestionResult> {
   // SECURITY: Verify admin role
   const authCheck = await requireAdmin();
@@ -27,6 +28,9 @@ export async function ingestPDF(
       error: authCheck.error || 'Unauthorized',
     };
   }
+
+  const csrf = await requireCSRF(csrfToken);
+  if (!csrf.valid) return { success: false, chunksProcessed: 0, error: csrf.error };
 
   if (!documentId) {
     return {
@@ -106,13 +110,17 @@ export async function ingestPDF(
 // -----------------------------------------------------------------------------
 
 export async function clearDocumentChunks(
-  documentId: string
+  documentId: string,
+  csrfToken: string
 ): Promise<{ success: boolean; deletedCount?: number; error?: string }> {
   // SECURITY: Verify admin role
   const authCheck = await requireAdmin();
   if (!authCheck.success || !authCheck.user) {
     return { success: false, error: authCheck.error || 'Unauthorized' };
   }
+
+  const csrf = await requireCSRF(csrfToken);
+  if (!csrf.valid) return { success: false, error: csrf.error };
 
   if (!documentId) {
     return { success: false, error: 'Missing documentId' };
@@ -192,12 +200,17 @@ export async function clearDocumentChunks(
 // Clear All Chunks (Legacy)
 // -----------------------------------------------------------------------------
 
-export async function clearChunks(): Promise<{ success: boolean; error?: string }> {
+export async function clearChunks(
+  csrfToken: string
+): Promise<{ success: boolean; error?: string }> {
   // SECURITY: Verify admin role
   const authCheck = await requireAdmin();
   if (!authCheck.success || !authCheck.user) {
     return { success: false, error: authCheck.error || 'Unauthorized' };
   }
+
+  const csrf = await requireCSRF(csrfToken);
+  if (!csrf.valid) return { success: false, error: csrf.error };
 
   try {
     const supabase = createAdminClient();

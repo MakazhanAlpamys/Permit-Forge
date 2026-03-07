@@ -6,7 +6,7 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { getQuickSession } from '@/lib/auth';
-import { requireAuth } from '@/lib/security';
+import { requireAuth, requireCSRF } from '@/lib/security';
 import { uuidSchema } from '@/lib/validations';
 import type { Notification } from '@/types';
 
@@ -75,13 +75,17 @@ export async function getNotifications(
 // -----------------------------------------------------------------------------
 
 export async function markNotificationRead(
-  notificationId: string
+  notificationId: string,
+  csrfToken: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAuth();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     const idValidation = uuidSchema.safeParse(notificationId);
     if (!idValidation.success) {
@@ -111,12 +115,17 @@ export async function markNotificationRead(
 // Mark All Notifications as Read
 // -----------------------------------------------------------------------------
 
-export async function markAllNotificationsRead(): Promise<{ success: boolean; error?: string }> {
+export async function markAllNotificationsRead(
+  csrfToken: string
+): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAuth();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     const supabase = createAdminClient();
     const { error } = await supabase

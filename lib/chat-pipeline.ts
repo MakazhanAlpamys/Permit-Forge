@@ -46,12 +46,7 @@ export const CHAT_PIPELINE_CONFIG = {
 // Types
 // -----------------------------------------------------------------------------
 
-export interface TopicClassificationResult {
-  isOnTopic: boolean;
-  shouldUseRAG: boolean;
-}
-
-export interface PipelineResult {
+interface PipelineResult {
   chunks: MatchedChunk[];
   queryEmbedding: number[];
   fromCache: boolean;

@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Bell, Check } from 'lucide-react';
 import { getNotifications, markNotificationRead, markAllNotificationsRead } from '@/actions/notifications';
+import { getCSRFTokenAction } from '@/actions/auth';
 import type { Notification, NotificationType } from '@/types';
 
 const NOTIFICATION_ICONS: Record<NotificationType, string> = {
@@ -39,6 +40,7 @@ export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const csrfTokenRef = useRef<string | null>(null);
   const router = useRouter();
 
   const fetchNotifications = useCallback(async () => {
@@ -55,13 +57,14 @@ export function NotificationBell() {
 
   useEffect(() => {
     fetchNotifications();
+    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
     const interval = setInterval(fetchNotifications, 30000);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
   const handleMarkRead = async (notification: Notification) => {
     if (!notification.read) {
-      await markNotificationRead(notification.id);
+      await markNotificationRead(notification.id, csrfTokenRef.current || '');
       setNotifications(prev =>
         prev.map(n => n.id === notification.id ? { ...n, read: true } : n)
       );
@@ -78,7 +81,7 @@ export function NotificationBell() {
 
   const handleMarkAllRead = async () => {
     setLoading(true);
-    await markAllNotificationsRead();
+    await markAllNotificationsRead(csrfTokenRef.current || '');
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     setUnreadCount(0);
     setLoading(false);

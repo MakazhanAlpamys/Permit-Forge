@@ -6,6 +6,7 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { embeddingsModel } from '@/lib/gemini';
 import { getDocumentByIdSync } from '@/lib/document-registry';
+import { KEYWORD_WEIGHT, VECTOR_WEIGHT } from '@/lib/constants';
 import type { MatchedChunk, RAGQuery, RAGResult, ChunkMetadata, HybridSearchResult } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -52,8 +53,8 @@ export async function hybridSearch(
     query_text: query,
     query_embedding: queryEmbedding,
     match_count: matchCount,
-    keyword_weight: 0.3,
-    vector_weight: 0.7,
+    keyword_weight: KEYWORD_WEIGHT,
+    vector_weight: VECTOR_WEIGHT,
     rrf_k: 60,
     filter_document: filterDocument,
   });
@@ -263,8 +264,8 @@ export async function filteredHybridSearch(
       end_page: r.endPage,
     })),
     match_count: matchCount,
-    keyword_weight: 0.3,
-    vector_weight: 0.7,
+    keyword_weight: KEYWORD_WEIGHT,
+    vector_weight: VECTOR_WEIGHT,
     rrf_k: 60,
     filter_document: null,
   });

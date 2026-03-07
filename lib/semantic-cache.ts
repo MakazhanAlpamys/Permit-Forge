@@ -4,14 +4,8 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase-server';
+import { CACHE_SIMILARITY_THRESHOLD, CACHE_TTL_SECONDS } from '@/lib/constants';
 import type { Citation, SemanticCacheResult } from '@/types';
-
-// -----------------------------------------------------------------------------
-// Configuration
-// -----------------------------------------------------------------------------
-
-const CACHE_SIMILARITY_THRESHOLD = 0.95;  // Very high — only near-identical queries
-const CACHE_TTL_SECONDS = 3600;           // 1 hour default
 
 // -----------------------------------------------------------------------------
 // Cache Lookup

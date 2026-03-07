@@ -5,7 +5,7 @@
 // Combined view: document list + add/edit + ingestion + per-document stats
 // ============================================================================
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getAllRegisteredDocuments,
   upsertDocument,
@@ -14,6 +14,7 @@ import {
   type DocumentRecord,
 } from '@/actions/documents';
 import { clearDocumentChunks, getIngestionStatus, testRAGQuery } from '@/actions/ingest-pdf';
+import { getCSRFTokenAction } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -110,6 +111,7 @@ export function DocumentManagement() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
+  const csrfTokenRef = useRef<string | null>(null);
 
   // Ingestion state
   const [ingestionStatus, setIngestionStatus] = useState<Record<string, IngestionStatus>>({});
@@ -165,6 +167,7 @@ export function DocumentManagement() {
   useEffect(() => {
     loadDocuments();
     runDiagnostics();
+    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
   }, [loadDocuments, runDiagnostics]);
 
   // Form handlers
@@ -215,7 +218,7 @@ export function DocumentManagement() {
       badgeColor: formData.badgeColor,
       keywords: formData.keywords.split(',').map(k => k.trim()).filter(Boolean),
       categories: formData.categories.split(',').map(c => c.trim()).filter(Boolean),
-    });
+    }, csrfTokenRef.current || '');
 
     setSaving(false);
 
@@ -231,7 +234,7 @@ export function DocumentManagement() {
   const handleDelete = async (docId: string, docName: string) => {
     if (!confirm(`Deactivate "${docName}"? This will hide it from search but preserve its data.`)) return;
 
-    const result = await deleteDocument(docId, false);
+    const result = await deleteDocument(docId, false, csrfTokenRef.current || '');
     if (result.success) {
       loadDocuments();
     }
@@ -240,7 +243,7 @@ export function DocumentManagement() {
   const handleDeleteWithChunks = async (docId: string, docName: string) => {
     if (!confirm(`DELETE "${docName}" and all its chunks? This cannot be undone.`)) return;
 
-    const result = await deleteDocument(docId, true);
+    const result = await deleteDocument(docId, true, csrfTokenRef.current || '');
     if (result.success) {
       loadDocuments();
       runDiagnostics();
@@ -248,7 +251,7 @@ export function DocumentManagement() {
   };
 
   const handleRestore = async (docId: string) => {
-    const result = await restoreDocument(docId);
+    const result = await restoreDocument(docId, csrfTokenRef.current || '');
     if (result.success) {
       loadDocuments();
     }
@@ -333,7 +336,7 @@ export function DocumentManagement() {
 
     setIngestionStatus(prev => ({ ...prev, [documentId]: 'loading' }));
     try {
-      const result = await clearDocumentChunks(documentId);
+      const result = await clearDocumentChunks(documentId, csrfTokenRef.current || '');
       if (result.success) {
         setIngestionStatus(prev => ({ ...prev, [documentId]: 'idle' }));
         setIngestionMessages(prev => ({ ...prev, [documentId]: `Cleared ${result.deletedCount || 0} chunks` }));

@@ -17,9 +17,9 @@ import {
   type UpdateComplianceRequirementsInput,
 } from '@/lib/validations';
 import type {
-  PermitApplication,
   PermitStatusHistoryEntry,
 } from '@/types';
+import { transformPermit } from '@/lib/transforms';
 
 // Re-export input types for components
 export type { CreatePermitInput, UpdateBuildingDetailsInput, UpdateComplianceRequirementsInput };
@@ -41,35 +41,6 @@ async function verifyPermitOwnership(permitId: string, userId: string): Promise<
 
   if (error || !data) return false;
   return data.user_id === userId;
-}
-
-// -----------------------------------------------------------------------------
-// Helper: Transform DB row to PermitApplication
-// -----------------------------------------------------------------------------
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function transformPermit(row: any): PermitApplication {
-  return {
-    id: row.id,
-    userId: row.user_id,
-    status: row.status,
-    projectName: row.project_name,
-    projectType: row.project_type,
-    projectAddress: row.project_address,
-    plotNumber: row.plot_number || undefined,
-    projectDescription: row.project_description || undefined,
-    buildingDetails: row.building_details || {},
-    complianceRequirements: row.compliance_requirements || {},
-    complianceCheckResult: row.compliance_check_result || null,
-    reviewedBy: row.reviewed_by || null,
-    reviewedAt: row.reviewed_at || null,
-    reviewComments: row.review_comments || null,
-    submittedAt: row.submitted_at || null,
-    revisionCount: row.revision_count || 0,
-    revisionNotes: row.revision_notes || null,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
 }
 
 // -----------------------------------------------------------------------------
@@ -564,13 +535,17 @@ export async function deletePermit(
 // -----------------------------------------------------------------------------
 
 export async function runComplianceCheck(
-  permitId: string
+  permitId: string,
+  csrfToken: string
 ): Promise<{ success: boolean; data?: import('@/types').ComplianceCheckResult; error?: string }> {
   try {
     const authCheck = await requireAuth();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     const idValidation = uuidSchema.safeParse(permitId);
     if (!idValidation.success) {

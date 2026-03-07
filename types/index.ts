@@ -77,30 +77,6 @@ export type ComplianceStatus = 'compliant' | 'non-compliant' | 'pending';
 // Enhanced RAG Types (Advanced RAG Pipeline)
 // -----------------------------------------------------------------------------
 
-export interface EnhancedCitation {
-  chunkId: number;
-  page: number;
-  startPage?: number;
-  endPage?: number;
-  section?: string;
-  sectionTitle?: string;
-  chapter?: string;
-  exactQuote: string;      // Direct quote from the document
-  context: string;         // Surrounding context
-  similarity: number;      // Vector similarity score
-  confidence: number;      // Verification confidence (0-100)
-  isVerified?: boolean;    // Was this citation actually used?
-}
-
-export interface VerifiedAnswer {
-  answer: string;
-  isVerified: boolean;
-  confidence: number;
-  supportingQuotes: string[];
-  unsupportedClaims: string[];
-  citations: EnhancedCitation[];
-}
-
 export interface HybridSearchResult {
   id: number;
   content: string;
@@ -129,22 +105,6 @@ export interface SemanticCacheResult {
   response?: string;
   citations?: Citation[];
   similarity?: number;
-}
-
-// -----------------------------------------------------------------------------
-// Parent-Child Chunking Types
-// -----------------------------------------------------------------------------
-
-export interface ParentChunk {
-  id: number;
-  content: string;
-  metadata: ChunkMetadata;
-  createdAt: string;
-}
-
-export interface ChildChunkWithParent extends MatchedChunk {
-  parentId?: number;
-  parentContent?: string;
 }
 
 // -----------------------------------------------------------------------------

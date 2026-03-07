@@ -107,11 +107,11 @@ async function checkUserBlocked(userId: string): Promise<{ blocked: boolean; rea
     // Clean up old cache entries (prevent memory leak)
     if (blockStatusCache.size > 1000) {
       const oldestAllowed = now - BLOCK_CHECK_INTERVAL_MS * 2;
+      const keysToDelete: string[] = [];
       for (const [key, value] of blockStatusCache) {
-        if (value.checkedAt < oldestAllowed) {
-          blockStatusCache.delete(key);
-        }
+        if (value.checkedAt < oldestAllowed) keysToDelete.push(key);
       }
+      keysToDelete.forEach(k => blockStatusCache.delete(k));
     }
     
     return { blocked, reason: user.blocked_reason };

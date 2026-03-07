@@ -41,6 +41,18 @@ export const MAX_CONTEXT_LENGTH = 12000;
 /** Document tree cache TTL in milliseconds (5 minutes) */
 export const TREE_CACHE_TTL_MS = 5 * 60 * 1000;
 
+/** Semantic cache similarity threshold (cosine distance) */
+export const CACHE_SIMILARITY_THRESHOLD = 0.95;
+
+/** Semantic cache TTL in seconds (1 hour) */
+export const CACHE_TTL_SECONDS = 3600;
+
+/** Keyword weight for hybrid search RRF */
+export const KEYWORD_WEIGHT = 0.3;
+
+/** Vector weight for hybrid search RRF */
+export const VECTOR_WEIGHT = 0.7;
+
 // ============================================================================
 // Rate Limiting Configuration
 // ============================================================================
