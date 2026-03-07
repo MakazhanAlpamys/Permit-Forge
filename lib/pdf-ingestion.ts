@@ -198,8 +198,10 @@ export function buildChunkMetadata(chunk: ChunkWithPageRange): ChunkMetadata {
 export interface IngestionOptions {
   /** Document ID from the document registry */
   documentId: string;
-  /** PDF file path relative to project root (e.g., 'public/document.pdf') */
-  pdfPath: string;
+  /** PDF file path relative to project root (e.g., 'public/document.pdf') — fallback for local dev */
+  pdfPath?: string;
+  /** PDF file buffer downloaded from Supabase Storage */
+  pdfBuffer?: Buffer | Uint8Array;
   /** Optional callback for progress updates (for streaming) */
   onProgress?: ProgressCallback;
 }
@@ -211,7 +213,7 @@ export interface IngestionOptions {
 export async function runIngestionPipeline(
   options: IngestionOptions
 ): Promise<IngestionResult> {
-  const { documentId, pdfPath: relativePdfPath, onProgress } = options;
+  const { documentId, pdfPath: relativePdfPath, pdfBuffer, onProgress } = options;
   const { BATCH_SIZE, BATCH_DELAY_MS } = PDF_INGESTION_CONFIG;
   let parser: PDFParser | null = null;
 
@@ -222,18 +224,9 @@ export async function runIngestionPipeline(
   };
 
   try {
-    const pdfPath = path.join(process.cwd(), relativePdfPath);
-
-    if (!fs.existsSync(pdfPath)) {
-      const error = `PDF file not found at ${pdfPath}`;
-      await sendProgress({
-        stage: 'error',
-        progress: 0,
-        total: 100,
-        message: 'PDF file not found',
-        done: true,
-        error,
-      });
+    if (!pdfBuffer && !relativePdfPath) {
+      const error = 'Either pdfBuffer or pdfPath must be provided';
+      await sendProgress({ stage: 'error', progress: 0, total: 100, message: error, done: true, error });
       return { success: false, chunksProcessed: 0, error };
     }
 
@@ -245,7 +238,17 @@ export async function runIngestionPipeline(
       message: `Loading PDF (${documentId})...`,
     });
 
-    parser = await createPDFParser(pdfPath);
+    if (pdfBuffer) {
+      parser = await createPDFParser(pdfBuffer);
+    } else {
+      const pdfPath = path.join(process.cwd(), relativePdfPath!);
+      if (!fs.existsSync(pdfPath)) {
+        const error = `PDF file not found at ${pdfPath}`;
+        await sendProgress({ stage: 'error', progress: 0, total: 100, message: 'PDF file not found', done: true, error });
+        return { success: false, chunksProcessed: 0, error };
+      }
+      parser = await createPDFParser(pdfPath);
+    }
 
     // Stage 2: Extract TOC
     await sendProgress({

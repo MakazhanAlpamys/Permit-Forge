@@ -173,3 +173,10 @@ export const FILE_UPLOAD_LIMITS = {
   ],
   storageBucket: 'permit-attachments',
 } as const;
+
+export const DOCUMENT_PDF_LIMITS = {
+  maxSizeBytes: 100 * 1024 * 1024,   // 100MB
+  maxSizeMB: 100,
+  allowedMimeTypes: ['application/pdf'],
+  storageBucket: 'document-pdfs',
+} as const;

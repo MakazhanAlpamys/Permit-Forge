@@ -34,12 +34,19 @@ interface PDFTextItem {
 // -----------------------------------------------------------------------------
 
 export class PDFParser {
-  private pdfPath: string;
+  private pdfPath?: string;
+  private pdfBuffer?: Uint8Array;
   private document: pdfjsLib.PDFDocumentProxy | null = null;
   private structure: DocumentStructure | null = null;
 
-  constructor(pdfPath: string) {
-    this.pdfPath = pdfPath;
+  constructor(pathOrBuffer: string | Buffer | Uint8Array) {
+    if (typeof pathOrBuffer === 'string') {
+      this.pdfPath = pathOrBuffer;
+    } else {
+      this.pdfBuffer = pathOrBuffer instanceof Uint8Array
+        ? pathOrBuffer
+        : new Uint8Array(pathOrBuffer);
+    }
   }
 
   /**
@@ -48,7 +55,7 @@ export class PDFParser {
   async load(): Promise<void> {
     const data = await this.loadPDFData();
     // Disable worker for Node.js environment to avoid "GlobalWorkerOptions.workerSrc" error
-    this.document = await pdfjsLib.getDocument({ 
+    this.document = await pdfjsLib.getDocument({
       data,
       useWorkerFetch: false,
       isEvalSupported: false,
@@ -57,11 +64,14 @@ export class PDFParser {
   }
 
   /**
-   * Load PDF data from file system
+   * Load PDF data from buffer or file system
    */
   private async loadPDFData(): Promise<Uint8Array> {
+    if (this.pdfBuffer) {
+      return this.pdfBuffer;
+    }
     const fs = await import('fs');
-    const buffer = fs.readFileSync(this.pdfPath);
+    const buffer = fs.readFileSync(this.pdfPath!);
     return new Uint8Array(buffer);
   }
 
@@ -477,8 +487,8 @@ export class PDFParser {
 /**
  * Create a PDF parser instance and load the document
  */
-export async function createPDFParser(pdfPath: string): Promise<PDFParser> {
-  const parser = new PDFParser(pdfPath);
+export async function createPDFParser(pathOrBuffer: string | Buffer | Uint8Array): Promise<PDFParser> {
+  const parser = new PDFParser(pathOrBuffer);
   await parser.load();
   return parser;
 }

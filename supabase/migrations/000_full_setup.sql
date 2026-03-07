@@ -350,7 +350,8 @@ CREATE TABLE document_registry (
   id TEXT PRIMARY KEY,                          -- e.g. 'building-code-2021'
   display_name TEXT NOT NULL,
   short_name TEXT NOT NULL,
-  file_name TEXT NOT NULL,                      -- PDF filename (stored in public/ or uploads/)
+  file_name TEXT NOT NULL,                      -- PDF filename (original name)
+  storage_path TEXT DEFAULT NULL,               -- Supabase Storage path (e.g. 'documents/doc-id/file.pdf')
   source_url TEXT DEFAULT '',
   authority TEXT DEFAULT '',
   description TEXT DEFAULT '',

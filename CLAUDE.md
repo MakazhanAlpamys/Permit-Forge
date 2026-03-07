@@ -62,7 +62,7 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 | `permit-attachments.ts` | File upload/download for permit documents |
 | `chat-history.ts` | Session CRUD, message loading |
 | `ingest-pdf.ts` | PDF ingestion trigger with cache invalidation |
-| `documents.ts` | Document registry CRUD: add, update, delete, restore |
+| `documents.ts` | Document registry CRUD: add, update, delete, restore + PDF upload to Supabase Storage |
 | `analytics.ts` | Admin stats and analytics queries |
 | `notifications.ts` | In-app + email notifications (Resend) |
 
@@ -107,8 +107,8 @@ Feature flags in `CHAT_PIPELINE_CONFIG` control cache, tree reasoning, and paren
 ### PDF Ingestion Pipeline (`lib/pdf-ingestion.ts`)
 
 ```
-PDF Upload (admin)
-  → PDF.js parsing + TOC extraction (lib/pdf-parser.ts)
+PDF Upload (admin) → Supabase Storage (bucket document-pdfs)
+  → Download from Storage → PDF.js parsing + TOC extraction (lib/pdf-parser.ts)
   → Document tree building (deterministic, no LLM)
   → Save tree to document_trees table
   → Parent chunking: RecursiveCharacterTextSplitter (2000 chars) → parent_chunks table (no embeddings)
@@ -124,7 +124,7 @@ The **only AI call** during ingestion is embedding generation on child chunks (g
 
 The system is fully DB-driven — all documents come from `document_registry` table (no hardcoded fallback). Migration seeds 5 default documents which admin can delete. `lib/document-registry.ts` uses in-memory cache with 5-min TTL; sync functions (`getDocumentByIdSync`, `getAllDocumentsSync`) read from cache for hot paths, async functions refresh from DB. Keywords are auto-extracted from PDF text via TF-IDF during ingestion (`lib/keyword-extractor.ts`, 0 API calls) and stored in `document_registry.keywords`. Column `keywords_auto_generated` prevents overwriting admin's manual edits.
 
-Admin panel "Documents" tab allows: register new documents, edit metadata/keywords, ingest/re-ingest PDFs, clear chunks, deactivate/restore documents. Each document is identified by `document_name` in the database. RAG search operates across all active documents; citations include document attribution.
+Admin panel "Documents" tab allows: register new documents, upload PDF files to Supabase Storage, edit metadata/keywords, ingest/re-ingest PDFs, clear chunks, deactivate/restore documents. Each document is identified by `document_name` in the database. RAG search operates across all active documents; citations include document attribution.
 
 ### Permit System
 
@@ -184,7 +184,7 @@ Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — 
 - `dubai_code_chunks` — child chunks with VECTOR(768) embeddings + TSVECTOR (GIN index) for FTS, `parent_id` FK
 - `parent_chunks` — larger chunks (2000 chars) for LLM context (no embeddings)
 - `semantic_cache` — cached query embeddings + responses (HNSW index, TTL-based)
-- `document_registry` — dynamic document metadata, keywords, categories, soft-delete (seeded with 5 defaults)
+- `document_registry` — dynamic document metadata, keywords, categories, `storage_path` (Supabase Storage), soft-delete
 - `document_trees` — hierarchical document structure (JSONB tree_data)
 - `chat_sessions` / `chat_messages` — conversation history with citations (JSONB)
 - `users` — accounts with role (admin/user), block status, blocked_reason

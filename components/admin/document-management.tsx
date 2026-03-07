@@ -9,6 +9,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getAllRegisteredDocuments,
   upsertDocument,
+  uploadDocumentPDF,
   deleteDocument,
   restoreDocument,
   type DocumentRecord,
@@ -110,6 +111,8 @@ export function DocumentManagement() {
   const [formData, setFormData] = useState<DocumentFormData>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
   const csrfTokenRef = useRef<string | null>(null);
 
@@ -175,6 +178,7 @@ export function DocumentManagement() {
     setEditingId(null);
     setFormData(EMPTY_FORM);
     setFormError(null);
+    setPdfFile(null);
     setShowForm(true);
   };
 
@@ -193,25 +197,34 @@ export function DocumentManagement() {
       categories: doc.categories.join(', '),
     });
     setFormError(null);
+    setPdfFile(null);
     setShowForm(true);
   };
 
   const handleSave = async () => {
-    if (!formData.displayName || !formData.shortName || !formData.fileName) {
-      setFormError('Display Name, Short Name, and File Name are required');
+    if (!formData.displayName || !formData.shortName) {
+      setFormError('Display Name and Short Name are required');
+      return;
+    }
+
+    // For new documents, require either a PDF file or a filename
+    if (!editingId && !pdfFile && !formData.fileName) {
+      setFormError('Please select a PDF file');
       return;
     }
 
     const docId = editingId || formData.id || formData.displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+/g, '-');
+    const fileName = pdfFile ? pdfFile.name : formData.fileName;
 
     setSaving(true);
     setFormError(null);
 
+    // Step 1: Save metadata
     const result = await upsertDocument({
       id: docId,
       displayName: formData.displayName,
       shortName: formData.shortName,
-      fileName: formData.fileName,
+      fileName,
       sourceUrl: formData.sourceUrl,
       authority: formData.authority,
       description: formData.description,
@@ -220,15 +233,35 @@ export function DocumentManagement() {
       categories: formData.categories.split(',').map(c => c.trim()).filter(Boolean),
     }, csrfTokenRef.current || '');
 
-    setSaving(false);
-
-    if (result.success) {
-      setShowForm(false);
-      loadDocuments();
-      runDiagnostics();
-    } else {
+    if (!result.success) {
+      setSaving(false);
       setFormError(result.error || 'Failed to save');
+      return;
     }
+
+    // Step 2: Upload PDF if selected
+    if (pdfFile) {
+      setUploading(true);
+      const uploadData = new FormData();
+      uploadData.append('file', pdfFile);
+
+      const uploadResult = await uploadDocumentPDF(docId, uploadData);
+      setUploading(false);
+
+      if (!uploadResult.success) {
+        setSaving(false);
+        setFormError(uploadResult.error || 'PDF upload failed');
+        // Metadata saved but upload failed — user can retry upload via edit
+        loadDocuments();
+        return;
+      }
+    }
+
+    setSaving(false);
+    setShowForm(false);
+    setPdfFile(null);
+    loadDocuments();
+    runDiagnostics();
   };
 
   const handleDelete = async (docId: string, docName: string) => {
@@ -258,7 +291,7 @@ export function DocumentManagement() {
   };
 
   // Ingestion handlers
-  const handleIngestDocument = async (documentId: string, fileName: string) => {
+  const handleIngestDocument = async (documentId: string) => {
     setIngestionStatus(prev => ({ ...prev, [documentId]: 'loading' }));
     setIngestionMessages(prev => ({ ...prev, [documentId]: 'Starting ingestion...' }));
     setActiveProgress(prev => ({ ...prev, [documentId]: { stage: 'starting', progress: 0, total: 100, message: 'Connecting...' } }));
@@ -267,7 +300,7 @@ export function DocumentManagement() {
       const response = await fetch('/api/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId, pdfPath: `public/${fileName}` }),
+        body: JSON.stringify({ documentId }),
       });
 
       if (!response.ok) throw new Error('Failed to start ingestion');
@@ -437,7 +470,7 @@ export function DocumentManagement() {
                 </Button>
               </CardTitle>
               <CardDescription>
-                {editingId ? 'Update document metadata' : 'Add a new document to the registry. Place the PDF in the public/ folder first.'}
+                {editingId ? 'Update document metadata. Select a new PDF to replace the existing one.' : 'Add a new document and upload its PDF file.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -462,12 +495,29 @@ export function DocumentManagement() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground">PDF File Name *</label>
-                  <Input
-                    value={formData.fileName}
-                    onChange={e => setFormData(prev => ({ ...prev, fileName: e.target.value }))}
-                    placeholder="document.pdf"
+                  <label className="text-xs font-medium text-muted-foreground">PDF File *</label>
+                  <input
+                    type="file"
+                    accept=".pdf,application/pdf"
+                    onChange={e => {
+                      const file = e.target.files?.[0] || null;
+                      setPdfFile(file);
+                      if (file) {
+                        setFormData(prev => ({ ...prev, fileName: file.name }));
+                      }
+                    }}
+                    className="block w-full text-sm text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 file:cursor-pointer cursor-pointer mt-1"
                   />
+                  {editingId && !pdfFile && formData.fileName && (
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Current: {formData.fileName}
+                    </p>
+                  )}
+                  {pdfFile && (
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {pdfFile.name} ({(pdfFile.size / 1024 / 1024).toFixed(1)} MB)
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="text-xs font-medium text-muted-foreground">Authority</label>
@@ -550,9 +600,9 @@ export function DocumentManagement() {
               )}
 
               <div className="flex gap-2 pt-2">
-                <Button onClick={handleSave} disabled={saving} size="sm">
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-                  {editingId ? 'Update' : 'Register'}
+                <Button onClick={handleSave} disabled={saving || uploading} size="sm">
+                  {(saving || uploading) ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                  {uploading ? 'Uploading PDF...' : saving ? 'Saving...' : editingId ? 'Update' : 'Register'}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
               </div>
@@ -584,6 +634,15 @@ export function DocumentManagement() {
                       <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-5 shrink-0 ${doc.badgeColor}`}>
                         {doc.shortName}
                       </Badge>
+                      {doc.storagePath ? (
+                        <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-[10px] shrink-0">
+                          PDF
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30 text-[10px] shrink-0">
+                          No PDF
+                        </Badge>
+                      )}
                       {isIngested && (
                         <Badge className="bg-violet-500/20 text-violet-400 border-violet-500/30 text-[10px] shrink-0">
                           {chunkCount} chunks
@@ -641,10 +700,11 @@ export function DocumentManagement() {
                     {/* Action buttons */}
                     <div className="flex gap-2">
                       <Button
-                        onClick={() => handleIngestDocument(doc.id, doc.fileName)}
-                        disabled={status === 'loading' || !diagnostic.dbConnected}
+                        onClick={() => handleIngestDocument(doc.id)}
+                        disabled={status === 'loading' || !diagnostic.dbConnected || !doc.storagePath}
                         size="sm"
                         className="flex-1"
+                        title={!doc.storagePath ? 'Upload a PDF first' : undefined}
                       >
                         {status === 'loading' ? (
                           <>

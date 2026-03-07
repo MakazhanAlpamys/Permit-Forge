@@ -36,7 +36,8 @@ export async function POST(request: NextRequest) {
 
   // Parse request body for document info
   let documentId: string;
-  let pdfPath: string;
+  let pdfBuffer: Buffer | undefined;
+  let pdfPath: string | undefined;
 
   try {
     const body = await request.json();
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient();
     const { data: dbDoc } = await supabase
       .from('document_registry')
-      .select('file_name, is_active')
+      .select('file_name, is_active, storage_path')
       .eq('id', documentId)
       .single();
 
@@ -64,16 +65,32 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // SECURITY: strict filename validation — only allow safe PDF filenames
-    const rawName = dbDoc.file_name as string;
-    const fileName = rawName.split(/[\/\\]/).pop() || '';
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.pdf$/i.test(fileName)) {
-      return new Response(JSON.stringify({ error: 'Invalid file name in document registry' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
+    if (dbDoc.storage_path) {
+      // Download PDF from Supabase Storage
+      const { data: blob, error: dlError } = await supabase.storage
+        .from('document-pdfs')
+        .download(dbDoc.storage_path);
+
+      if (dlError || !blob) {
+        return new Response(JSON.stringify({ error: 'Failed to download PDF from storage' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      pdfBuffer = Buffer.from(await blob.arrayBuffer());
+    } else {
+      // Fallback: read from public/ folder (local dev)
+      const rawName = dbDoc.file_name as string;
+      const fileName = rawName.split(/[\/\\]/).pop() || '';
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.pdf$/i.test(fileName)) {
+        return new Response(JSON.stringify({ error: 'No PDF uploaded. Upload a PDF file first.' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      pdfPath = `public/${fileName}`;
     }
-    pdfPath = `public/${fileName}`;
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid request body' }), {
       status: 400,
@@ -105,7 +122,7 @@ export async function POST(request: NextRequest) {
       // Run the centralized ingestion pipeline with document info
       await runIngestionPipeline({
         documentId,
-        pdfPath,
+        ...(pdfBuffer ? { pdfBuffer } : { pdfPath }),
         onProgress: sendProgress,
       });
     } catch (error) {

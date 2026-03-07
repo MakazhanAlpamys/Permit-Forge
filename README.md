@@ -142,8 +142,8 @@
 - Automatic document tree generation for Tree Reasoning
 - Batch embedding via `gemini-embedding-001` (768-dim, rate-limit-aware)
 - Resume support — skips already-ingested chunks
-- **Dynamic document registry** — add any PDF via admin panel
-- Fully dynamic — admin can add/remove any documents
+- **Dynamic document registry** — upload & add any PDF via admin panel (Supabase Storage)
+- Fully dynamic — admin can upload, add/remove any documents
 - **Auto-keyword extraction** from PDF text via TF-IDF during ingestion (0 API calls)
 - Per-document stats, re-ingestion, deactivation/restore
 
@@ -246,7 +246,7 @@ Open [http://localhost:3000](http://localhost:3000)
 
 1. **Login** at `/login` — `admin` / `Admin123!`
 2. **Change the default password** immediately (Admin Panel → Users)
-3. **Ingest PDFs** — Admin Panel → Documents → place PDFs in `public/` → click Ingest
+3. **Ingest PDFs** — Admin Panel → Documents → Add Document → upload PDF → click Ingest
 4. **Create users** — Admin Panel → Users → Create User
 5. **Start chatting** — return to dashboard and ask questions about building codes
 
@@ -410,6 +410,7 @@ erDiagram
         TEXT display_name
         TEXT short_name
         TEXT file_name
+        TEXT storage_path "Supabase Storage"
         TEXT_ARR keywords
         TEXT_ARR categories
         BOOL is_active
@@ -585,6 +586,7 @@ data: {"stage":"complete","progress":100,"total":100,"done":true,"chunksProcesse
 | `getAllRegisteredDocuments()` | `actions/documents.ts` | List all documents from registry |
 | `upsertDocument()` | `actions/documents.ts` | Add or update document metadata |
 | `deleteDocument()` | `actions/documents.ts` | Soft-delete document (optional chunk purge) |
+| `uploadDocumentPDF()` | `actions/documents.ts` | Upload PDF to Supabase Storage |
 | `restoreDocument()` | `actions/documents.ts` | Re-activate deleted document |
 | `getNotifications()` | `actions/notifications.ts` | User's notifications + unread count |
 | `markNotificationRead()` | `actions/notifications.ts` | Mark single notification as read |
@@ -772,7 +774,7 @@ PermitForge/
 ├── test/                              # Vitest test suites (11 files, 156 tests)
 ├── supabase/migrations/               # Database schema (single 000_full_setup.sql)
 ├── middleware.ts                       # Edge auth + block check + security headers
-└── public/                            # Static assets + PDF documents for ingestion
+└── public/                            # Static assets
 ```
 
 <br />

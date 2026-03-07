@@ -10,6 +10,7 @@ import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { clearDocumentTreeCache } from '@/lib/tree-cache';
 import { invalidateRegistryCache } from '@/lib/document-registry';
 import { invalidateProfileCache } from '@/lib/document-selector';
+import { DOCUMENT_PDF_LIMITS } from '@/lib/constants';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -20,6 +21,7 @@ export interface DocumentRecord {
   displayName: string;
   shortName: string;
   fileName: string;
+  storagePath: string | null;
   sourceUrl: string;
   authority: string;
   description: string;
@@ -234,6 +236,19 @@ export async function deleteDocument(
         .eq('document_name', documentId);
 
       clearDocumentTreeCache(documentId);
+
+      // Delete PDF from Storage if exists
+      const { data: docRow } = await supabase
+        .from('document_registry')
+        .select('storage_path')
+        .eq('id', documentId)
+        .single();
+
+      if (docRow?.storage_path) {
+        await supabase.storage
+          .from(DOCUMENT_PDF_LIMITS.storageBucket)
+          .remove([docRow.storage_path]);
+      }
     }
 
     invalidateRegistryCache();
@@ -297,6 +312,93 @@ export async function restoreDocument(
 }
 
 // -----------------------------------------------------------------------------
+// Upload Document PDF to Supabase Storage
+// -----------------------------------------------------------------------------
+
+export async function uploadDocumentPDF(
+  documentId: string,
+  formData: FormData
+): Promise<{ success: boolean; storagePath?: string; error?: string }> {
+  const authCheck = await requireAdmin();
+  if (!authCheck.success || !authCheck.user) {
+    return { success: false, error: authCheck.error || 'Unauthorized' };
+  }
+
+  if (!documentId) {
+    return { success: false, error: 'Missing documentId' };
+  }
+
+  const file = formData.get('file') as File | null;
+  if (!file || !(file instanceof File)) {
+    return { success: false, error: 'No file provided' };
+  }
+
+  // Validate file type
+  if (!DOCUMENT_PDF_LIMITS.allowedMimeTypes.includes(file.type as 'application/pdf')) {
+    return { success: false, error: 'Only PDF files are allowed' };
+  }
+
+  // Validate file size
+  if (file.size > DOCUMENT_PDF_LIMITS.maxSizeBytes) {
+    return { success: false, error: `File too large. Maximum size is ${DOCUMENT_PDF_LIMITS.maxSizeMB}MB` };
+  }
+
+  try {
+    const supabase = createAdminClient();
+
+    // Sanitize filename
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `documents/${documentId}/${safeName}`;
+
+    // Upload to Supabase Storage
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = new Uint8Array(arrayBuffer);
+
+    const { error: uploadError } = await supabase.storage
+      .from(DOCUMENT_PDF_LIMITS.storageBucket)
+      .upload(storagePath, buffer, {
+        contentType: 'application/pdf',
+        upsert: true,
+      });
+
+    if (uploadError) {
+      return { success: false, error: `Upload failed: ${uploadError.message}` };
+    }
+
+    // Update document_registry with storage_path and file_name
+    const { error: updateError } = await supabase
+      .from('document_registry')
+      .update({
+        storage_path: storagePath,
+        file_name: file.name,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', documentId);
+
+    if (updateError) {
+      return { success: false, error: `DB update failed: ${updateError.message}` };
+    }
+
+    invalidateRegistryCache();
+
+    const metadata = await getRequestMetadata();
+    await logAuditEvent({
+      userId: authCheck.user.id,
+      action: 'pdf_ingested',
+      metadata: { stage: 'pdf_uploaded', documentId, fileName: file.name, fileSize: file.size },
+      ...metadata,
+    });
+
+    return { success: true, storagePath };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Upload failed',
+    };
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
 
@@ -306,6 +408,7 @@ function mapDbRow(row: Record<string, unknown>): DocumentRecord {
     displayName: (row.display_name as string) || '',
     shortName: (row.short_name as string) || '',
     fileName: (row.file_name as string) || '',
+    storagePath: (row.storage_path as string) || null,
     sourceUrl: (row.source_url as string) || '',
     authority: (row.authority as string) || '',
     description: (row.description as string) || '',
