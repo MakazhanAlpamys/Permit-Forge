@@ -265,22 +265,15 @@ graph TB
     end
 
     subgraph Server["SERVER ACTIONS & API ROUTES"]
-        SA1["actions/auth.ts — Login · Logout · Audit"]
-        SA2["actions/admin.ts — User CRUD · Stats"]
-        SA3["actions/permits.ts — CRUD · Submit · Compliance"]
-        SA4["actions/documents.ts — Document Registry CRUD"]
-        SA5["actions/chat-history.ts — Sessions · Messages"]
-        API1["/api/chat/stream — SSE streaming chat"]
-        API2["/api/ingest — SSE PDF ingestion"]
-        API3["/api/permits/[id]/certificate — PDF gen"]
-        API4["/api/health — Health check"]
+        SA["Server Actions (10 files)<br/>auth · admin · permits · documents<br/>chat-history · notifications · analytics · ingest-pdf"]
+        API["API Routes<br/>/api/chat/stream · /api/ingest<br/>/api/permits/certificate · /api/health"]
     end
 
     subgraph Core["CORE LIBRARY"]
-        CP["chat-pipeline.ts<br/>Semantic Cache · Document Selector<br/>Scope Detector · CRAG Check<br/>Heuristic Reranker · Parent Expansion"]
+        CP["chat-pipeline.ts<br/>Semantic Cache · Document Selector · Scope Detector<br/>CRAG Check · Heuristic Reranker · Parent Expansion"]
         RAG["rag.ts — Hybrid Search (RRF) · Filtered Search"]
         AG["agents.ts — Topic Classifier · Tree Reasoner"]
-        OTHER["semantic-cache · document-selector<br/>scope-detector · heuristic-reranker<br/>citation-parser · document-registry<br/>permit-compliance · permit-certificate<br/>pdf-ingestion · pdf-parser · tree-cache<br/>auth · security · gemini · validations"]
+        OTHER["semantic-cache · document-selector · scope-detector<br/>heuristic-reranker · citation-parser · document-registry<br/>permit-compliance · permit-certificate · pdf-ingestion<br/>pdf-parser · tree-cache · auth · security · gemini"]
     end
 
     subgraph External["EXTERNAL SERVICES"]
