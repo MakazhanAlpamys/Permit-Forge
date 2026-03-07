@@ -193,8 +193,8 @@
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/MakazhanAlpamys/PermitForge.git
-cd PermitForge
+git clone https://github.com/MakazhanAlpamys/Permit-Forge.git
+cd Permit-Forge
 npm install
 ```
 
