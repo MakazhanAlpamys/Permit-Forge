@@ -258,143 +258,73 @@ Open [http://localhost:3000](http://localhost:3000)
 
 ### System Overview
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                         FRONTEND                                 │
-│         Next.js 15 App Router  ·  React 18  ·  Tailwind 4        │
-│         Server Components  ·  Streaming UI  ·  shadcn/ui         │
-└────────────────────────────────┬─────────────────────────────────┘
-                                 │
-                                 ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                   SERVER ACTIONS & API ROUTES                    │
-│                                                                  │
-│  actions/auth.ts ──────── Login · Logout · Audit Logging         │
-│  actions/admin.ts ─────── User CRUD · Stats · Audit Logs         │
-│  actions/admin-permits.ts  Permit Review · Approve · Reject      │
-│  actions/permits.ts ────── CRUD · Submit · Compliance Check      │
-│  actions/permit-attachments.ts  Upload · Download · Delete       │
-│  actions/chat-history.ts ─ Sessions · Messages                   │
-│  actions/documents.ts ──── Document Registry CRUD                │
-│  actions/notifications.ts  Read · Mark Read                      │
-│  actions/analytics.ts ──── Dashboard Stats · Charts              │
-│  actions/ingest-pdf.ts ─── PDF Ingestion · Status                │
-│                                                                  │
-│  /api/chat/stream ── SSE streaming chat (main chat endpoint)     │
-│  /api/chat/export ── Chat session export to Markdown             │
-│  /api/ingest ─────── SSE PDF ingestion with progress             │
-│  /api/permits/[id]/certificate ── PDF certificate generation     │
-│  /api/health ─────── Health check (env + DB connectivity)        │
-└────────────────────────────────┬─────────────────────────────────┘
-                                 │
-          ┌──────────────────────┴──────────────────────┐
-          ▼                                             ▼
-┌───────────────────────────┐              ┌────────────────────────┐
-│     CORE LIBRARY          │              │   EXTERNAL SERVICES    │
-│                           │              │                        │
-│  chat-pipeline.ts         │              │  Supabase              │
-│  ├─ Semantic Cache        │◄────────────►│  ├─ PostgreSQL + RLS   │
-│  ├─ Document Selector     │              │  ├─ pgvector (HNSW)    │
-│  ├─ Scope Detector        │              │  ├─ Full-Text Search   │
-│  ├─ CRAG Check            │              │  └─ Storage (files)    │
-│  ├─ Heuristic Reranker    │              │                        │
-│  └─ Parent Expansion      │◄────────────►│  Google Gemini         │
-│                           │              │  ├─ 2.5 Flash (chat)   │
-│  rag.ts                   │              │  └─ embedding-001      │
-│  ├─ Hybrid Search (RRF)   │              │                        │
-│  └─ Filtered Search       │              │  Resend (optional)     │
-│                           │              │  └─ Email notifications │
-│  agents.ts                │              │                        │
-│  ├─ Topic Classifier      │              └────────────────────────┘
-│  └─ Tree Reasoner (det.)  │
-│                           │
-│  semantic-cache.ts        │
-│  document-selector.ts     │
-│  scope-detector.ts        │
-│  heuristic-reranker.ts    │
-│  citation-parser.ts       │
-│  document-registry.ts     │
-│                           │
-│  permit-compliance.ts     │
-│  permit-certificate.ts    │
-│  pdf-ingestion.ts         │
-│  pdf-parser.ts            │
-│  tree-cache.ts            │
-│  auth.ts · security.ts    │
-│  gemini.ts · validations  │
-└───────────────────────────┘
+```mermaid
+graph TB
+    subgraph Frontend["FRONTEND"]
+        FE["Next.js 15 App Router · React 18 · Tailwind 4<br/>Server Components · Streaming UI · shadcn/ui"]
+    end
+
+    subgraph Server["SERVER ACTIONS & API ROUTES"]
+        SA1["actions/auth.ts — Login · Logout · Audit"]
+        SA2["actions/admin.ts — User CRUD · Stats"]
+        SA3["actions/permits.ts — CRUD · Submit · Compliance"]
+        SA4["actions/documents.ts — Document Registry CRUD"]
+        SA5["actions/chat-history.ts — Sessions · Messages"]
+        API1["/api/chat/stream — SSE streaming chat"]
+        API2["/api/ingest — SSE PDF ingestion"]
+        API3["/api/permits/[id]/certificate — PDF gen"]
+        API4["/api/health — Health check"]
+    end
+
+    subgraph Core["CORE LIBRARY"]
+        CP["chat-pipeline.ts<br/>Semantic Cache · Document Selector<br/>Scope Detector · CRAG Check<br/>Heuristic Reranker · Parent Expansion"]
+        RAG["rag.ts — Hybrid Search (RRF) · Filtered Search"]
+        AG["agents.ts — Topic Classifier · Tree Reasoner"]
+        OTHER["semantic-cache · document-selector<br/>scope-detector · heuristic-reranker<br/>citation-parser · document-registry<br/>permit-compliance · permit-certificate<br/>pdf-ingestion · pdf-parser · tree-cache<br/>auth · security · gemini · validations"]
+    end
+
+    subgraph External["EXTERNAL SERVICES"]
+        SB["Supabase<br/>PostgreSQL + RLS · pgvector (HNSW)<br/>Full-Text Search · Storage"]
+        GM["Google Gemini<br/>2.5 Flash (chat) · embedding-001"]
+        RS["Resend (optional)<br/>Email notifications"]
+    end
+
+    Frontend --> Server
+    Server --> Core
+    Core <--> SB
+    Core <--> GM
+    Core --> RS
 ```
 
 ### RAG Pipeline v2 Flow
 
-```
-User Query
-    │
-    ▼
-┌──────────────────────┐
-│  Topic Classifier    │ ──► Off-topic / Greeting → Short-circuit response (0 API)
-└──────────────────────┘
-    │ On-topic
-    ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  [1] GENERATE EMBEDDING (1 API call — reused for cache + search) │
-└─────────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌──────────────────────┐
-│  [2] Semantic Cache  │ ──► HIT → cached response + citations (0 more API, done)
-│  cosine > 0.95, 1hr  │
-└──────────────────────┘
-    │ MISS
-    ▼
-┌──────────────────────┐      ┌──────────────────────────────┐
-│  [3] Document Selector│      │  [4] Scope Detector          │
-│  keyword scoring     │      │  regex: chapter/section/page  │
-│  narrows to 1-3 docs │      │  adds page range filters     │
-│  (0 API, ~1ms)       │      │  (0 API, ~1ms)               │
-└──────────────────────┘      └──────────────────────────────┘
-    │                                   │
-    └──────────────┬────────────────────┘
-                   ▼
-┌──────────────────────────────────────────────────────────────┐
-│  [5] SEARCH (reuses embedding from step 1)                    │
-│                                                              │
-│  ┌─────────────────────┐     ┌──────────────────────────┐    │
-│  │  Tree Reasoning     │     │  Standard Hybrid Search  │    │
-│  │  (structural query) │     │  (vector + keyword RRF)  │    │
-│  │  keyword scoring    │     │                          │    │
-│  │  → filtered search  │     │                          │    │
-│  │  [conf < 45%] ──────────► │                          │    │
-│  └─────────────────────┘     └──────────────────────────┘    │
-└──────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌──────────────────────┐
-│  [6] CRAG Check      │ ──► top chunk score < 0.3 → "info not found" (0 API)
-│  (0 API)             │
-└──────────────────────┘
-    │ passes
-    ▼
-┌──────────────────────┐
-│  [7] Heuristic       │      score = hybrid*0.4 + keyword*0.3
-│  Reranker            │              + metadata*0.2 + position*0.1
-│  (0 API, ~1ms)       │      max 3/doc, max 2/page range
-└──────────────────────┘
-    │
-    ▼
-┌──────────────────────┐
-│  [8] Parent Expansion│      child (400 chars) → parent (2000 chars)
-│  (DB lookup, 0 API)  │      richer context for LLM
-└──────────────────────┘
-    │
-    ▼
-Context Building → LLM Generation (1 API call, streaming SSE)
-    │
-    ▼
-Chunk-Based Citations (from DB metadata, 0 API) → Cache Store (fire-and-forget)
-    │
-    ▼
-Response to User (tokens + citations)
+```mermaid
+flowchart TD
+    Q["User Query"] --> TC{"[0] Topic Classifier"}
+    TC -- "Off-topic / Greeting" --> SC["Short-circuit response<br/>(0 API)"]
+    TC -- "On-topic" --> EMB["[1] Generate Embedding<br/>(1 API call — reused for cache + search)"]
+
+    EMB --> CACHE{"[2] Semantic Cache<br/>cosine > 0.95, 1hr TTL"}
+    CACHE -- "HIT" --> CACHED["Cached response + citations<br/>(0 more API, done)"]
+    CACHE -- "MISS" --> DOCSELECTOR["[3] Document Selector<br/>keyword scoring, 1-3 docs<br/>(0 API, ~1ms)"]
+    CACHE -- "MISS" --> SCOPE["[4] Scope Detector<br/>regex: chapter/section/page<br/>(0 API, ~1ms)"]
+
+    DOCSELECTOR --> SEARCH
+    SCOPE --> SEARCH
+
+    subgraph SEARCH["[5] SEARCH (reuses embedding)"]
+        TREE["Tree Reasoning<br/>(structural queries)<br/>keyword scoring"] -- "conf < 45%" --> STD
+        STD["Standard Hybrid Search<br/>(vector + keyword RRF)"]
+    end
+
+    SEARCH --> CRAG{"[6] CRAG Check (0 API)"}
+    CRAG -- "top score < 0.3" --> NOTFOUND["'Info not found' response"]
+    CRAG -- "passes" --> RERANK["[7] Heuristic Reranker (0 API, ~1ms)<br/>hybrid*0.4 + keyword*0.3 + meta*0.2 + pos*0.1"]
+
+    RERANK --> PARENT["[8] Parent Expansion (DB, 0 API)<br/>child 400 chars → parent 2000 chars"]
+    PARENT --> LLM["Context → LLM Generation<br/>(1 API call, streaming SSE)"]
+    LLM --> CITE["Chunk-Based Citations (0 API)<br/>+ Cache Store (fire-and-forget)"]
+    CITE --> RESP["Response to User<br/>(tokens + citations)"]
 ```
 
 **API calls per scenario:**
@@ -410,126 +340,166 @@ Response to User (tokens + citations)
 
 ### Permit Lifecycle
 
-```
-   User                                Admin
-    │                                    │
-    ├── /permits/new ───────────────►    │
-    │   Step 1: Project Info             │
-    │   Step 2: Building Details         │
-    │   Step 3: Compliance Reqs          │
-    │   [Run AI Compliance Check]        │
-    │                                    │
-    ├── Submit ─────────────────────►    │
-    │   (draft → submitted)              ├── Review (submitted → under_review)
-    │   [notification sent]              │   [notification sent]
-    │                                    │
-    │                                    ├── Approve (→ approved)
-    │                                    │   [notification + certificate]
-    │                                    │
-    │                                    ├── Reject (→ rejected)
-    │                                    │   [notification with reason]
-    │                                    │
-    │   ◄── Request Revision ───────────┤   (→ revision_requested)
-    │       [notification with notes]    │
-    │                                    │
-    ├── Revise & Resubmit ─────────►    │
-    │   (revision_count incremented)     │
-    │                                    │
-    └── Download Certificate ◄──────────┘   (if approved)
-        GET /api/permits/[id]/certificate
+```mermaid
+sequenceDiagram
+    actor User
+    actor Admin
+
+    User->>User: /permits/new<br/>Step 1: Project Info<br/>Step 2: Building Details<br/>Step 3: Compliance Reqs<br/>[Run AI Compliance Check]
+
+    User->>Admin: Submit (draft → submitted)<br/>[notification sent]
+    Admin->>Admin: Review (submitted → under_review)<br/>[notification sent]
+
+    alt Approved
+        Admin->>User: Approve (→ approved)<br/>[notification + certificate]
+    else Rejected
+        Admin->>User: Reject (→ rejected)<br/>[notification with reason]
+    else Revision Requested
+        Admin->>User: Request Revision (→ revision_requested)<br/>[notification with notes]
+        User->>Admin: Revise & Resubmit<br/>(revision_count incremented)
+    end
+
+    User->>User: Download Certificate (if approved)<br/>GET /api/permits/[id]/certificate
 ```
 
 ### Database Schema
 
-```
-┌─────────────────────┐          ┌──────────────────────┐
-│      users          │          │  dubai_code_chunks   │
-│ ─────────────────── │          │ ──────────────────── │
-│  id (UUID, PK)      │          │  id (BIGINT, PK)     │
-│  username (UNIQUE)  │          │  content (TEXT)       │
-│  email              │          │  metadata (JSONB)     │
-│  password_hash      │          │  embedding (VECTOR)   │ ◄── HNSW index
-│  full_name          │          │  fts (TSVECTOR)       │ ◄── GIN index
-│  role (admin/user)  │          │  document_name        │
-│  blocked (BOOL)     │          │  parent_id (FK)       │ ──► parent_chunks
-│  blocked_reason     │          └──────────────────────┘
-│  last_login         │
-│  created_at         │          ┌──────────────────────┐
-└──────────┬──────────┘          │  parent_chunks       │
-           │ 1:N                 │ ──────────────────── │
-           ▼                     │  id (BIGINT, PK)     │
-┌─────────────────────┐          │  content (TEXT)       │ ◄── 2000 chars
-│   chat_sessions     │          │  metadata (JSONB)     │
-│ ─────────────────── │          │  document_name        │
-│  id (UUID, PK)      │          └──────────────────────┘
-│  user_id (FK)       │
-│  title              │          ┌──────────────────────┐
-│  created_at         │          │  semantic_cache      │
-│  updated_at         │          │ ──────────────────── │
-└──────────┬──────────┘          │  id (UUID, PK)       │
-           │ 1:N                 │  query_text          │
-           ▼                     │  query_embedding     │ ◄── HNSW index
-┌─────────────────────┐          │  response (TEXT)     │
-│   chat_messages     │          │  citations (JSONB)   │
-│ ─────────────────── │          │  ttl_seconds         │
-│  id (UUID, PK)      │          │  created_at          │
-│  session_id (FK)    │          └──────────────────────┘
-│  role               │
-│  content (TEXT)     │          ┌──────────────────────┐
-│  citations (JSONB)  │          │  document_registry   │
-│  created_at         │          │ ──────────────────── │
-└─────────────────────┘          │  id (TEXT, PK)       │
-                                 │  display_name        │
-┌─────────────────────┐          │  short_name          │
-│  document_trees     │          │  file_name           │
-│ ─────────────────── │          │  keywords (TEXT[])   │
-│  id (UUID, PK)       │          │  categories (TEXT[]) │
-│  document_name       │          │  badge_color         │
-│  total_pages (INT)   │          │  is_active (BOOL)   │
-│  tree_data (JSONB)   │          └──────────────────────┘
-│  updated_at          │
-└──────────────────────┘          ┌──────────────────────┐
-                                 │  permit_applications │
-┌─────────────────────┐          │ ──────────────────── │
-│   audit_logs        │          │  id (UUID, PK)       │
-│ ─────────────────── │          │  user_id (FK)        │
-│  id (UUID, PK)      │          │  project_name        │
-│  user_id (FK)       │          │  project_type        │
-│  action (12 types)  │          │  building_details    │ ◄── JSONB
-│  target_user_id(FK) │          │  compliance_reqs     │ ◄── JSONB
-│  metadata (JSONB)   │          │  status (6 states)   │
-│  ip_address         │          │  reviewed_by (FK)    │
-│  user_agent         │          │  revision_count      │
-│  created_at         │          └──────────┬───────────┘
-└─────────────────────┘                     │ 1:N
-                                 ┌──────────▼───────────┐
-┌─────────────────────┐          │ permit_status_history │
-│  permit_attachments │          │ ──────────────────── │
-│ ─────────────────── │          │  id, permit_id (FK)  │
-│  id (UUID, PK)      │          │  from_status         │
-│  permit_id (FK)     │          │  to_status           │
-│  file_name          │          │  changed_by (FK)     │
-│  file_size          │          │  comment             │
-│  storage_path       │          │  created_at          │
-│  uploaded_by (FK)   │          └──────────────────────┘
-└─────────────────────┘
-                                 ┌──────────────────────┐
-┌─────────────────────┐          │  permit_certificates │
-│   notifications     │          │ ──────────────────── │
-│ ─────────────────── │          │  id (UUID, PK)       │
-│  id (UUID, PK)      │          │  permit_id (FK)      │
-│  user_id (FK)       │          │  certificate_number  │ ◄── UNIQUE
-│  type (5 types)     │          │  generated_by (FK)   │
-│  title, body        │          │  generated_at        │
-│  read (BOOL)        │          └──────────────────────┘
-│  created_at         │
-└─────────────────────┘          ┌──────────────────────┐
-                                 │   rate_limits        │
-                                 │ ─────────────────── │
-                                 │  id (BIGINT, PK)    │
-                                 │  user_id (FK)       │
-                                 │  request_timestamp  │
-                                 └──────────────────────┘
+```mermaid
+erDiagram
+    users ||--o{ chat_sessions : "1:N"
+    users ||--o{ permit_applications : "1:N"
+    users ||--o{ audit_logs : "1:N"
+    users ||--o{ notifications : "1:N"
+    chat_sessions ||--o{ chat_messages : "1:N"
+    permit_applications ||--o{ permit_status_history : "1:N"
+    permit_applications ||--o{ permit_attachments : "1:N"
+    permit_applications ||--o{ permit_certificates : "1:N"
+    parent_chunks ||--o{ dubai_code_chunks : "parent_id FK"
+
+    users {
+        UUID id PK
+        TEXT username UK
+        TEXT email
+        TEXT password_hash
+        TEXT role "admin / user"
+        BOOL blocked
+        TIMESTAMP last_login
+    }
+
+    dubai_code_chunks {
+        BIGINT id PK
+        TEXT content
+        JSONB metadata
+        VECTOR embedding "HNSW index"
+        TSVECTOR fts "GIN index"
+        TEXT document_name
+        BIGINT parent_id FK
+    }
+
+    parent_chunks {
+        BIGINT id PK
+        TEXT content "2000 chars"
+        JSONB metadata
+        TEXT document_name
+    }
+
+    semantic_cache {
+        UUID id PK
+        TEXT query_text
+        VECTOR query_embedding "HNSW index"
+        TEXT response
+        JSONB citations
+        INT ttl_seconds
+    }
+
+    document_registry {
+        TEXT id PK
+        TEXT display_name
+        TEXT short_name
+        TEXT file_name
+        TEXT_ARR keywords
+        TEXT_ARR categories
+        BOOL is_active
+    }
+
+    document_trees {
+        UUID id PK
+        TEXT document_name
+        INT total_pages
+        JSONB tree_data
+    }
+
+    chat_sessions {
+        UUID id PK
+        UUID user_id FK
+        TEXT title
+    }
+
+    chat_messages {
+        UUID id PK
+        UUID session_id FK
+        TEXT role
+        TEXT content
+        JSONB citations
+    }
+
+    permit_applications {
+        UUID id PK
+        UUID user_id FK
+        TEXT project_name
+        TEXT project_type
+        JSONB building_details
+        JSONB compliance_reqs
+        TEXT status "6 states"
+        UUID reviewed_by FK
+        INT revision_count
+    }
+
+    permit_status_history {
+        UUID id PK
+        UUID permit_id FK
+        TEXT from_status
+        TEXT to_status
+        UUID changed_by FK
+        TEXT comment
+    }
+
+    permit_attachments {
+        UUID id PK
+        UUID permit_id FK
+        TEXT file_name
+        INT file_size
+        TEXT storage_path
+    }
+
+    permit_certificates {
+        UUID id PK
+        UUID permit_id FK
+        TEXT certificate_number UK
+        UUID generated_by FK
+    }
+
+    audit_logs {
+        UUID id PK
+        UUID user_id FK
+        TEXT action "12 types"
+        JSONB metadata
+        TEXT ip_address
+    }
+
+    notifications {
+        UUID id PK
+        UUID user_id FK
+        TEXT type "5 types"
+        TEXT title
+        BOOL read
+    }
+
+    rate_limits {
+        BIGINT id PK
+        UUID user_id FK
+        TIMESTAMP request_timestamp
+    }
 ```
 
 **15 tables** · 29+ RPC functions · Row-Level Security on all tables · HNSW vector indexes (m=16, ef_construction=64) · GIN full-text search · B-tree indexes on metadata fields
