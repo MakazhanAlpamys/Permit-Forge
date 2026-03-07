@@ -211,28 +211,16 @@ function parseTableContent(text: string): string[][] {
   return rows.slice(0, 10); // Limit to 10 rows for display
 }
 
-// Document file mapping for "View in PDF" button
-const DOC_FILES: Record<string, string> = {
-  'dubai-building-code-2021': 'dubai-code.pdf',
-  'code-of-safety': 'code_of_safety_EN.pdf',
-  'al-safat-green-building': 'Al-Safat-–-Dubai-Green-Building-System-2nd-editionJan2023.pdf',
-  'universal-design-code': 'Dubai-Guide-for-Built-Environment-Universal-Design-1_compressed.pdf',
-  'sewerage-stormwater-guidelines': 'comp-DM_Sewerage-Guidelines-F.24.01.25.pdf',
-};
+// Document file mapping for "View in PDF" button (loaded from DB registry)
+const DOC_FILES: Record<string, string> = {};
 
-const DOC_SHORT_NAMES: Record<string, { name: string; color: string }> = {
-  'dubai-building-code-2021': { name: 'DBC', color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
-  'code-of-safety': { name: 'Safety', color: 'bg-red-500/20 text-red-400 border-red-500/30' },
-  'al-safat-green-building': { name: "Al Sa'fat", color: 'bg-violet-500/20 text-violet-400 border-violet-500/30' },
-  'universal-design-code': { name: 'UDC', color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
-  'sewerage-stormwater-guidelines': { name: 'Sewerage', color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' },
-};
+const DOC_SHORT_NAMES: Record<string, { name: string; color: string }> = {};
 
 /**
  * Get PDF URL for "View in PDF" button
  */
 function getPdfUrl(page: number, documentName?: string): string {
-  const fileName = documentName ? (DOC_FILES[documentName] || 'dubai-code.pdf') : 'dubai-code.pdf';
+  const fileName = documentName ? (DOC_FILES[documentName] || `${documentName}.pdf`) : 'document.pdf';
   return `/${fileName}#page=${page}`;
 }
 

@@ -56,7 +56,7 @@ export async function createNotification(params: CreateNotificationParams): Prom
           const resend = new Resend(process.env.RESEND_API_KEY);
 
           await resend.emails.send({
-            from: 'Emirate Forge <noreply@emirateforge.com>',
+            from: 'PermitForge <noreply@permitforge.com>',
             to: user.email,
             subject: title,
             html: getEmailHtml(type, title, body, data),
@@ -149,19 +149,19 @@ function getEmailHtml(
     <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f9fafb;">
       <div style="background: white; border-radius: 8px; padding: 32px; border: 1px solid #e5e7eb;">
         <div style="text-align: center; margin-bottom: 24px;">
-          <h1 style="font-size: 20px; color: #111827; margin: 0;">Emirate Forge</h1>
-          <p style="color: #6b7280; margin: 4px 0 0;">Dubai Building Code Compliance</p>
+          <h1 style="font-size: 20px; color: #111827; margin: 0;">PermitForge</h1>
+          <p style="color: #6b7280; margin: 4px 0 0;">Building Code Compliance</p>
         </div>
         <div style="border-left: 4px solid ${color}; padding-left: 16px; margin: 24px 0;">
           <h2 style="font-size: 18px; color: #111827; margin: 0 0 8px;">${safeTitle}</h2>
           <p style="color: #374151; margin: 0; line-height: 1.6;">${safeBody}</p>
         </div>
         <p style="color: #6b7280; font-size: 14px; margin-top: 24px; text-align: center;">
-          Log in to Emirate Forge to view details about &quot;${permitName}&quot;.
+          Log in to PermitForge to view details about &quot;${permitName}&quot;.
         </p>
       </div>
       <p style="color: #9ca3af; font-size: 12px; text-align: center; margin-top: 16px;">
-        This is an automated notification from Emirate Forge.
+        This is an automated notification from PermitForge.
       </p>
     </body>
     </html>

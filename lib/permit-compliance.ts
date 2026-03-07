@@ -1,6 +1,6 @@
 // ============================================================================
 // Permit Compliance Check Module
-// Uses existing RAG pipeline to check permit data against Dubai Building Code
+// Uses existing RAG pipeline to check permit data against building codes
 // ============================================================================
 
 import { hybridSearch } from '@/lib/rag';
@@ -84,7 +84,7 @@ function generateComplianceQueries(
 
   // If no specific requirements selected, add general query
   if (queries.length === 0) {
-    queries.push(`${typeLabel} building requirements Dubai Building Code`);
+    queries.push(`${typeLabel} building requirements building code`);
   }
 
   return queries;
@@ -161,7 +161,7 @@ COMPLIANCE AREAS REQUESTED:
 ${complianceReqs.fireSafety ? '- Fire Safety\n' : ''}${complianceReqs.accessibility ? '- Accessibility\n' : ''}${complianceReqs.parkingCompliance ? '- Parking Compliance\n' : ''}${complianceReqs.structuralSafety ? '- Structural Safety\n' : ''}${complianceReqs.mepSystems ? '- MEP Systems\n' : ''}${complianceReqs.energyEfficiency ? '- Energy Efficiency\n' : ''}${complianceReqs.additionalNotes ? `\nAdditional Notes: ${complianceReqs.additionalNotes}` : ''}`.trim();
 
   // 6. Call Gemini for analysis
-  const systemPrompt = `You are a Dubai Building Code 2021 compliance analysis engine. You MUST respond with valid JSON only, no markdown, no explanation outside JSON.
+  const systemPrompt = `You are a building code compliance analysis engine. You MUST respond with valid JSON only, no markdown, no explanation outside JSON.
 
 Analyze the given building project against the provided code sections and determine compliance status for each area.
 

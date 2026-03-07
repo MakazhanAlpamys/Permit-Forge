@@ -1,5 +1,5 @@
 // ============================================================================
-// Emirate Forge Constants & Configuration
+// PermitForge Constants & Configuration
 // ============================================================================
 
 import { CheckCircle, XCircle, Clock, FileEdit, Send, Eye, CheckCircle2, RotateCcw } from 'lucide-react';

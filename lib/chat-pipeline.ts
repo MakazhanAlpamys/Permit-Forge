@@ -3,7 +3,7 @@
 // 1-2 API calls per question (~1.5 average with cache hits)
 // ============================================================================
 
-import { queryDubaiCode, queryDubaiCodeFiltered, passesCRAGCheck, expandToParentChunks } from '@/lib/rag';
+import { queryBuildingCode, queryBuildingCodeFiltered, passesCRAGCheck, expandToParentChunks } from '@/lib/rag';
 import { classifyQueryStructure, treeReasoner, getPageRangesForNodes } from '@/lib/agents';
 import { createChunkCitations, getCitationStats } from '@/lib/citation-parser';
 import { heuristicRerank } from '@/lib/heuristic-reranker';
@@ -65,26 +65,26 @@ export interface PipelineResult {
 
 export const CRAG_FAIL_RESPONSE =
   "I could not find relevant information about this topic in the available documents. " +
-  "Please try rephrasing your question or ask about a specific aspect of Dubai building regulations.";
+  "Please try rephrasing your question or ask about a specific aspect of building regulations.";
 
 /** Build off-topic response dynamically from registered documents */
 export async function getOffTopicResponse(): Promise<string> {
   const docs = await getAllDocuments();
   if (docs.length === 0) {
-    return "I'm Emirate Forge, your Dubai construction compliance assistant. No documents are currently loaded. Please ask an admin to add and ingest documents.";
+    return "I'm PermitForge, your building code compliance assistant. No documents are currently loaded. Please ask an admin to add and ingest documents.";
   }
   const docNames = docs.map(d => d.displayName).join(', ');
-  return `I'm Emirate Forge, your Dubai construction compliance assistant. I can help with questions about ${docNames}. Ask me anything about building regulations in Dubai!`;
+  return `I'm PermitForge, your building code compliance assistant. I can help with questions about ${docNames}. Ask me anything about building regulations!`;
 }
 
 /** Build greeting response dynamically from registered documents */
 export async function getGreetingResponse(): Promise<string> {
   const docs = await getAllDocuments();
   if (docs.length === 0) {
-    return "Hello! I'm Emirate Forge, your Dubai construction compliance assistant. No documents are currently loaded. Please ask an admin to add and ingest documents.";
+    return "Hello! I'm PermitForge, your building code compliance assistant. No documents are currently loaded. Please ask an admin to add and ingest documents.";
   }
   const docList = docs.map(d => `- **${d.displayName}** — ${d.description || d.shortName}`).join('\n');
-  return `Hello! I'm Emirate Forge, your Dubai construction compliance assistant. I have access to official documents:\n\n${docList}\n\nI search across all documents to give you comprehensive answers with precise source citations!`;
+  return `Hello! I'm PermitForge, your building code compliance assistant. I have access to official documents:\n\n${docList}\n\nI search across all documents to give you comprehensive answers with precise source citations!`;
 }
 
 // -----------------------------------------------------------------------------
@@ -139,7 +139,7 @@ export async function executeRAGPipeline(query: string): Promise<PipelineResult>
 
   if (scope.hasScope && scope.pageRanges.length > 0) {
     // Direct page range filter
-    const result = await queryDubaiCodeFiltered({
+    const result = await queryBuildingCodeFiltered({
       query,
       pageRanges: scope.pageRanges,
       matchCount: CHAT_PIPELINE_CONFIG.INITIAL_MATCH_COUNT,
@@ -216,7 +216,7 @@ async function executeTreePath(
       return null;
     }
 
-    const result = await queryDubaiCodeFiltered({
+    const result = await queryBuildingCodeFiltered({
       query,
       pageRanges: allPageRanges,
       matchCount: CHAT_PIPELINE_CONFIG.INITIAL_MATCH_COUNT,
@@ -239,7 +239,7 @@ async function executeStandardSearch(
   queryEmbedding: number[],
   documentFilter: string[]
 ): Promise<MatchedChunk[]> {
-  const result = await queryDubaiCode({
+  const result = await queryBuildingCode({
     query,
     matchCount: CHAT_PIPELINE_CONFIG.INITIAL_MATCH_COUNT,
     precomputedEmbedding: queryEmbedding,

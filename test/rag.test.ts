@@ -23,19 +23,19 @@ vi.mock('@/lib/gemini', () => ({
 }));
 
 vi.mock('@/lib/document-registry', () => ({
-  getDocumentByIdSync: vi.fn((id: string) => id ? { displayName: 'Dubai Building Code 2021', shortName: 'DBC' } : undefined),
+  getDocumentByIdSync: vi.fn((id: string) => id ? { displayName: 'Building Code', shortName: 'DBC' } : undefined),
   getAllDocuments: vi.fn(async () => []),
   getAllDocumentIds: vi.fn(async () => ['dubai-building-code-2021']),
   getAllDocumentsSync: vi.fn(() => []),
   getAllDocumentIdsSync: vi.fn(() => ['dubai-building-code-2021']),
-  getDocumentById: vi.fn(async (id: string) => id ? { displayName: 'Dubai Building Code 2021', shortName: 'DBC' } : undefined),
+  getDocumentById: vi.fn(async (id: string) => id ? { displayName: 'Building Code', shortName: 'DBC' } : undefined),
   getDocumentByFileName: vi.fn(),
   getDocumentPdfPath: vi.fn(),
   invalidateRegistryCache: vi.fn(),
 }));
 
 // Import after mocks
-import { hybridSearch, queryDubaiCode } from '@/lib/rag';
+import { hybridSearch, queryBuildingCode } from '@/lib/rag';
 
 describe('RAG Module', () => {
   beforeEach(() => {
@@ -98,7 +98,7 @@ describe('RAG Module', () => {
     });
   });
 
-  describe('queryDubaiCode', () => {
+  describe('queryBuildingCode', () => {
     it('should perform hybrid search and return formatted results', async () => {
       const mockHybridData = [
         {
@@ -121,7 +121,7 @@ describe('RAG Module', () => {
 
       mockRpc.mockResolvedValueOnce({ data: mockHybridData, error: null });
 
-      const result = await queryDubaiCode({
+      const result = await queryBuildingCode({
         query: 'fire safety requirements',
         matchCount: 10,
       });
@@ -140,7 +140,7 @@ describe('RAG Module', () => {
         })
         .mockResolvedValueOnce({ data: [], error: null }); // Hybrid search
 
-      const _result = await queryDubaiCode({
+      const _result = await queryBuildingCode({
         query: 'section 3.2.1 requirements',
         matchCount: 10,
       });

@@ -50,7 +50,7 @@ export default function LoginPage() {
           <div className="flex justify-center">
             <Image 
               src={theme === 'dark' ? '/white-icon.svg' : '/black-icon.svg'} 
-              alt="Emirate Forge" 
+              alt="PermitForge"
               width={64} 
               height={64}
               className="h-16 w-auto"
@@ -60,7 +60,7 @@ export default function LoginPage() {
           <div>
             <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
             <CardDescription>
-              Sign in to Emirate Forge
+              Sign in to PermitForge
             </CardDescription>
           </div>
         </CardHeader>

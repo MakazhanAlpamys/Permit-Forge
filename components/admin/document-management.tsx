@@ -78,7 +78,7 @@ const EMPTY_FORM: DocumentFormData = {
   shortName: '',
   fileName: '',
   sourceUrl: '',
-  authority: 'Dubai Municipality',
+  authority: '',
   description: '',
   badgeColor: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
   keywords: '',
@@ -444,7 +444,7 @@ export function DocumentManagement() {
                   <Input
                     value={formData.displayName}
                     onChange={e => setFormData(prev => ({ ...prev, displayName: e.target.value }))}
-                    placeholder="Dubai Building Code 2021"
+                    placeholder="Building Code 2021"
                   />
                 </div>
                 <div>
@@ -463,7 +463,7 @@ export function DocumentManagement() {
                   <Input
                     value={formData.fileName}
                     onChange={e => setFormData(prev => ({ ...prev, fileName: e.target.value }))}
-                    placeholder="dubai-code.pdf"
+                    placeholder="document.pdf"
                   />
                 </div>
                 <div>
@@ -471,7 +471,7 @@ export function DocumentManagement() {
                   <Input
                     value={formData.authority}
                     onChange={e => setFormData(prev => ({ ...prev, authority: e.target.value }))}
-                    placeholder="Dubai Municipality"
+                    placeholder="e.g., City Authority"
                   />
                 </div>
               </div>
@@ -482,7 +482,7 @@ export function DocumentManagement() {
                   <Input
                     value={formData.id}
                     onChange={e => setFormData(prev => ({ ...prev, id: e.target.value }))}
-                    placeholder="dubai-building-code-2021"
+                    placeholder="building-code-2021"
                   />
                 </div>
               )}

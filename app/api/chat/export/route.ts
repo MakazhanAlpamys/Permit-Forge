@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     markdown += `**Messages:** ${(messages || []).length}\n\n---\n\n`;
 
     for (const msg of messages || []) {
-      const role = msg.role === 'user' ? 'You' : 'Emirate Forge';
+      const role = msg.role === 'user' ? 'You' : 'PermitForge';
       markdown += `### ${role}\n\n`;
       markdown += `${msg.content}\n\n`;
 
@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
       markdown += `---\n\n`;
     }
 
-    markdown += `\n*Exported from Emirate Forge — Dubai Building Code Compliance Assistant*\n`;
+    markdown += `\n*Exported from PermitForge — Building Code Compliance Assistant*\n`;
 
     // Sanitize title for filename
     const safeTitle = title.replace(/[^a-zA-Z0-9-_ ]/g, '').slice(0, 50).trim() || 'chat-export';

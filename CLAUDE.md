@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Emirate Forge** — AI-Powered Dubai Building Code Compliance Assistant. A full-stack Next.js 15 application with two major subsystems: (1) a hybrid RAG chat pipeline with Tree Reasoning for structure-aware document search across 5 official Dubai Municipality documents, and (2) a permit application system with AI-powered compliance checks and PDF certificate generation. Backend is Supabase (PostgreSQL + pgvector).
+**PermitForge** — AI-Powered Building Code Compliance Assistant. A full-stack Next.js 15 application with two major subsystems: (1) a hybrid RAG chat pipeline with Tree Reasoning for structure-aware document search across dynamically managed documents, and (2) a permit application system with AI-powered compliance checks and PDF certificate generation. Backend is Supabase (PostgreSQL + pgvector).
 
 ## Commands
 
@@ -133,7 +133,7 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 - Multi-step form: project info → building details → compliance requirements
 - AI compliance check (`lib/permit-compliance.ts`): queries RAG → feeds context to Gemini → returns structured JSON analysis
 - File attachments: up to 10 files, 10MB each (PDF, PNG, JPG, DWG, DXF)
-- PDF certificate generation (`lib/permit-certificate.ts`): PDFKit, certificate number format `EF-CERT-{YEAR}-{ID}`
+- PDF certificate generation (`lib/permit-certificate.ts`): PDFKit, certificate number format `PF-CERT-{YEAR}-{ID}`
 - Status timeline tracking with admin review interface
 
 ### Key Modules

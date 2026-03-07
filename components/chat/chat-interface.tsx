@@ -504,7 +504,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
                 value={inputValue}
                 onChange={e => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask about Dubai Building Code compliance..."
+                placeholder="Ask about building code compliance..."
                 className="min-h-[52px] max-h-[200px] pr-12 resize-none bg-background"
                 rows={1}
                 disabled={isLoading || isStreaming}
@@ -534,7 +534,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
 
           {/* Disclaimer - minimal spacing for maximum chat area */}
           <p className="text-xs text-muted-foreground text-center mt-2 mb-1">
-            Emirate Forge provides guidance based on Dubai Building Code 2021. 
+            PermitForge provides guidance based on your ingested building codes.
             Always verify with official authorities for final compliance decisions.
           </p>
         </div>
@@ -565,7 +565,7 @@ const EXAMPLE_QUESTIONS = [
   },
   {
     title: "Seismic Requirements",
-    question: "How does the DBC modify the seismic hazard assessment of ASCE/SEI 7-16 for Dubai, and why is the USA's 'two-thirds' factor excluded?",
+    question: "How does the building code modify the seismic hazard assessment of ASCE/SEI 7-16, and why is the 'two-thirds' factor excluded?",
     icon: "🌍",
   },
 ];
@@ -588,10 +588,10 @@ function EmptyState({ onSelectQuestion }: EmptyStateProps) {
 
       {/* Title */}
       <h2 className="text-2xl font-semibold text-foreground mb-2">
-        Dubai Building Code Assistant
+        Building Code Assistant
       </h2>
       <p className="text-muted-foreground max-w-md mb-8">
-        Ask me anything about Dubai Building Code compliance, parking requirements, 
+        Ask me anything about building code compliance, parking requirements,
         fire safety, or other regulatory requirements.
       </p>
 

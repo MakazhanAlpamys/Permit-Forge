@@ -40,7 +40,7 @@ export function Header({ onMenuClick }: HeaderProps) {
         <div className="flex items-center gap-2">
           <Image 
             src={theme === 'dark' ? '/white-icon.svg' : '/black-icon.svg'} 
-            alt="Emirate Forge" 
+            alt="PermitForge"
             width={48} 
             height={48}
             className="h-12 w-auto"

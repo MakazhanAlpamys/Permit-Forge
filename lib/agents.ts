@@ -9,16 +9,16 @@ import { HumanMessage } from '@langchain/core/messages';
 import type { TreeNode, TreeReasoningResult, QueryClassification } from '@/types';
 
 // -----------------------------------------------------------------------------
-// 0. TOPIC CLASSIFIER - Check if query is about Dubai Building Code
+// 0. TOPIC CLASSIFIER - Check if query is about building codes
 // -----------------------------------------------------------------------------
 
-const TOPIC_CLASSIFIER_PROMPT = `You are a query classifier for a Dubai Building Code 2021 assistant.
+const TOPIC_CLASSIFIER_PROMPT = `You are a query classifier for a building code compliance assistant.
 
 Determine if the user's message is related to:
 - Building codes, construction, architecture
 - Parking requirements, fire safety, structural requirements
 - Building permits, regulations, compliance
-- Dubai/UAE construction standards
+- Construction standards and building regulations
 - Greetings or questions about what you can help with
 
 The user may write in any language (English, Russian, Arabic, etc.). Classify based on meaning, not language.
@@ -44,7 +44,7 @@ export interface TopicClassification {
 }
 
 /**
- * Quickly classify if the query is related to Dubai Building Code
+ * Quickly classify if the query is related to building codes
  * This saves API calls by skipping RAG for off-topic queries
  */
 export async function classifyTopic(userQuery: string): Promise<TopicClassification> {
@@ -53,7 +53,7 @@ export async function classifyTopic(userQuery: string): Promise<TopicClassificat
     /parking/i, /fire\s*safety/i, /building/i, /floor/i, /height/i,
     /setback/i, /structure/i, /foundation/i, /permit/i, /code/i,
     /section\s*\d/i, /chapter\s*\d/i, /requirement/i, /regulation/i,
-    /dubai/i, /compliance/i, /construct/i, /architect/i, /MEP/i,
+    /compliance/i, /construct/i, /architect/i, /MEP/i,
     /elevator/i, /stair/i, /exit/i, /egress/i, /ventilation/i,
     /plumbing/i, /electrical/i, /load/i, /concrete/i, /steel/i,
   ];

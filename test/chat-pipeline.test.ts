@@ -18,15 +18,15 @@ vi.mock('@/lib/agents', () => ({
   classifyTopic: (...args: unknown[]) => mockClassifyTopic(...args),
 }));
 
-const mockQueryDubaiCode = vi.fn();
-const mockQueryDubaiCodeFiltered = vi.fn();
+const mockQueryBuildingCode = vi.fn();
+const mockQueryBuildingCodeFiltered = vi.fn();
 const mockBuildContext = vi.fn();
 const mockPassesCRAGCheck = vi.fn().mockReturnValue(true);
 const mockExpandToParentChunks = vi.fn((chunks: MatchedChunk[]) => Promise.resolve(chunks));
 
 vi.mock('@/lib/rag', () => ({
-  queryDubaiCode: (...args: unknown[]) => mockQueryDubaiCode(...args),
-  queryDubaiCodeFiltered: (...args: unknown[]) => mockQueryDubaiCodeFiltered(...args),
+  queryBuildingCode: (...args: unknown[]) => mockQueryBuildingCode(...args),
+  queryBuildingCodeFiltered: (...args: unknown[]) => mockQueryBuildingCodeFiltered(...args),
   buildContext: (...args: unknown[]) => mockBuildContext(...args),
   passesCRAGCheck: (...args: unknown[]) => mockPassesCRAGCheck(...args),
   expandToParentChunks: (chunks: MatchedChunk[]) => mockExpandToParentChunks(chunks),
@@ -53,13 +53,13 @@ vi.mock('@/lib/heuristic-reranker', () => ({
 
 vi.mock('@/lib/document-selector', () => ({
   selectDocuments: vi.fn().mockReturnValue(['dubai-building-code-2021']),
-  getSelectedDocumentNames: vi.fn().mockReturnValue(['Dubai Building Code 2021']),
+  getSelectedDocumentNames: vi.fn().mockReturnValue(['Building Code']),
   loadSearchProfiles: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/lib/document-registry', () => ({
-  getAllDocuments: vi.fn().mockResolvedValue([{ id: 'dubai-building-code-2021', displayName: 'Dubai Building Code 2021', shortName: 'DBC' }]),
-  getDocumentByIdSync: vi.fn((id: string) => id ? { displayName: 'Dubai Building Code 2021', shortName: 'DBC' } : undefined),
+  getAllDocuments: vi.fn().mockResolvedValue([{ id: 'dubai-building-code-2021', displayName: 'Building Code', shortName: 'DBC' }]),
+  getDocumentByIdSync: vi.fn((id: string) => id ? { displayName: 'Building Code', shortName: 'DBC' } : undefined),
   getAllDocumentsSync: vi.fn(() => []),
   getAllDocumentIdsSync: vi.fn(() => ['dubai-building-code-2021']),
   invalidateRegistryCache: vi.fn(),
@@ -101,7 +101,7 @@ describe('Chat Pipeline', () => {
       suggestedPath: 'standard',
       structuralHints: [],
     });
-    mockQueryDubaiCode.mockResolvedValue({ chunks: sampleChunks });
+    mockQueryBuildingCode.mockResolvedValue({ chunks: sampleChunks });
     mockPassesCRAGCheck.mockReturnValue(true);
     mockExpandToParentChunks.mockImplementation((chunks: MatchedChunk[]) => Promise.resolve(chunks));
     mockGenerateEmbedding.mockResolvedValue(new Array(768).fill(0));

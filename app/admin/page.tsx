@@ -156,7 +156,7 @@ export default function AdminPage() {
               <Badge variant="outline" className="text-orange-500 border-orange-500">
                 Admin Panel
               </Badge>
-              <h1 className="text-lg font-semibold hidden sm:block">Emirate Forge</h1>
+              <h1 className="text-lg font-semibold hidden sm:block">PermitForge</h1>
             </div>
             <div className="flex items-center gap-2">
               <Button 

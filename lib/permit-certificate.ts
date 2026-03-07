@@ -28,7 +28,7 @@ export interface CertificateData {
 export function generateCertificateNumber(permitId: string): string {
   const year = new Date().getFullYear();
   const shortId = permitId.replace(/-/g, '').substring(0, 8).toUpperCase();
-  return `EF-CERT-${year}-${shortId}`;
+  return `PF-CERT-${year}-${shortId}`;
 }
 
 // -----------------------------------------------------------------------------
@@ -76,7 +76,7 @@ export async function generateCertificatePDF(data: CertificateData): Promise<Buf
         .font('Helvetica-Bold')
         .fontSize(24)
         .fillColor(NAVY)
-        .text('EMIRATE FORGE', { align: 'center' });
+        .text('PERMITFORGE', { align: 'center' });
 
       doc
         .font('Helvetica')
@@ -196,7 +196,7 @@ export async function generateCertificatePDF(data: CertificateData): Promise<Buf
         .fontSize(8)
         .fillColor(LIGHT_GRAY)
         .text(
-          `Generated on ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} | Emirate Forge`,
+          `Generated on ${new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} | PermitForge`,
           40, footerY + 8,
           { width: pageWidth, align: 'center' },
         )

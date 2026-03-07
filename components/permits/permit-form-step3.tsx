@@ -50,7 +50,7 @@ export function PermitFormStep3({
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Select the compliance areas you want verified against the Dubai Building Code 2021.
+          Select the compliance areas you want verified against the building code.
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -104,7 +104,7 @@ export function PermitFormStep3({
               <span className="text-sm font-medium">AI Compliance Check</span>
             </div>
             <p className="text-xs text-muted-foreground mb-3">
-              Run an AI-powered analysis to check your project against the Dubai Building Code before submitting.
+              Run an AI-powered analysis to check your project against the building code before submitting.
             </p>
             <Button
               type="button"

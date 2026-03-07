@@ -206,7 +206,7 @@ export function PdfIngestionTab() {
     <>
       <div className="mb-6">
         <h2 className="text-2xl font-bold">Multi-Document Ingestion Pipeline</h2>
-        <p className="text-muted-foreground">Manage document ingestion for RAG queries across multiple Dubai building codes</p>
+        <p className="text-muted-foreground">Manage document ingestion for RAG queries across multiple building codes</p>
       </div>
 
       <div className="grid gap-6 max-w-3xl">

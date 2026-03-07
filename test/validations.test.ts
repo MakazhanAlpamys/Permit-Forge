@@ -125,7 +125,7 @@ describe('Validation Schemas', () => {
   describe('chatMessageSchema', () => {
     it('should accept valid chat message', () => {
       const validMessage = {
-        message: 'Hello, how can I help you with Dubai Building Code?',
+        message: 'Hello, how can I help you with building code compliance?',
       };
       
       const result = chatMessageSchema.safeParse(validMessage);

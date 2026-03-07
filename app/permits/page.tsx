@@ -75,7 +75,7 @@ export default function PermitsPage() {
           <div>
             <h1 className="text-2xl font-bold">Permit Applications</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Manage your Dubai Building Code permit applications
+              Manage your building code permit applications
             </p>
           </div>
           <div className="flex items-center gap-2">

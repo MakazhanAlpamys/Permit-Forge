@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/🏗️-Emirate_Forge-0D1117?style=for-the-badge&labelColor=0D1117" alt="logo" height="40" />
+<img src="https://img.shields.io/badge/🏗️-PermitForge-0D1117?style=for-the-badge&labelColor=0D1117" alt="logo" height="40" />
 
-# Emirate Forge
+# PermitForge
 
-### AI-Powered Dubai Building Code Compliance Assistant
+### AI-Powered Building Code Compliance Assistant
 
 <br />
 
@@ -30,12 +30,12 @@
 
 ## Overview
 
-**Emirate Forge** is an enterprise-grade AI assistant for Dubai Municipality building code compliance. It combines two major subsystems:
+**PermitForge** is an enterprise-grade AI assistant for building code compliance. It combines two major subsystems:
 
-1. **Hybrid RAG Chat Pipeline (v2)** — optimized to **1-2 API calls per question** (~1.5 average with semantic caching). Uses vector + keyword hybrid search with RRF, deterministic Tree Reasoning, heuristic reranking, parent-child chunking, and chunk-based citations across **dynamically managed Dubai Municipality documents**.
+1. **Hybrid RAG Chat Pipeline (v2)** — optimized to **1-2 API calls per question** (~1.5 average with semantic caching). Uses vector + keyword hybrid search with RRF, deterministic Tree Reasoning, heuristic reranking, parent-child chunking, and chunk-based citations across **dynamically managed documents**.
 2. **Permit Application System** — full lifecycle permit management with AI-powered compliance checks, multi-step forms, file attachments, admin review workflow, and PDF certificate generation.
 
-> **Who is it for?** — Architects, engineers, construction professionals, and regulatory consultants working with Dubai Municipality building codes.
+> **Who is it for?** — Architects, engineers, construction professionals, and regulatory consultants working with building codes.
 
 <br />
 
@@ -98,7 +98,7 @@
 - **3-step multi-step form:** project info → building details → compliance requirements
 - **AI compliance check** — queries RAG → feeds context to Gemini → returns structured JSON analysis
 - **File attachments** — up to 10 files, 10 MB each (PDF, PNG, JPG, DWG, DXF)
-- **PDF certificate generation** — `EF-CERT-{YEAR}-{ID}` format via PDFKit
+- **PDF certificate generation** — `PF-CERT-{YEAR}-{ID}` format via PDFKit
 - **Status timeline** tracking with full admin review interface
 - **Revision workflow** — admins can request revisions; users resubmit with incremented count
 - **In-app + email notifications** via Resend API on every status change
@@ -143,7 +143,7 @@
 - Batch embedding via `gemini-embedding-001` (768-dim, rate-limit-aware)
 - Resume support — skips already-ingested chunks
 - **Dynamic document registry** — add any PDF via admin panel
-- **5 default documents** seeded (DBC, Safety, Al Sa'fat, UDC, Sewerage) — fully dynamic, admin can add/remove
+- Fully dynamic — admin can add/remove any documents
 - **Auto-keyword extraction** from PDF text via TF-IDF during ingestion (0 API calls)
 - Per-document stats, re-ingestion, deactivation/restore
 
@@ -193,8 +193,8 @@
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/MakazhanAlpamys/Emirate-Forge.git
-cd Emirate-Forge
+git clone https://github.com/MakazhanAlpamys/PermitForge.git
+cd PermitForge
 npm install
 ```
 
@@ -226,7 +226,7 @@ LOG_LEVEL=info                           # debug | info | warn | error
 1. Create a project in [Supabase Dashboard](https://supabase.com/dashboard)
 2. Open **SQL Editor** and run `supabase/migrations/000_full_setup.sql`
 
-This single idempotent script drops and recreates the entire schema: **15 tables**, **29+ RPC functions**, HNSW vector indexes, GIN full-text search, and RLS policies. Seeds 5 default documents (deletable by admin) and an admin user.
+This single idempotent script drops and recreates the entire schema: **15 tables**, **29+ RPC functions**, HNSW vector indexes, GIN full-text search, and RLS policies. Seeds an admin user.
 
 Default admin credentials: `admin` / `Admin123!`
 
@@ -567,7 +567,7 @@ X-CSRF-Token: <csrf_token>
 **Response** (`text/plain`, streamed):
 
 ```
-According to Section 5.2 of the Dubai Building Code...
+According to Section 5.2 of the Building Code...
 
 [tokens stream in real-time]
 
@@ -683,7 +683,7 @@ When triggered by the user (`runComplianceCheck`):
 
 Generated for approved permits via `GET /api/permits/[id]/certificate`:
 - A4 PDF via `PDFKit`
-- Certificate number: `EF-CERT-{YEAR}-{8-char-ID}`
+- Certificate number: `PF-CERT-{YEAR}-{8-char-ID}`
 - Includes project info, building details, approval status, review comments
 
 ### Pages
@@ -734,7 +734,7 @@ Test setup (`test/setup.ts`) mocks Supabase clients, Next.js headers/cookies, an
 ## Project Structure
 
 ```
-Emirate-Forge/
+PermitForge/
 ├── actions/                           # Server Actions (10 files)
 │   ├── auth.ts                        #   Login / Logout with audit logging
 │   ├── admin.ts                       #   User CRUD, stats, audit logs

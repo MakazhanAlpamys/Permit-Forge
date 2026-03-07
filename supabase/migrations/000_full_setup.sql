@@ -1,5 +1,5 @@
 -- ============================================================================
--- Emirate Forge — Complete Database Setup (Merged Migration)
+-- PermitForge — Complete Database Setup (Merged Migration)
 -- Combines: 001_complete_setup + 002_permit_applications +
 --           003_permit_enhancements + 004_multi_document_support +
 --           005_analytics_functions + 006_cleanup_functions

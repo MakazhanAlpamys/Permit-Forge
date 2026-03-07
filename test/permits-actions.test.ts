@@ -77,7 +77,7 @@ import {
 const validPermitData = {
   projectName: 'Test Building',
   projectType: 'residential' as const,
-  projectAddress: '123 Dubai Street, Dubai',
+  projectAddress: '123 Main Street',
 };
 
 const testUser = { id: 'user-123', email: 'test@test.com', role: 'user' };
@@ -122,7 +122,7 @@ describe('Permits Server Actions', () => {
       const result = await createPermit({
         projectName: 'AB', // too short (min 3)
         projectType: 'residential' as const,
-        projectAddress: '123 Dubai Street, Dubai',
+        projectAddress: '123 Main Street',
       }, 'csrf-token');
 
       expect(result.success).toBe(false);
@@ -134,7 +134,7 @@ describe('Permits Server Actions', () => {
         projectName: 'Test Building',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         projectType: 'invalid_type' as any,
-        projectAddress: '123 Dubai Street, Dubai',
+        projectAddress: '123 Main Street',
       }, 'csrf-token');
 
       expect(result.success).toBe(false);
@@ -232,7 +232,7 @@ describe('Permits Server Actions', () => {
           status: 'draft',
           project_name: 'Test',
           project_type: 'residential',
-          project_address: '123 Dubai St',
+          project_address: '123 Main St',
           plot_number: null,
           project_description: null,
           building_details: {},
@@ -280,7 +280,7 @@ describe('Permits Server Actions', () => {
           status: 'draft',
           project_name: 'Test',
           project_type: 'residential',
-          project_address: '123 Dubai St',
+          project_address: '123 Main St',
           building_details: {},
           compliance_requirements: {},
           created_at: '2024-01-01',

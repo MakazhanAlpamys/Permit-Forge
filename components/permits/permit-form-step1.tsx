@@ -70,7 +70,7 @@ export function PermitFormStep1({ data, onChange, onNext, loading, error }: Perm
               value={data.projectAddress}
               onChange={(e) => onChange({ ...data, projectAddress: e.target.value })}
               className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
-              placeholder="e.g., Plot 123, Al Barsha 1, Dubai"
+              placeholder="e.g., Plot 123, District 1"
               disabled={loading}
             />
           </div>

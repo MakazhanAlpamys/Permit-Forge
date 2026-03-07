@@ -128,13 +128,13 @@ async function exactSearch(
 // -----------------------------------------------------------------------------
 
 /**
- * Query Dubai Code using hybrid search.
+ * Query building code using hybrid search.
  * v2 changes:
  *   - Accepts pre-computed embedding (reused from semantic cache check)
  *   - Accepts document filter (from document selector)
  *   - No more query expansion (removed in v2)
  */
-export async function queryDubaiCode(
+export async function queryBuildingCode(
   params: RAGQuery & {
     precomputedEmbedding?: number[];
     documentFilter?: string[];
@@ -215,7 +215,7 @@ export function buildContext(chunks: MatchedChunk[]): string {
     const chapter = chunk.metadata.chapter || '';
     const docId = chunk.metadata.documentName;
     const docInfo = docId ? getDocumentByIdSync(docId) : undefined;
-    const docLabel = docInfo ? docInfo.displayName : 'Dubai Building Code 2021';
+    const docLabel = docInfo ? docInfo.displayName : 'Building Code';
 
     const content = chunk.content.length > MAX_CHUNK_LENGTH
       ? chunk.content.slice(0, MAX_CHUNK_LENGTH) + '...'
@@ -229,7 +229,7 @@ export function buildContext(chunks: MatchedChunk[]): string {
   const docNames = new Set(chunks.map(c => {
     const docId = c.metadata.documentName;
     const info = docId ? getDocumentByIdSync(docId) : undefined;
-    return info?.displayName || 'Dubai Building Code 2021';
+    return info?.displayName || 'Building Code';
   }));
   const docsHeader = `CONTEXT FROM: ${Array.from(docNames).join(', ')}`;
 
@@ -320,7 +320,7 @@ async function hybridSearchWithPostFilter(
   return filtered.slice(0, matchCount);
 }
 
-export async function queryDubaiCodeFiltered(
+export async function queryBuildingCodeFiltered(
   params: RAGQuery & {
     pageRanges: PageRange[];
     precomputedEmbedding?: number[];

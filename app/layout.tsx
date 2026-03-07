@@ -9,13 +9,13 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Emirate Forge - Dubai Building Code Compliance Assistant",
-  description: "AI-powered compliance checking for Dubai Building Code 2021. Get instant answers about parking requirements, fire safety, building heights, and more.",
-  keywords: ["Dubai Building Code", "compliance", "parking requirements", "construction permits", "UAE regulations"],
-  authors: [{ name: "Emirate Forge" }],
+  title: "PermitForge - Building Code Compliance Assistant",
+  description: "AI-powered compliance checking for building codes. Get instant answers about parking requirements, fire safety, building heights, and more.",
+  keywords: ["building code", "compliance", "parking requirements", "construction permits", "regulations"],
+  authors: [{ name: "PermitForge" }],
   openGraph: {
-    title: "Emirate Forge - Dubai Building Code Compliance Assistant",
-    description: "AI-powered compliance checking for Dubai Building Code 2021",
+    title: "PermitForge - Building Code Compliance Assistant",
+    description: "AI-powered compliance checking for building codes",
     type: "website",
   },
 };
