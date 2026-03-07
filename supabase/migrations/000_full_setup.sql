@@ -358,45 +358,46 @@ CREATE TABLE document_registry (
   keywords TEXT[] DEFAULT '{}',                 -- For document selector scoring
   categories TEXT[] DEFAULT '{}',               -- Category tags
   is_active BOOLEAN DEFAULT TRUE,               -- Soft delete / disable
+  keywords_auto_generated BOOLEAN DEFAULT TRUE,  -- FALSE if admin manually edited keywords
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 CREATE INDEX idx_document_registry_active ON document_registry(is_active) WHERE is_active = TRUE;
 
--- Seed with the 5 default documents
-INSERT INTO document_registry (id, display_name, short_name, file_name, source_url, authority, description, badge_color, keywords, categories)
+-- Seed with the 5 default documents (keywords_auto_generated=false because these are hand-curated)
+INSERT INTO document_registry (id, display_name, short_name, file_name, source_url, authority, description, badge_color, keywords, categories, keywords_auto_generated)
 VALUES
   ('dubai-building-code-2021', 'Dubai Building Code 2021', 'DBC', 'dubai-code.pdf',
    'https://dm.gov.ae/wp-content/uploads/2021/12/Dubai%20Building%20Code_English_2021%20Edition_compressed.pdf',
    'Dubai Municipality', 'Comprehensive building regulations for construction in Dubai',
    'bg-blue-500/20 text-blue-400 border-blue-500/30',
    ARRAY['building','code','construction','parking','height','setback','floor','area','ratio','plot','structural','foundation','concrete','steel','load','seismic','occupancy','classification','permit','inspection','glazing','facade','cladding','roofing','insulation','waterproofing','balcony','basement','podium','tower','corridor','stairway','ramp','high-rise','low-rise','residential','commercial','industrial','mixed-use','villa','apartment','office','retail','hotel','warehouse'],
-   ARRAY['structural','general','parking','construction']),
+   ARRAY['structural','general','parking','construction'], false),
   ('code-of-safety', 'Dubai Code of Safety', 'Safety', 'code_of_safety_EN.pdf',
    'https://www.dm.gov.ae/wp-content/uploads/2022/04/code_of_safety_EN.pdf',
    'Dubai Municipality', 'Safety regulations and requirements for buildings in Dubai',
    'bg-red-500/20 text-red-400 border-red-500/30',
    ARRAY['safety','fire','egress','exit','stair','alarm','smoke','sprinkler','detector','extinguisher','evacuation','emergency','firewall','fire-resistance','fire-rated','fire-separation','escape','refuge','hazard','flammable','combustible','fire-fighting','hydrant','hose','suppression','compartment'],
-   ARRAY['safety','fire','emergency']),
+   ARRAY['safety','fire','emergency'], false),
   ('al-safat-green-building', 'Al Sa''fat Green Building System (2nd Ed, 2023)', 'Al Sa''fat', 'Al-Safat-–-Dubai-Green-Building-System-2nd-editionJan2023.pdf',
    'https://www.dm.gov.ae/wp-content/uploads/2023/01/Al-Safat-%E2%80%93-Dubai-Green-Building-System-2nd-editionJan2023.pdf',
    'Dubai Municipality', 'Mandatory green building rating system with Silver, Gold, and Platinum tiers',
    'bg-violet-500/20 text-violet-400 border-violet-500/30',
    ARRAY['green','safat','energy','efficiency','solar','renewable','sustainability','environment','carbon','emission','water','conservation','recycling','waste','landscape','vegetation','thermal','insulation','hvac','cooling','lighting','daylight','silver','gold','platinum','rating','tier','indoor','air quality','material','leed'],
-   ARRAY['environmental','energy','green']),
+   ARRAY['environmental','energy','green'], false),
   ('universal-design-code', 'Dubai Universal Design Code', 'UDC', 'Dubai-Guide-for-Built-Environment-Universal-Design-1_compressed.pdf',
    'https://www.dm.gov.ae/wp-content/uploads/2020/11/Dubai-Guide-for-Built-Environment-Universal-Design-1_compressed.pdf',
    'Dubai Municipality', 'Accessibility and universal design requirements for the built environment',
    'bg-purple-500/20 text-purple-400 border-purple-500/30',
    ARRAY['accessibility','universal','design','disability','wheelchair','ramp','handrail','tactile','braille','signage','elevator','lift','restroom','toilet','washroom','door','width','clearance','reach','grab bar','accessible','determination','inclusive','mobility','visual','hearing','impairment'],
-   ARRAY['accessibility','universal-design']),
+   ARRAY['accessibility','universal-design'], false),
   ('sewerage-stormwater-guidelines', 'Sewerage & Stormwater Design Guidelines (2025)', 'Sewerage', 'comp-DM_Sewerage-Guidelines-F.24.01.25.pdf',
    'https://www.dm.gov.ae/wp-content/uploads/2025/01/comp-DM_Sewerage-Guidelines-F.24.01.25.pdf',
    'Dubai Municipality', 'Technical guidelines for sewerage and stormwater drainage design',
    'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
    ARRAY['sewerage','sewer','stormwater','drainage','plumbing','pipe','manhole','pumping','station','wastewater','effluent','grease','trap','interceptor','backflow','valve','vent','fixture','sanitary','rainwater','runoff','catchment','flood','retention','infiltration','outfall','tss'],
-   ARRAY['mep','plumbing','drainage'])
+   ARRAY['mep','plumbing','drainage'], false)
 ON CONFLICT (id) DO NOTHING;
 
 -- ============================================================================
@@ -1671,6 +1672,7 @@ RETURNS TABLE (
   keywords TEXT[],
   categories TEXT[],
   is_active BOOLEAN,
+  keywords_auto_generated BOOLEAN,
   created_at TIMESTAMP WITH TIME ZONE,
   updated_at TIMESTAMP WITH TIME ZONE
 )
@@ -1682,7 +1684,8 @@ BEGIN
   RETURN QUERY
   SELECT dr.id, dr.display_name, dr.short_name, dr.file_name,
          dr.source_url, dr.authority, dr.description, dr.badge_color,
-         dr.keywords, dr.categories, dr.is_active, dr.created_at, dr.updated_at
+         dr.keywords, dr.categories, dr.is_active, dr.keywords_auto_generated,
+         dr.created_at, dr.updated_at
   FROM document_registry dr
   ORDER BY dr.created_at;
 END;
@@ -1699,7 +1702,8 @@ CREATE OR REPLACE FUNCTION upsert_document(
   p_description TEXT DEFAULT '',
   p_badge_color TEXT DEFAULT 'bg-gray-500/20 text-gray-400 border-gray-500/30',
   p_keywords TEXT[] DEFAULT '{}',
-  p_categories TEXT[] DEFAULT '{}'
+  p_categories TEXT[] DEFAULT '{}',
+  p_keywords_auto_generated BOOLEAN DEFAULT TRUE
 )
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -1707,8 +1711,8 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-  INSERT INTO document_registry (id, display_name, short_name, file_name, source_url, authority, description, badge_color, keywords, categories)
-  VALUES (p_id, p_display_name, p_short_name, p_file_name, p_source_url, p_authority, p_description, p_badge_color, p_keywords, p_categories)
+  INSERT INTO document_registry (id, display_name, short_name, file_name, source_url, authority, description, badge_color, keywords, categories, keywords_auto_generated)
+  VALUES (p_id, p_display_name, p_short_name, p_file_name, p_source_url, p_authority, p_description, p_badge_color, p_keywords, p_categories, p_keywords_auto_generated)
   ON CONFLICT (id) DO UPDATE SET
     display_name = EXCLUDED.display_name,
     short_name = EXCLUDED.short_name,
@@ -1719,6 +1723,7 @@ BEGIN
     badge_color = EXCLUDED.badge_color,
     keywords = EXCLUDED.keywords,
     categories = EXCLUDED.categories,
+    keywords_auto_generated = EXCLUDED.keywords_auto_generated,
     updated_at = NOW();
   RETURN p_id;
 END;

@@ -143,7 +143,8 @@
 - Batch embedding via `gemini-embedding-001` (768-dim, rate-limit-aware)
 - Resume support — skips already-ingested chunks
 - **Dynamic document registry** — add any PDF via admin panel
-- **5 default documents** seeded (DBC, Safety, Al Sa'fat, UDC, Sewerage)
+- **5 default documents** seeded (DBC, Safety, Al Sa'fat, UDC, Sewerage) — fully dynamic, admin can add/remove
+- **Auto-keyword extraction** from PDF text via TF-IDF during ingestion (0 API calls)
 - Per-document stats, re-ingestion, deactivation/restore
 
 </td>
@@ -225,7 +226,7 @@ LOG_LEVEL=info                           # debug | info | warn | error
 1. Create a project in [Supabase Dashboard](https://supabase.com/dashboard)
 2. Open **SQL Editor** and run `supabase/migrations/000_full_setup.sql`
 
-This single idempotent script drops and recreates the entire schema: **15 tables**, **29+ RPC functions**, HNSW vector indexes, GIN full-text search, and RLS policies. Seeds 5 default documents and an admin user.
+This single idempotent script drops and recreates the entire schema: **15 tables**, **29+ RPC functions**, HNSW vector indexes, GIN full-text search, and RLS policies. Seeds 5 default documents (deletable by admin) and an admin user.
 
 Default admin credentials: `admin` / `Admin123!`
 
@@ -786,7 +787,8 @@ Emirate-Forge/
 │   ├── scope-detector.ts              #   Regex page/section/chapter detection (0 API)
 │   ├── heuristic-reranker.ts          #   Deterministic reranking (0 API, ~1ms)
 │   ├── citation-parser.ts             #   Chunk-based citations (0 API, 100% accurate)
-│   ├── document-registry.ts           #   Document registry (hardcoded + DB-backed)
+│   ├── keyword-extractor.ts           #   TF-IDF keyword extraction from PDF (0 API)
+│   ├── document-registry.ts           #   Document registry (fully DB-driven, cached)
 │   ├── auth.ts                        #   JWT, sessions, passwords, CSRF
 │   ├── security.ts                    #   requireAuth / requireAdmin guards
 │   ├── gemini.ts                      #   Gemini + LangChain configuration

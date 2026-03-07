@@ -1,12 +1,14 @@
 // ============================================================================
 // Document Selector — Keyword-based document scoring (v2 Pipeline, 0 API)
 // Scores query against each document's keywords to narrow search scope
+// All profiles loaded from DB (document_registry.keywords/categories)
 // ============================================================================
 
-import { DOCUMENT_REGISTRY, type DocumentInfo } from '@/lib/document-registry';
+import { getDocumentByIdSync, getAllDocumentIdsSync } from '@/lib/document-registry';
+import type { DocumentInfo } from '@/lib/document-registry';
 
 // -----------------------------------------------------------------------------
-// Document Keywords & Categories
+// DB-Loaded Profiles Cache
 // -----------------------------------------------------------------------------
 
 interface DocumentSearchProfile {
@@ -14,80 +16,52 @@ interface DocumentSearchProfile {
   categories: string[];
 }
 
-// Runtime-injected profiles from DB (loaded on first use via loadDynamicProfiles)
-let dynamicProfiles: Record<string, DocumentSearchProfile> = {};
-let dynamicProfilesLoaded = false;
+let profileCache: Record<string, DocumentSearchProfile> = {};
+let profileCacheTs = 0;
+const PROFILE_CACHE_TTL = 5 * 60 * 1000; // 5 min
 
-/**
- * Inject additional document profiles from DB at runtime.
- * Called by chat-pipeline on startup or when documents change.
- */
-export function injectDocumentProfiles(profiles: Record<string, DocumentSearchProfile>) {
-  dynamicProfiles = profiles;
-  dynamicProfilesLoaded = true;
+function isProfileCacheValid(): boolean {
+  return profileCacheTs > 0 && Date.now() - profileCacheTs < PROFILE_CACHE_TTL;
 }
 
-/** Check if dynamic profiles have been loaded */
-export function hasDynamicProfiles(): boolean {
-  return dynamicProfilesLoaded;
+/** Invalidate profile cache (call after ingestion updates keywords) */
+export function invalidateProfileCache(): void {
+  profileCache = {};
+  profileCacheTs = 0;
 }
 
-const DOCUMENT_PROFILES: Record<string, DocumentSearchProfile> = {
-  'dubai-building-code-2021': {
-    keywords: [
-      'building', 'code', 'construction', 'parking', 'height', 'setback',
-      'floor', 'area', 'ratio', 'plot', 'structural', 'foundation',
-      'concrete', 'steel', 'load', 'seismic', 'occupancy', 'classification',
-      'permit', 'inspection', 'glazing', 'facade', 'cladding', 'roofing',
-      'insulation', 'waterproofing', 'balcony', 'basement', 'podium',
-      'tower', 'corridor', 'stairway', 'ramp', 'high-rise', 'low-rise',
-      'residential', 'commercial', 'industrial', 'mixed-use', 'villa',
-      'apartment', 'office', 'retail', 'hotel', 'warehouse',
-    ],
-    categories: ['structural', 'general', 'parking', 'construction'],
-  },
-  'code-of-safety': {
-    keywords: [
-      'safety', 'fire', 'egress', 'exit', 'stair', 'alarm', 'smoke',
-      'sprinkler', 'detector', 'extinguisher', 'evacuation', 'emergency',
-      'firewall', 'fire-resistance', 'fire-rated', 'fire-separation',
-      'escape', 'refuge', 'hazard', 'flammable', 'combustible',
-      'fire-fighting', 'hydrant', 'hose', 'suppression', 'compartment',
-    ],
-    categories: ['safety', 'fire', 'emergency'],
-  },
-  'al-safat-green-building': {
-    keywords: [
-      'green', 'safat', 'sa\'fat', 'energy', 'efficiency', 'solar',
-      'renewable', 'sustainability', 'environment', 'carbon', 'emission',
-      'water', 'conservation', 'recycling', 'waste', 'landscape',
-      'vegetation', 'thermal', 'insulation', 'hvac', 'cooling',
-      'lighting', 'daylight', 'silver', 'gold', 'platinum', 'rating',
-      'tier', 'indoor', 'air quality', 'material', 'leed',
-    ],
-    categories: ['environmental', 'energy', 'green'],
-  },
-  'universal-design-code': {
-    keywords: [
-      'accessibility', 'universal', 'design', 'disability', 'wheelchair',
-      'ramp', 'handrail', 'tactile', 'braille', 'signage', 'elevator',
-      'lift', 'restroom', 'toilet', 'washroom', 'door', 'width',
-      'clearance', 'reach', 'grab bar', 'accessible', 'determination',
-      'inclusive', 'mobility', 'visual', 'hearing', 'impairment',
-    ],
-    categories: ['accessibility', 'universal-design'],
-  },
-  'sewerage-stormwater-guidelines': {
-    keywords: [
-      'sewerage', 'sewer', 'stormwater', 'drainage', 'plumbing',
-      'pipe', 'manhole', 'pumping', 'station', 'wastewater', 'effluent',
-      'grease', 'trap', 'interceptor', 'backflow', 'valve', 'vent',
-      'fixture', 'sanitary', 'rainwater', 'runoff', 'catchment',
-      'flood', 'retention', 'infiltration', 'outfall', 'tss',
-    ],
-    categories: ['mep', 'plumbing', 'drainage'],
-  },
-};
+/** Load search profiles from DB into cache (skips if cache is fresh) */
+export async function loadSearchProfiles(): Promise<void> {
+  if (isProfileCacheValid()) return;
+
+  try {
+    const { createAdminClient } = await import('@/lib/supabase-server');
+    const supabase = createAdminClient();
+
+    const { data, error } = await supabase
+      .from('document_registry')
+      .select('id, keywords, categories')
+      .eq('is_active', true);
+
+    if (error || !data) {
+      profileCacheTs = Date.now(); // Mark as loaded (empty)
+      return;
+    }
+
+    const profiles: Record<string, DocumentSearchProfile> = {};
+    for (const row of data) {
+      profiles[row.id as string] = {
+        keywords: (row.keywords as string[]) || [],
+        categories: (row.categories as string[]) || [],
+      };
+    }
+
+    profileCache = profiles;
+    profileCacheTs = Date.now();
+  } catch {
+    profileCacheTs = Date.now(); // Mark as loaded (empty)
+  }
+}
 
 // -----------------------------------------------------------------------------
 // Document Selection
@@ -103,18 +77,25 @@ interface DocumentScore {
  * Score query against each document's keyword profile.
  * Returns selected document IDs (or all if scores are close).
  *
- * - If top score >> others (>20% gap) → filter to top 1-3 docs
- * - If scores are close → search all (safe fallback)
+ * - If top score >> others (>20% gap) -> filter to top 1-3 docs
+ * - If scores are close -> search all (safe fallback)
  * - 0 API calls, runs in ~1ms
+ *
+ * NOTE: Call loadSearchProfiles() at least once before using this function.
+ * If profiles haven't been loaded, returns all document IDs.
  */
 export function selectDocuments(query: string): string[] {
+  const allProfiles = profileCache;
+
+  // If no profiles loaded, search all documents
+  if (Object.keys(allProfiles).length === 0) {
+    return getAllDocumentIdsSync();
+  }
+
   const queryLower = query.toLowerCase();
   const queryTokens = queryLower.split(/\s+/).filter(w => w.length > 2);
 
   const scores: DocumentScore[] = [];
-
-  // Merge hardcoded + dynamic profiles (dynamic overrides hardcoded)
-  const allProfiles = { ...DOCUMENT_PROFILES, ...dynamicProfiles };
 
   for (const [docId, profile] of Object.entries(allProfiles)) {
     let score = 0;
@@ -144,9 +125,9 @@ export function selectDocuments(query: string): string[] {
 
   const topScore = scores[0]?.score || 0;
 
-  // No matches → search all documents
+  // No matches -> search all documents
   if (topScore === 0) {
-    return getAllDocumentIds();
+    return Object.keys(allProfiles);
   }
 
   // Check if there's a clear winner (>20% gap to second)
@@ -155,18 +136,10 @@ export function selectDocuments(query: string): string[] {
 
   // If too many docs selected, just search all
   if (selected.length >= 4) {
-    return getAllDocumentIds();
+    return Object.keys(allProfiles);
   }
 
   return selected.map(s => s.documentId);
-}
-
-/**
- * Get all document IDs from registry
- */
-function getAllDocumentIds(): string[] {
-  const ids = new Set([...Object.keys(DOCUMENT_REGISTRY), ...Object.keys(dynamicProfiles)]);
-  return Array.from(ids);
 }
 
 /**
@@ -174,7 +147,7 @@ function getAllDocumentIds(): string[] {
  */
 export function getSelectedDocumentNames(docIds: string[]): string[] {
   return docIds.map(id => {
-    const doc = DOCUMENT_REGISTRY[id] as DocumentInfo | undefined;
+    const doc = getDocumentByIdSync(id) as DocumentInfo | undefined;
     return doc?.shortName || id;
   });
 }

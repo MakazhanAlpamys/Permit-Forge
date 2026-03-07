@@ -6,6 +6,9 @@ import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { createAdminClient } from '@/lib/supabase-server';
 import { generateEmbedding, DailyQuotaExhaustedError } from '@/lib/gemini';
 import { createPDFParser, PDFParser } from '@/lib/pdf-parser';
+import { extractKeywords } from '@/lib/keyword-extractor';
+import { invalidateRegistryCache } from '@/lib/document-registry';
+import { invalidateProfileCache } from '@/lib/document-selector';
 import type {
   ChunkMetadata,
   PDFPageContent,
@@ -276,6 +279,39 @@ export async function runIngestionPipeline(
     });
 
     const pages = await parser.getAllPagesText();
+
+    // Stage 3.5: Auto-extract keywords from PDF text (0 API calls)
+    await sendProgress({
+      stage: 'keywords',
+      progress: 12,
+      total: 100,
+      message: 'Extracting keywords from document text...',
+    });
+
+    const { keywords, categories } = extractKeywords(pages);
+    if (keywords.length > 0) {
+      // Update keywords in DB only if they were auto-generated (don't overwrite manual edits)
+      const { data: docRecord } = await supabase
+        .from('document_registry')
+        .select('keywords_auto_generated')
+        .eq('id', documentId)
+        .single();
+
+      if (docRecord?.keywords_auto_generated !== false) {
+        await supabase
+          .from('document_registry')
+          .update({
+            keywords,
+            categories,
+            keywords_auto_generated: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', documentId);
+
+        invalidateRegistryCache();
+        invalidateProfileCache();
+      }
+    }
 
     // Stage 4: Split into chunks
     await sendProgress({

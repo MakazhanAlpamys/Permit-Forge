@@ -5,7 +5,7 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { embeddingsModel } from '@/lib/gemini';
-import { getDocumentById } from '@/lib/document-registry';
+import { getDocumentByIdSync } from '@/lib/document-registry';
 import type { MatchedChunk, RAGQuery, RAGResult, ChunkMetadata, HybridSearchResult } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -214,7 +214,7 @@ export function buildContext(chunks: MatchedChunk[]): string {
     const section = chunk.metadata.section || '';
     const chapter = chunk.metadata.chapter || '';
     const docId = chunk.metadata.documentName;
-    const docInfo = docId ? getDocumentById(docId) : undefined;
+    const docInfo = docId ? getDocumentByIdSync(docId) : undefined;
     const docLabel = docInfo ? docInfo.displayName : 'Dubai Building Code 2021';
 
     const content = chunk.content.length > MAX_CHUNK_LENGTH
@@ -228,7 +228,7 @@ export function buildContext(chunks: MatchedChunk[]): string {
 
   const docNames = new Set(chunks.map(c => {
     const docId = c.metadata.documentName;
-    const info = docId ? getDocumentById(docId) : undefined;
+    const info = docId ? getDocumentByIdSync(docId) : undefined;
     return info?.displayName || 'Dubai Building Code 2021';
   }));
   const docsHeader = `CONTEXT FROM: ${Array.from(docNames).join(', ')}`;

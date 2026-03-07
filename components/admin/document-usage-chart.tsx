@@ -16,7 +16,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-import { getDocumentById } from '@/lib/document-registry';
+import { getDocumentByIdSync } from '@/lib/document-registry';
 import type { DocumentUsageStat } from '@/actions/analytics';
 
 interface DocumentUsageChartProps {
@@ -24,19 +24,13 @@ interface DocumentUsageChartProps {
   loading?: boolean;
 }
 
-const DOCUMENT_COLORS: Record<string, string> = {
-  'dubai-building-code-2021': '#3b82f6',
-  'code-of-safety': '#ef4444',
-  'al-safat-green-building': '#7c3aed',
-  'universal-design-code': '#a855f7',
-  'sewerage-stormwater-guidelines': '#06b6d4',
-};
-
+// Color palette for chart bars — cycles through for dynamic documents
+const CHART_COLORS = ['#3b82f6', '#ef4444', '#7c3aed', '#a855f7', '#06b6d4', '#f59e0b', '#10b981', '#f97316'];
 const DEFAULT_COLOR = '#6b7280';
 
 export function DocumentUsageChart({ data, loading }: DocumentUsageChartProps) {
   const chartData = data.map((d) => ({
-    name: getDocumentById(d.documentName)?.shortName || d.documentName,
+    name: getDocumentByIdSync(d.documentName)?.shortName || d.documentName,
     chunks: d.chunkCount,
     pages: `pp. ${d.minPage}-${d.maxPage}`,
     id: d.documentName,
@@ -90,10 +84,10 @@ export function DocumentUsageChart({ data, loading }: DocumentUsageChartProps) {
                 formatter={(value) => [`${value} chunks`, 'Chunks']}
               />
               <Bar dataKey="chunks" radius={[0, 4, 4, 0]} barSize={24}>
-                {chartData.map((entry) => (
+                {chartData.map((entry, index) => (
                   <Cell
                     key={entry.id}
-                    fill={DOCUMENT_COLORS[entry.id] || DEFAULT_COLOR}
+                    fill={CHART_COLORS[index % CHART_COLORS.length] || DEFAULT_COLOR}
                   />
                 ))}
               </Bar>

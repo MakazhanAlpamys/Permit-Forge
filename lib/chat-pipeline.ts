@@ -7,11 +7,12 @@ import { queryDubaiCode, queryDubaiCodeFiltered, passesCRAGCheck, expandToParent
 import { classifyQueryStructure, treeReasoner, getPageRangesForNodes } from '@/lib/agents';
 import { createChunkCitations, getCitationStats } from '@/lib/citation-parser';
 import { heuristicRerank } from '@/lib/heuristic-reranker';
-import { selectDocuments, getSelectedDocumentNames } from '@/lib/document-selector';
+import { selectDocuments, getSelectedDocumentNames, loadSearchProfiles } from '@/lib/document-selector';
 import { detectScope } from '@/lib/scope-detector';
 import { searchCache, storeInCache } from '@/lib/semantic-cache';
 import { getAllCachedDocumentTrees } from '@/lib/tree-cache';
 import { generateEmbedding } from '@/lib/gemini';
+import { getAllDocuments } from '@/lib/document-registry';
 import type { Citation, MatchedChunk } from '@/types';
 
 // Re-export classifyTopic for backward compatibility
@@ -62,21 +63,29 @@ export interface PipelineResult {
 // Response Templates
 // -----------------------------------------------------------------------------
 
-export const OFF_TOPIC_RESPONSE =
-  "I'm Emirate Forge, your Dubai construction compliance assistant. I can help with questions about the Dubai Building Code 2021, Code of Safety, Al Sa'fat Green Building System, Universal Design Code, and Sewerage & Stormwater Guidelines. Ask me anything about building regulations in Dubai!";
-
-export const GREETING_RESPONSE =
-  "Hello! I'm Emirate Forge, your Dubai construction compliance assistant. I have access to multiple official documents:\n\n" +
-  "- **Dubai Building Code 2021** — building regulations, parking, heights, structural\n" +
-  "- **Code of Safety** — safety regulations for buildings\n" +
-  "- **Al Sa'fat Green Building System** — energy efficiency, green building ratings\n" +
-  "- **Universal Design Code** — accessibility, people of determination\n" +
-  "- **Sewerage & Stormwater Guidelines** — drainage, plumbing design\n\n" +
-  "I search across all documents to give you comprehensive answers with precise source citations!";
-
 export const CRAG_FAIL_RESPONSE =
   "I could not find relevant information about this topic in the available documents. " +
   "Please try rephrasing your question or ask about a specific aspect of Dubai building regulations.";
+
+/** Build off-topic response dynamically from registered documents */
+export async function getOffTopicResponse(): Promise<string> {
+  const docs = await getAllDocuments();
+  if (docs.length === 0) {
+    return "I'm Emirate Forge, your Dubai construction compliance assistant. No documents are currently loaded. Please ask an admin to add and ingest documents.";
+  }
+  const docNames = docs.map(d => d.displayName).join(', ');
+  return `I'm Emirate Forge, your Dubai construction compliance assistant. I can help with questions about ${docNames}. Ask me anything about building regulations in Dubai!`;
+}
+
+/** Build greeting response dynamically from registered documents */
+export async function getGreetingResponse(): Promise<string> {
+  const docs = await getAllDocuments();
+  if (docs.length === 0) {
+    return "Hello! I'm Emirate Forge, your Dubai construction compliance assistant. No documents are currently loaded. Please ask an admin to add and ingest documents.";
+  }
+  const docList = docs.map(d => `- **${d.displayName}** — ${d.description || d.shortName}`).join('\n');
+  return `Hello! I'm Emirate Forge, your Dubai construction compliance assistant. I have access to official documents:\n\n${docList}\n\nI search across all documents to give you comprehensive answers with precise source citations!`;
+}
 
 // -----------------------------------------------------------------------------
 // v2 RAG Pipeline
@@ -97,6 +106,10 @@ export const CRAG_FAIL_RESPONSE =
  * Total: 1 embedding call. Cache hit = 0 more calls.
  */
 export async function executeRAGPipeline(query: string): Promise<PipelineResult> {
+  // Step 0: Ensure registry cache and search profiles are loaded
+  await getAllDocuments(); // populates registry cache for sync lookups
+  await loadSearchProfiles(); // populates document selector profiles
+
   // Step 1: Generate embedding (reused for cache lookup AND search)
   const queryEmbedding = await generateEmbedding(query);
 

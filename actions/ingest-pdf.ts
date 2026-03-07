@@ -9,7 +9,6 @@ import { requireAdmin } from '@/lib/security';
 import { runIngestionPipeline } from '@/lib/pdf-ingestion';
 import { clearDocumentTreeCache } from '@/lib/tree-cache';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
-import { getDocumentById } from '@/lib/document-registry';
 import type { ChunkMetadata, IngestionResult } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -37,40 +36,33 @@ export async function ingestPDF(
     };
   }
 
-  // SECURITY: Validate documentId — check hardcoded registry, then DB
-  let pdfPath: string;
-  const docInfo = getDocumentById(documentId);
-  if (docInfo) {
-    pdfPath = `public/${docInfo.fileName}`;
-  } else {
-    // Check DB registry for dynamically-added documents
-    const supabase = createAdminClient();
-    const { data: dbDoc } = await supabase
-      .from('document_registry')
-      .select('file_name, is_active')
-      .eq('id', documentId)
-      .single();
+  // SECURITY: Validate documentId from DB registry
+  const supabase = createAdminClient();
+  const { data: dbDoc } = await supabase
+    .from('document_registry')
+    .select('file_name, is_active')
+    .eq('id', documentId)
+    .single();
 
-    if (!dbDoc || !dbDoc.is_active) {
-      return {
-        success: false,
-        chunksProcessed: 0,
-        error: 'Unknown document ID',
-      };
-    }
-
-    // SECURITY: strict filename validation — only allow safe PDF filenames
-    const rawName = dbDoc.file_name as string;
-    const fileName = rawName.split(/[\/\\]/).pop() || '';
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.pdf$/i.test(fileName)) {
-      return {
-        success: false,
-        chunksProcessed: 0,
-        error: 'Invalid file name in document registry',
-      };
-    }
-    pdfPath = `public/${fileName}`;
+  if (!dbDoc || !dbDoc.is_active) {
+    return {
+      success: false,
+      chunksProcessed: 0,
+      error: 'Unknown document ID',
+    };
   }
+
+  // SECURITY: strict filename validation — only allow safe PDF filenames
+  const rawName = dbDoc.file_name as string;
+  const fileName = rawName.split(/[\/\\]/).pop() || '';
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.pdf$/i.test(fileName)) {
+    return {
+      success: false,
+      chunksProcessed: 0,
+      error: 'Invalid file name in document registry',
+    };
+  }
+  const pdfPath = `public/${fileName}`;
 
   console.log(`📄 Starting PDF ingestion for document: ${documentId}...`);
 

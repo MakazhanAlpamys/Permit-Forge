@@ -8,6 +8,8 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { requireAdmin } from '@/lib/security';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { clearDocumentTreeCache } from '@/lib/tree-cache';
+import { invalidateRegistryCache } from '@/lib/document-registry';
+import { invalidateProfileCache } from '@/lib/document-selector';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -147,6 +149,10 @@ export async function upsertDocument(
       }
     }
 
+    // Invalidate caches so new document is visible immediately
+    invalidateRegistryCache();
+    invalidateProfileCache();
+
     const metadata = await getRequestMetadata();
     await logAuditEvent({
       userId: authCheck.user.id,
@@ -222,6 +228,9 @@ export async function deleteDocument(
       clearDocumentTreeCache(documentId);
     }
 
+    invalidateRegistryCache();
+    invalidateProfileCache();
+
     const metadata = await getRequestMetadata();
     await logAuditEvent({
       userId: authCheck.user.id,
@@ -262,6 +271,9 @@ export async function restoreDocument(
     if (error) {
       return { success: false, error: error.message };
     }
+
+    invalidateRegistryCache();
+    invalidateProfileCache();
 
     return { success: true };
   } catch (error) {

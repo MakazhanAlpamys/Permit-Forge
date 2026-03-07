@@ -122,9 +122,7 @@ The **only AI call** during ingestion is embedding generation on child chunks (g
 
 ### Multi-Document Support
 
-The system supports dynamic documents via the `document_registry` DB table (seeded with 5 defaults). Hardcoded fallback in `lib/document-registry.ts` ensures the system works even without the DB table.
-
-**Default documents:** DBC 2021, Code of Safety, Al Sa'fat Green Building (2023), Universal Design Code, Sewerage & Stormwater (2025).
+The system is fully DB-driven — all documents come from `document_registry` table (no hardcoded fallback). Migration seeds 5 default documents which admin can delete. `lib/document-registry.ts` uses in-memory cache with 5-min TTL; sync functions (`getDocumentByIdSync`, `getAllDocumentsSync`) read from cache for hot paths, async functions refresh from DB. Keywords are auto-extracted from PDF text via TF-IDF during ingestion (`lib/keyword-extractor.ts`, 0 API calls) and stored in `document_registry.keywords`. Column `keywords_auto_generated` prevents overwriting admin's manual edits.
 
 Admin panel "Documents" tab allows: register new documents, edit metadata/keywords, ingest/re-ingest PDFs, clear chunks, deactivate/restore documents. Each document is identified by `document_name` in the database. RAG search operates across all active documents; citations include document attribution.
 
@@ -148,13 +146,14 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/gemini.ts` | Gemini model configuration: `chatModel` (temp=0), `streamingModel`, `generateEmbedding()` with retry/quota handling |
 | `lib/citation-parser.ts` | Chunk-based citations from DB metadata (0 API, 100% accurate) |
 | `lib/semantic-cache.ts` | Semantic query caching via pgvector (cosine > 0.95, 1hr TTL) |
-| `lib/document-selector.ts` | Keyword-based document scoring to narrow search scope (0 API) |
+| `lib/document-selector.ts` | Keyword-based document scoring from DB profiles (0 API) |
+| `lib/keyword-extractor.ts` | TF-IDF keyword extraction from PDF text during ingestion (0 API) |
 | `lib/scope-detector.ts` | Regex detection of page/section references in queries (0 API) |
 | `lib/heuristic-reranker.ts` | Deterministic reranking: hybrid*0.4 + keyword*0.3 + metadata*0.2 + position*0.1 |
 | `lib/pdf-ingestion.ts` | PDF chunking, embedding generation, batch DB insert with resume support |
 | `lib/pdf-parser.ts` | PDF.js-based text extraction with TOC/outline parsing |
 | `lib/tree-cache.ts` | Two-tier cache: L1 in-memory (5-min TTL) + L2 Supabase |
-| `lib/document-registry.ts` | Document registry with hardcoded defaults + async DB loader for dynamic docs |
+| `lib/document-registry.ts` | Fully DB-driven document registry with in-memory cache (5-min TTL) |
 | `lib/permit-compliance.ts` | RAG-powered compliance checking → structured JSON from Gemini |
 | `lib/permit-certificate.ts` | PDF certificate generation via PDFKit |
 | `lib/constants.ts` | All app constants: cookie names, rate limits, file upload limits, status configs |

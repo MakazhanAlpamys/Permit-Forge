@@ -23,12 +23,15 @@ vi.mock('@/lib/gemini', () => ({
 }));
 
 vi.mock('@/lib/document-registry', () => ({
-  getDocumentById: vi.fn((id: string) => id ? { displayName: 'Dubai Building Code 2021', shortName: 'DBC' } : undefined),
-  getAllDocuments: vi.fn(() => []),
-  getAllDocumentIds: vi.fn(() => ['dubai-building-code-2021']),
+  getDocumentByIdSync: vi.fn((id: string) => id ? { displayName: 'Dubai Building Code 2021', shortName: 'DBC' } : undefined),
+  getAllDocuments: vi.fn(async () => []),
+  getAllDocumentIds: vi.fn(async () => ['dubai-building-code-2021']),
+  getAllDocumentsSync: vi.fn(() => []),
+  getAllDocumentIdsSync: vi.fn(() => ['dubai-building-code-2021']),
+  getDocumentById: vi.fn(async (id: string) => id ? { displayName: 'Dubai Building Code 2021', shortName: 'DBC' } : undefined),
   getDocumentByFileName: vi.fn(),
   getDocumentPdfPath: vi.fn(),
-  getDocumentListForPrompt: vi.fn(() => ''),
+  invalidateRegistryCache: vi.fn(),
 }));
 
 // Import after mocks

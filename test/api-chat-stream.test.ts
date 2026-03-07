@@ -37,8 +37,8 @@ vi.mock('@/lib/chat-pipeline', () => ({
   generateCitations: vi.fn().mockReturnValue([]),
   cacheResponse: vi.fn().mockResolvedValue(undefined),
   buildContext: vi.fn().mockReturnValue(''),
-  OFF_TOPIC_RESPONSE: 'Off topic response',
-  GREETING_RESPONSE: 'Greeting response',
+  getOffTopicResponse: vi.fn().mockResolvedValue('Off topic response'),
+  getGreetingResponse: vi.fn().mockResolvedValue('Greeting response'),
   CRAG_FAIL_RESPONSE: 'CRAG fail response',
 }));
 

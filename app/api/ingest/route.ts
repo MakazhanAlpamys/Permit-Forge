@@ -6,7 +6,6 @@ import { NextRequest } from 'next/server';
 import { getQuickSession } from '@/lib/auth';
 import { checkRateLimit } from '@/lib/supabase-server';
 import { runIngestionPipeline, type IngestionProgress } from '@/lib/pdf-ingestion';
-import { getDocumentById } from '@/lib/document-registry';
 import { createAdminClient } from '@/lib/supabase-server';
 
 // -----------------------------------------------------------------------------
@@ -50,37 +49,31 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // SECURITY: Validate documentId — check hardcoded registry first, then DB
-    const docInfo = getDocumentById(documentId);
-    if (docInfo) {
-      pdfPath = `public/${docInfo.fileName}`;
-    } else {
-      // Check DB registry for dynamically-added documents
-      const supabase = createAdminClient();
-      const { data: dbDoc } = await supabase
-        .from('document_registry')
-        .select('file_name, is_active')
-        .eq('id', documentId)
-        .single();
+    // SECURITY: Validate documentId from DB registry
+    const supabase = createAdminClient();
+    const { data: dbDoc } = await supabase
+      .from('document_registry')
+      .select('file_name, is_active')
+      .eq('id', documentId)
+      .single();
 
-      if (!dbDoc || !dbDoc.is_active) {
-        return new Response(JSON.stringify({ error: 'Unknown document ID' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-
-      // SECURITY: strict filename validation — only allow safe PDF filenames
-      const rawName = dbDoc.file_name as string;
-      const fileName = rawName.split(/[\/\\]/).pop() || '';
-      if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.pdf$/i.test(fileName)) {
-        return new Response(JSON.stringify({ error: 'Invalid file name in document registry' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        });
-      }
-      pdfPath = `public/${fileName}`;
+    if (!dbDoc || !dbDoc.is_active) {
+      return new Response(JSON.stringify({ error: 'Unknown document ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
+
+    // SECURITY: strict filename validation — only allow safe PDF filenames
+    const rawName = dbDoc.file_name as string;
+    const fileName = rawName.split(/[\/\\]/).pop() || '';
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.pdf$/i.test(fileName)) {
+      return new Response(JSON.stringify({ error: 'Invalid file name in document registry' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    pdfPath = `public/${fileName}`;
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid request body' }), {
       status: 400,

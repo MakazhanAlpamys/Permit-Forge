@@ -1,6 +1,6 @@
 // ============================================================================
-// Document Registry - Central registry of all ingested documents
-// Supports both hardcoded defaults and DB-backed dynamic documents
+// Document Registry — Fully DB-driven, no hardcoded documents
+// In-memory cache with 5-min TTL for hot-path performance
 // ============================================================================
 
 export interface DocumentInfo {
@@ -23,114 +23,35 @@ export interface DocumentInfo {
 }
 
 // -----------------------------------------------------------------------------
-// Default Document Registry (hardcoded fallback)
-// Used when DB is unavailable or for initial seeding
+// In-Memory Cache
 // -----------------------------------------------------------------------------
 
-const DEFAULT_REGISTRY: Record<string, DocumentInfo> = {
-  'dubai-building-code-2021': {
-    id: 'dubai-building-code-2021',
-    displayName: 'Dubai Building Code 2021',
-    shortName: 'DBC',
-    fileName: 'dubai-code.pdf',
-    sourceUrl: 'https://dm.gov.ae/wp-content/uploads/2021/12/Dubai%20Building%20Code_English_2021%20Edition_compressed.pdf',
-    authority: 'Dubai Municipality',
-    description: 'Comprehensive building regulations for construction in Dubai',
-    badgeColor: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-  },
-  'code-of-safety': {
-    id: 'code-of-safety',
-    displayName: 'Dubai Code of Safety',
-    shortName: 'Safety',
-    fileName: 'code_of_safety_EN.pdf',
-    sourceUrl: 'https://www.dm.gov.ae/wp-content/uploads/2022/04/code_of_safety_EN.pdf',
-    authority: 'Dubai Municipality',
-    description: 'Safety regulations and requirements for buildings in Dubai',
-    badgeColor: 'bg-red-500/20 text-red-400 border-red-500/30',
-  },
-  'al-safat-green-building': {
-    id: 'al-safat-green-building',
-    displayName: 'Al Sa\'fat Green Building System (2nd Ed, 2023)',
-    shortName: 'Al Sa\'fat',
-    fileName: 'Al-Safat-–-Dubai-Green-Building-System-2nd-editionJan2023.pdf',
-    sourceUrl: 'https://www.dm.gov.ae/wp-content/uploads/2023/01/Al-Safat-%E2%80%93-Dubai-Green-Building-System-2nd-editionJan2023.pdf',
-    authority: 'Dubai Municipality',
-    description: 'Mandatory green building rating system with Silver, Gold, and Platinum tiers',
-    badgeColor: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
-  },
-  'universal-design-code': {
-    id: 'universal-design-code',
-    displayName: 'Dubai Universal Design Code',
-    shortName: 'UDC',
-    fileName: 'Dubai-Guide-for-Built-Environment-Universal-Design-1_compressed.pdf',
-    sourceUrl: 'https://www.dm.gov.ae/wp-content/uploads/2020/11/Dubai-Guide-for-Built-Environment-Universal-Design-1_compressed.pdf',
-    authority: 'Dubai Municipality',
-    description: 'Accessibility and universal design requirements for the built environment',
-    badgeColor: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
-  },
-  'sewerage-stormwater-guidelines': {
-    id: 'sewerage-stormwater-guidelines',
-    displayName: 'Sewerage & Stormwater Design Guidelines (2025)',
-    shortName: 'Sewerage',
-    fileName: 'comp-DM_Sewerage-Guidelines-F.24.01.25.pdf',
-    sourceUrl: 'https://www.dm.gov.ae/wp-content/uploads/2025/01/comp-DM_Sewerage-Guidelines-F.24.01.25.pdf',
-    authority: 'Dubai Municipality',
-    description: 'Technical guidelines for sewerage and stormwater drainage design',
-    badgeColor: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
-  },
-};
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-// Re-export as DOCUMENT_REGISTRY for backward compatibility
-export const DOCUMENT_REGISTRY: Record<string, DocumentInfo> = DEFAULT_REGISTRY;
-
-// -----------------------------------------------------------------------------
-// Helper Functions (synchronous — use hardcoded registry)
-// These are used in hot paths (RAG pipeline, chat, client components)
-// -----------------------------------------------------------------------------
-
-/** Get all registered documents as array */
-export function getAllDocuments(): DocumentInfo[] {
-  return Object.values(DEFAULT_REGISTRY);
+interface RegistryCache {
+  docs: DocumentInfo[];
+  byId: Map<string, DocumentInfo>;
+  ts: number;
 }
 
-/** Get document info by ID */
-export function getDocumentById(id: string): DocumentInfo | undefined {
-  return DEFAULT_REGISTRY[id];
+let cache: RegistryCache | null = null;
+
+function isCacheValid(): boolean {
+  return cache !== null && Date.now() - cache.ts < CACHE_TTL;
 }
 
-/** Get document info by filename */
-export function getDocumentByFileName(fileName: string): DocumentInfo | undefined {
-  return Object.values(DEFAULT_REGISTRY).find(doc => doc.fileName === fileName);
-}
-
-/** Get PDF path for a document */
-export function getDocumentPdfPath(docId: string): string {
-  const doc = DEFAULT_REGISTRY[docId];
-  if (!doc) throw new Error(`Unknown document: ${docId}`);
-  return `public/${doc.fileName}`;
-}
-
-/** Get all document IDs */
-export function getAllDocumentIds(): string[] {
-  return Object.keys(DEFAULT_REGISTRY);
-}
-
-/** Build a display string listing all available documents */
-export function getDocumentListForPrompt(): string {
-  return Object.values(DEFAULT_REGISTRY)
-    .map(doc => `- ${doc.displayName} (${doc.authority})`)
-    .join('\n');
+/** Force-invalidate the registry cache (call after admin edits documents) */
+export function invalidateRegistryCache(): void {
+  cache = null;
 }
 
 // -----------------------------------------------------------------------------
-// Dynamic Registry — Fetches from DB (async, for admin UI)
-// Falls back to hardcoded defaults if DB is unavailable
+// Async Functions — DB-backed with cache
 // -----------------------------------------------------------------------------
 
-/** Dynamically load registry from DB and merge with defaults */
-export async function loadDocumentRegistryFromDB(): Promise<DocumentInfo[]> {
+/** Load all active documents from DB into cache */
+async function refreshCache(): Promise<RegistryCache> {
   try {
-    // Dynamic import to avoid circular deps and keep client-safe
     const { createAdminClient } = await import('@/lib/supabase-server');
     const supabase = createAdminClient();
 
@@ -141,20 +62,89 @@ export async function loadDocumentRegistryFromDB(): Promise<DocumentInfo[]> {
       .order('created_at');
 
     if (error || !data || data.length === 0) {
-      return getAllDocuments(); // Fallback
+      const empty: RegistryCache = { docs: [], byId: new Map(), ts: Date.now() };
+      cache = empty;
+      return empty;
     }
 
-    return data.map((row: Record<string, unknown>) => ({
-      id: row.id as string,
-      displayName: (row.display_name as string) || '',
-      shortName: (row.short_name as string) || '',
-      fileName: (row.file_name as string) || '',
-      sourceUrl: (row.source_url as string) || '',
-      authority: (row.authority as string) || '',
-      description: (row.description as string) || '',
-      badgeColor: (row.badge_color as string) || '',
-    }));
+    const docs = data.map(mapRow);
+    const byId = new Map(docs.map(d => [d.id, d]));
+    const result: RegistryCache = { docs, byId, ts: Date.now() };
+    cache = result;
+    return result;
   } catch {
-    return getAllDocuments(); // Fallback
+    const empty: RegistryCache = { docs: [], byId: new Map(), ts: Date.now() };
+    cache = empty;
+    return empty;
   }
+}
+
+/** Get all active documents (async, refreshes cache if stale) */
+export async function getAllDocuments(): Promise<DocumentInfo[]> {
+  if (isCacheValid()) return cache!.docs;
+  const result = await refreshCache();
+  return result.docs;
+}
+
+/** Get document info by ID (async, refreshes cache if stale) */
+export async function getDocumentById(id: string): Promise<DocumentInfo | undefined> {
+  if (isCacheValid()) return cache!.byId.get(id);
+  const result = await refreshCache();
+  return result.byId.get(id);
+}
+
+/** Get document info by filename (async) */
+export async function getDocumentByFileName(fileName: string): Promise<DocumentInfo | undefined> {
+  const docs = await getAllDocuments();
+  return docs.find(doc => doc.fileName === fileName);
+}
+
+/** Get all document IDs (async) */
+export async function getAllDocumentIds(): Promise<string[]> {
+  const docs = await getAllDocuments();
+  return docs.map(d => d.id);
+}
+
+/** Get PDF path for a document (async) */
+export async function getDocumentPdfPath(docId: string): Promise<string> {
+  const doc = await getDocumentById(docId);
+  if (!doc) throw new Error(`Unknown document: ${docId}`);
+  return `public/${doc.fileName}`;
+}
+
+// -----------------------------------------------------------------------------
+// Sync Functions — Read from cache only (for render/hot paths)
+// Cache MUST be populated by a prior async call in the request lifecycle
+// -----------------------------------------------------------------------------
+
+/** Get document by ID from cache (sync, no DB call). Returns undefined if cache empty. */
+export function getDocumentByIdSync(id: string): DocumentInfo | undefined {
+  return cache?.byId.get(id);
+}
+
+/** Get all documents from cache (sync). Returns empty array if cache empty. */
+export function getAllDocumentsSync(): DocumentInfo[] {
+  return cache?.docs ?? [];
+}
+
+/** Get all document IDs from cache (sync). */
+export function getAllDocumentIdsSync(): string[] {
+  return cache?.docs.map(d => d.id) ?? [];
+}
+
+// -----------------------------------------------------------------------------
+// Helper
+// -----------------------------------------------------------------------------
+
+function mapRow(row: Record<string, unknown>): DocumentInfo {
+  return {
+    id: row.id as string,
+    displayName: (row.display_name as string) || '',
+    shortName: (row.short_name as string) || '',
+    fileName: (row.file_name as string) || '',
+    sourceUrl: (row.source_url as string) || '',
+    authority: (row.authority as string) || '',
+    description: (row.description as string) || '',
+    badgeColor: (row.badge_color as string) || '',
+  };
 }

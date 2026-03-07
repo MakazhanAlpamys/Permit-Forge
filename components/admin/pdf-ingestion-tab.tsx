@@ -22,10 +22,7 @@ import {
   BookOpen,
 } from 'lucide-react';
 
-// Import document registry — pure data, safe for client
-import { getAllDocuments } from '@/lib/document-registry';
-
-const DOCUMENTS = getAllDocuments();
+import { getAllRegisteredDocuments, type DocumentRecord } from '@/actions/documents';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -55,6 +52,7 @@ interface DiagnosticInfo {
 // -----------------------------------------------------------------------------
 
 export function PdfIngestionTab() {
+  const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [ingestionStatus, setIngestionStatus] = useState<Record<string, IngestionStatus>>({});
   const [ingestionMessages, setIngestionMessages] = useState<Record<string, string>>({});
   const [activeProgress, setActiveProgress] = useState<Record<string, ProgressInfo>>({});
@@ -173,8 +171,8 @@ export function PdfIngestionTab() {
   };
 
   const handleClearDocument = async (documentId: string) => {
-    const doc = DOCUMENTS.find(d => d.id === documentId);
-    if (!confirm(`Clear all chunks for "${doc?.displayName}"? This cannot be undone.`)) return;
+    const doc = documents.find(d => d.id === documentId);
+    if (!confirm(`Clear all chunks for "${doc?.displayName || documentId}"? This cannot be undone.`)) return;
 
     setIngestionStatus(prev => ({ ...prev, [documentId]: 'loading' }));
 
@@ -195,6 +193,7 @@ export function PdfIngestionTab() {
   };
 
   useEffect(() => {
+    getAllRegisteredDocuments().then(r => setDocuments(r.data.filter(d => d.isActive)));
     runDiagnostics();
   }, []);
 
@@ -270,7 +269,7 @@ export function PdfIngestionTab() {
                   <div className="mt-3 pt-3 border-t border-border space-y-2">
                     <span className="text-xs font-medium text-muted-foreground uppercase">Documents Ingested</span>
                     {diagnostic.documentStats.map(stat => {
-                      const doc = DOCUMENTS.find(d => d.id === stat.document_name);
+                      const doc = documents.find(d => d.id === stat.document_name);
                       return (
                         <div key={stat.document_name} className="flex items-center justify-between text-sm">
                           <div className="flex items-center gap-2">
@@ -303,7 +302,7 @@ export function PdfIngestionTab() {
         </Card>
 
         {/* Document Ingestion Cards */}
-        {DOCUMENTS.map(doc => {
+        {documents.map(doc => {
           const chunkCount = getDocChunkCount(doc.id);
           const status = ingestionStatus[doc.id] || 'idle';
           const message = ingestionMessages[doc.id] || '';
