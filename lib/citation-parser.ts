@@ -1,19 +1,19 @@
 // ============================================================================
-// Citation Generator — v2 Pipeline (Chunk-Based, 0 API)
+// Citation Generator — Chunk-Based, 0 API
 // Citations come directly from chunk metadata — no LLM parsing needed
 // ============================================================================
 
 import type { Citation, MatchedChunk } from '@/types';
 
 // -----------------------------------------------------------------------------
-// Chunk-Based Citations (v2)
+// Chunk-Based Citations
 // -----------------------------------------------------------------------------
 
 /**
  * Generate citations directly from the chunks used as context.
  * Each chunk's metadata (page, section, document) becomes a citation.
  *
- * v2 approach:
+ * Approach:
  *   - No parsing of LLM response text
  *   - No match_citation RPC calls
  *   - 100% accurate (data comes from ingestion, not LLM)

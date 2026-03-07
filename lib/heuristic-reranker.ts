@@ -1,5 +1,5 @@
 // ============================================================================
-// Heuristic Reranker — Zero-API chunk reranking (v2 Pipeline, ~1ms)
+// Heuristic Reranker — Zero-API chunk reranking (~1ms)
 // Replaces LLM reranker with deterministic scoring
 // ============================================================================
 

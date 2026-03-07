@@ -1,5 +1,5 @@
 // ============================================================================
-// RAG (Retrieval-Augmented Generation) Query Engine — v2 Pipeline
+// RAG (Retrieval-Augmented Generation) Query Engine
 // Hybrid Search with pre-computed embeddings, document filtering, CRAG check
 // ============================================================================
 
@@ -124,15 +124,13 @@ async function exactSearch(
 }
 
 // -----------------------------------------------------------------------------
-// Main RAG Query (v2 — with pre-computed embedding + document filter)
+// Main RAG Query (with pre-computed embedding + document filter)
 // -----------------------------------------------------------------------------
 
 /**
  * Query building code using hybrid search.
- * v2 changes:
- *   - Accepts pre-computed embedding (reused from semantic cache check)
- *   - Accepts document filter (from document selector)
- *   - No more query expansion (removed in v2)
+ * Accepts pre-computed embedding (reused from semantic cache check)
+ * and document filter (from document selector).
  */
 export async function queryBuildingCode(
   params: RAGQuery & {
@@ -186,7 +184,7 @@ export async function queryBuildingCode(
 }
 
 // -----------------------------------------------------------------------------
-// CRAG Check (Corrective RAG — v2)
+// CRAG Check (Corrective RAG)
 // -----------------------------------------------------------------------------
 
 /**
@@ -376,7 +374,7 @@ export async function queryBuildingCodeFiltered(
 }
 
 // -----------------------------------------------------------------------------
-// Parent Chunk Expansion (v2 — replace child chunks with parent for richer context)
+// Parent Chunk Expansion (replace child chunks with parent for richer context)
 // -----------------------------------------------------------------------------
 
 /**

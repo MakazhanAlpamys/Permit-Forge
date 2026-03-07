@@ -37,7 +37,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   // Sanitize content to prevent XSS attacks
   const sanitizedContent = useMemo(() => sanitizeContent(message.content), [message.content]);
 
-  // v2: LLM no longer writes inline citations, so no stripping needed
+  // LLM no longer writes inline citations, so no stripping needed
   const displayContent = sanitizedContent;
 
   // Copy answer text to clipboard
@@ -235,7 +235,7 @@ interface StreamingMessageProps {
 }
 
 export function StreamingMessage({ content, isComplete }: StreamingMessageProps) {
-  // v2: LLM no longer writes inline citations
+  // LLM no longer writes inline citations
   const displayContent = content;
 
   return (

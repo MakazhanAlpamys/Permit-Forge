@@ -1,5 +1,5 @@
 // ============================================================================
-// Scope Detector — Regex-based page/section range detection (v2 Pipeline, 0 API)
+// Scope Detector — Regex-based page/section range detection (0 API)
 // Replaces the two-path Tree Reasoning classifier with a simpler filter approach
 // ============================================================================
 

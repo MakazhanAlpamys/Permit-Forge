@@ -66,7 +66,7 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 | `analytics.ts` | Admin stats and analytics queries |
 | `notifications.ts` | In-app + email notifications (Resend) |
 
-### RAG Pipeline v2 (`lib/chat-pipeline.ts` → central orchestrator)
+### RAG Pipeline (`lib/chat-pipeline.ts` → central orchestrator)
 
 ```
 User Query
@@ -140,7 +140,7 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 
 | Module | Purpose |
 |--------|---------|
-| `lib/chat-pipeline.ts` | v2 RAG orchestration: cache → select → search → CRAG → rerank → expand |
+| `lib/chat-pipeline.ts` | RAG orchestration: cache → select → search → CRAG → rerank → expand |
 | `lib/rag.ts` | Hybrid search with pre-computed embeddings, document filter, CRAG check, parent expansion |
 | `lib/agents.ts` | Topic classifier, query type detector, tree reasoner (no more expander/reranker/verifier) |
 | `lib/gemini.ts` | Gemini model configuration: `chatModel` (temp=0), `streamingModel`, `generateEmbedding()` with retry/quota handling |

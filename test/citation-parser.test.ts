@@ -1,10 +1,10 @@
 // ============================================================================
-// Citation Parser Tests - Chunk-Based Citations (v2)
+// Citation Parser Tests - Chunk-Based Citations
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Import directly — v2 citation-parser has no external dependencies (no Supabase RPC)
+// Import directly — citation-parser has no external dependencies (no Supabase RPC)
 import {
   createChunkCitations,
   getCitationStats,

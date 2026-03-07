@@ -32,7 +32,7 @@
 
 **PermitForge** is an enterprise-grade AI assistant for building code compliance. It combines two major subsystems:
 
-1. **Hybrid RAG Chat Pipeline (v2)** — optimized to **1-2 API calls per question** (~1.5 average with semantic caching). Uses vector + keyword hybrid search with RRF, deterministic Tree Reasoning, heuristic reranking, parent-child chunking, and chunk-based citations across **dynamically managed documents**.
+1. **Hybrid RAG Chat Pipeline** — optimized to **1-2 API calls per question** (~1.5 average with semantic caching). Uses vector + keyword hybrid search with RRF, deterministic Tree Reasoning, heuristic reranking, parent-child chunking, and chunk-based citations across **dynamically managed documents**.
 2. **Permit Application System** — full lifecycle permit management with AI-powered compliance checks, multi-step forms, file attachments, admin review workflow, and PDF certificate generation.
 
 > **Who is it for?** — Architects, engineers, construction professionals, and regulatory consultants working with building codes.
@@ -56,8 +56,8 @@
 </td>
 <td width="50%">
 
-### Hybrid RAG Pipeline (v2)
-- **1-2 API calls** per question (down from 3-9 in v1)
+### Hybrid RAG Pipeline
+- **1-2 API calls** per question
 - **Semantic cache** — cosine similarity > 0.95, 1hr TTL, 30-40% hit rate
 - **Vector similarity** (0.7) + **keyword FTS** (0.3) via RRF
 - **CRAG check** — pre-generation quality gate (threshold 0.3)
@@ -80,7 +80,7 @@
 </td>
 <td>
 
-### Chunk-Based Citations (v2)
+### Chunk-Based Citations
 - Citations from **DB metadata** — 100% accurate, 0 API calls
 - No LLM parsing needed — each chunk has exact page, section, document info
 - Top 5-7 chunks after reranking become the sources
@@ -296,7 +296,7 @@ graph TB
     Core --> RS
 ```
 
-### RAG Pipeline v2 Flow
+### RAG Pipeline Flow
 
 ```mermaid
 flowchart TD
@@ -686,7 +686,7 @@ Pattern match: `npx vitest run -t "pattern"`
 | **Auth** | `test/auth.test.ts` | 8 | JWT create/verify, CSRF tokens, password hashing |
 | **Agents** | `test/agents.test.ts` | 20 | Topic classification, query structure, tree reasoning |
 | **API Chat Stream** | `test/api-chat-stream.test.ts` | 9 | Auth (401), rate limit (429), validation (400), CSRF, streaming (200) |
-| **Chat Pipeline** | `test/chat-pipeline.test.ts` | 7 | RAG pipeline v2, semantic cache, CRAG, citation generation |
+| **Chat Pipeline** | `test/chat-pipeline.test.ts` | 7 | RAG pipeline, semantic cache, CRAG, citation generation |
 | **Citations** | `test/citation-parser.test.ts` | 19 | Chunk-based citations, confidence scoring, stats |
 | **Permit Compliance** | `test/permit-compliance.test.ts` | 6 | AI compliance check, error fallback, malformed JSON handling |
 | **Permit Actions** | `test/permits-actions.test.ts` | 18 | Create, submit, list, get, delete permits |
@@ -749,7 +749,7 @@ PermitForge/
 │   └── ui/                            #   shadcn/ui primitives (20+ components)
 │
 ├── lib/                               # Core Business Logic (22 modules)
-│   ├── chat-pipeline.ts               #   v2 RAG orchestration + feature flags
+│   ├── chat-pipeline.ts               #   RAG orchestration + feature flags
 │   ├── rag.ts                         #   Hybrid search, CRAG check, parent expansion
 │   ├── agents.ts                      #   Topic classifier + Tree Reasoner
 │   ├── semantic-cache.ts              #   Semantic query caching via pgvector

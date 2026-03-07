@@ -1,5 +1,5 @@
 // ============================================================================
-// Semantic Cache — Cache RAG responses by query similarity (v2 Pipeline)
+// Semantic Cache — Cache RAG responses by query similarity
 // Uses pgvector cosine similarity to find cached responses for similar queries
 // ============================================================================
 

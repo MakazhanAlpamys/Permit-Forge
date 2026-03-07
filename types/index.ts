@@ -111,7 +111,7 @@ export interface HybridSearchResult {
 }
 
 // -----------------------------------------------------------------------------
-// Semantic Cache Types (v2 Pipeline)
+// Semantic Cache Types
 // -----------------------------------------------------------------------------
 
 export interface SemanticCacheEntry {
@@ -132,7 +132,7 @@ export interface SemanticCacheResult {
 }
 
 // -----------------------------------------------------------------------------
-// Parent-Child Chunking Types (v2 Pipeline)
+// Parent-Child Chunking Types
 // -----------------------------------------------------------------------------
 
 export interface ParentChunk {

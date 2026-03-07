@@ -25,7 +25,7 @@ import fs from 'fs';
 // -----------------------------------------------------------------------------
 
 export const PDF_INGESTION_CONFIG = {
-  // v2: Parent-child chunking
+  // Parent-child chunking
   CHILD_CHUNK_SIZE: 400,   // Child chunks for embedding + search (higher precision)
   PARENT_CHUNK_SIZE: 2000, // Parent chunks for LLM context (richer information)
   CHUNK_OVERLAP: 100,      // Overlap between child chunks
@@ -361,7 +361,7 @@ export async function runIngestionPipeline(
       };
     }
 
-    // Stage 5.5: Create parent chunks (v2 — larger chunks for LLM context)
+    // Stage 5.5: Create parent chunks (larger chunks for LLM context)
     await sendProgress({
       stage: 'parents',
       progress: 17,
@@ -497,7 +497,7 @@ export async function runIngestionPipeline(
 }
 
 // -----------------------------------------------------------------------------
-// Parent-Child Chunking Support (v2)
+// Parent-Child Chunking Support
 // -----------------------------------------------------------------------------
 
 interface ParentChunkData {

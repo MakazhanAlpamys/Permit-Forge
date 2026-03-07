@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
     // Topic classification
     const topicClassification = await classifyUserTopic(trimmedMessage);
 
-    // v2 Pipeline: Execute RAG only for on-topic queries that need it
+    // Execute RAG only for on-topic queries that need it
     let pipelineResult: Awaited<ReturnType<typeof executeRAGPipeline>> | null = null;
 
     if (topicClassification.isOnTopic && topicClassification.shouldUseRAG) {
@@ -224,7 +224,7 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          // v2: Chunk-based citations (0 API calls)
+          // Chunk-based citations (0 API calls)
           if (chunks.length > 0) {
             const citations = generateCitations(chunks);
             controller.enqueue(encoder.encode(`\n\n__CITATIONS__${JSON.stringify(citations)}`));

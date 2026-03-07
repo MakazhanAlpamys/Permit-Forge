@@ -1,5 +1,5 @@
 // ============================================================================
-// Document Selector — Keyword-based document scoring (v2 Pipeline, 0 API)
+// Document Selector — Keyword-based document scoring (0 API)
 // Scores query against each document's keywords to narrow search scope
 // All profiles loaded from DB (document_registry.keywords/categories)
 // ============================================================================

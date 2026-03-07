@@ -1,5 +1,5 @@
 // ============================================================================
-// Chat Pipeline v2 — Optimized RAG with Semantic Cache, CRAG, Heuristic Rerank
+// Chat Pipeline — Optimized RAG with Semantic Cache, CRAG, Heuristic Rerank
 // 1-2 API calls per question (~1.5 average with cache hits)
 // ============================================================================
 
@@ -88,11 +88,11 @@ export async function getGreetingResponse(): Promise<string> {
 }
 
 // -----------------------------------------------------------------------------
-// v2 RAG Pipeline
+// RAG Pipeline
 // -----------------------------------------------------------------------------
 
 /**
- * Execute the v2 RAG pipeline:
+ * Execute the RAG pipeline:
  *
  *   [1] Generate embedding (reused for cache + search)
  *   [2] Semantic Cache check
@@ -250,12 +250,12 @@ async function executeStandardSearch(
 }
 
 // -----------------------------------------------------------------------------
-// Citation Generation (v2 — chunk-based, 0 API)
+// Citation Generation (chunk-based, 0 API)
 // -----------------------------------------------------------------------------
 
 /**
  * Generate citations from chunks used as context.
- * v2: No LLM parsing, no RPC calls, 100% accurate from DB metadata.
+ * No LLM parsing, no RPC calls, 100% accurate from DB metadata.
  */
 export function generateCitations(chunks: MatchedChunk[]): Citation[] {
   const citations = createChunkCitations(chunks);

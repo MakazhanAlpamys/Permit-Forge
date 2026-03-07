@@ -1,5 +1,5 @@
 // ============================================================================
-// AI Agents for RAG — v2 Pipeline (Simplified)
+// AI Agents for RAG Pipeline
 // Removed: expandQuery, rerankChunks, verifyAnswer (replaced by heuristic/CRAG)
 // Kept: classifyTopic, detectQueryType, classifyQueryStructure, treeReasoner
 // ============================================================================
