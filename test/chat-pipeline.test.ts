@@ -52,16 +52,16 @@ vi.mock('@/lib/heuristic-reranker', () => ({
 }));
 
 vi.mock('@/lib/document-selector', () => ({
-  selectDocuments: vi.fn().mockReturnValue(['dubai-building-code-2021']),
+  selectDocuments: vi.fn().mockReturnValue(['building-code-2021']),
   getSelectedDocumentNames: vi.fn().mockReturnValue(['Building Code']),
   loadSearchProfiles: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/lib/document-registry', () => ({
-  getAllDocuments: vi.fn().mockResolvedValue([{ id: 'dubai-building-code-2021', displayName: 'Building Code', shortName: 'DBC' }]),
+  getAllDocuments: vi.fn().mockResolvedValue([{ id: 'building-code-2021', displayName: 'Building Code', shortName: 'DBC' }]),
   getDocumentByIdSync: vi.fn((id: string) => id ? { displayName: 'Building Code', shortName: 'DBC' } : undefined),
   getAllDocumentsSync: vi.fn(() => []),
-  getAllDocumentIdsSync: vi.fn(() => ['dubai-building-code-2021']),
+  getAllDocumentIdsSync: vi.fn(() => ['building-code-2021']),
   invalidateRegistryCache: vi.fn(),
 }));
 

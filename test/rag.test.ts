@@ -25,9 +25,9 @@ vi.mock('@/lib/gemini', () => ({
 vi.mock('@/lib/document-registry', () => ({
   getDocumentByIdSync: vi.fn((id: string) => id ? { displayName: 'Building Code', shortName: 'DBC' } : undefined),
   getAllDocuments: vi.fn(async () => []),
-  getAllDocumentIds: vi.fn(async () => ['dubai-building-code-2021']),
+  getAllDocumentIds: vi.fn(async () => ['building-code-2021']),
   getAllDocumentsSync: vi.fn(() => []),
-  getAllDocumentIdsSync: vi.fn(() => ['dubai-building-code-2021']),
+  getAllDocumentIdsSync: vi.fn(() => ['building-code-2021']),
   getDocumentById: vi.fn(async (id: string) => id ? { displayName: 'Building Code', shortName: 'DBC' } : undefined),
   getDocumentByFileName: vi.fn(),
   getDocumentPdfPath: vi.fn(),
@@ -164,10 +164,10 @@ describe('RAG Module', () => {
     it('should accept documentFilter option with single document', async () => {
       mockRpc.mockResolvedValueOnce({ data: [], error: null });
 
-      await hybridSearch('test query', 10, { documentFilter: ['dubai-building-code-2021'] });
+      await hybridSearch('test query', 10, { documentFilter: ['building-code-2021'] });
 
       expect(mockRpc).toHaveBeenCalledWith('match_dubai_code_hybrid', expect.objectContaining({
-        filter_document: 'dubai-building-code-2021',
+        filter_document: 'building-code-2021',
       }));
     });
 

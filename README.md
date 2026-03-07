@@ -571,7 +571,7 @@ According to Section 5.2 of the Building Code...
 
 [tokens stream in real-time]
 
-__CITATIONS__[{"chunkId":123,"page":45,"section":"5.2","documentName":"dubai-building-code-2021",...}]
+__CITATIONS__[{"chunkId":123,"page":45,"section":"5.2","documentName":"building-code-2021",...}]
 ```
 
 ### PDF Ingestion — `POST /api/ingest`
@@ -581,7 +581,7 @@ POST /api/ingest
 Content-Type: application/json
 Cookie: ef_token=<admin-jwt>
 
-{ "documentId": "dubai-building-code-2021" }
+{ "documentId": "building-code-2021" }
 ```
 
 **Response** (`text/event-stream`):

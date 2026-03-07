@@ -18,7 +18,7 @@ export interface ChunkMetadata {
   tableName?: string;
   isTable?: boolean;
   contentType?: 'text' | 'table' | 'list' | 'heading';
-  documentName?: string;     // Source document ID (e.g., "dubai-building-code-2021")
+  documentName?: string;     // Source document ID (e.g., "building-code-2021")
 }
 
 export interface MatchedChunk {

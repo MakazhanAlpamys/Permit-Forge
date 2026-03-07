@@ -309,7 +309,7 @@ export async function getIngestionStatus(): Promise<{
 
           for (const row of sampleData) {
             const meta = row.metadata as ChunkMetadata;
-            const docName = meta?.documentName || 'dubai-building-code-2021';
+            const docName = meta?.documentName || 'unknown';
             const page = meta?.page || 0;
 
             const existing = docMap.get(docName);

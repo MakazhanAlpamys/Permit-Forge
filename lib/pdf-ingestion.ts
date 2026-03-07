@@ -198,7 +198,7 @@ export function buildChunkMetadata(chunk: ChunkWithPageRange): ChunkMetadata {
 export interface IngestionOptions {
   /** Document ID from the document registry */
   documentId: string;
-  /** PDF file path relative to project root (e.g., 'public/dubai-code.pdf') */
+  /** PDF file path relative to project root (e.g., 'public/document.pdf') */
   pdfPath: string;
   /** Optional callback for progress updates (for streaming) */
   onProgress?: ProgressCallback;

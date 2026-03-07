@@ -191,7 +191,7 @@ Respond ONLY with this exact JSON structure:
   const userMessage = `BUILDING PROJECT DATA:
 ${permitSummary}
 
-RELEVANT DUBAI BUILDING CODE SECTIONS:
+RELEVANT BUILDING CODE SECTIONS:
 ${context || 'No relevant code sections found. Mark all areas as requires_review.'}`;
 
   try {

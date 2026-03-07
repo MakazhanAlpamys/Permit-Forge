@@ -204,7 +204,7 @@ export function _getCacheState(): TreeCacheEntry | null {
 }
 
 /** @internal — seed the cache for testing */
-export function _seedCache(entry: TreeCacheEntry | null, documentName = 'dubai-building-code-2021'): void {
+export function _seedCache(entry: TreeCacheEntry | null, documentName = 'test-document'): void {
   cacheMap.clear();
   if (entry) {
     cacheMap.set(documentName, entry);

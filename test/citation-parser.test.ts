@@ -23,9 +23,9 @@ describe('Citation Parser', () => {
 
   describe('createChunkCitations', () => {
     const mockChunks: MatchedChunk[] = [
-      { id: 1, content: 'Parking requirements text about 2.5m wide spaces...', metadata: { page: 45, startPage: 45, endPage: 46, section: '3.1', sectionTitle: 'Parking', contentType: 'text', documentName: 'dubai-building-code-2021' }, similarity: 0.9 },
+      { id: 1, content: 'Parking requirements text about 2.5m wide spaces...', metadata: { page: 45, startPage: 45, endPage: 46, section: '3.1', sectionTitle: 'Parking', contentType: 'text', documentName: 'building-code-2021' }, similarity: 0.9 },
       { id: 2, content: 'Fire safety text about exits...', metadata: { page: 100, startPage: 100, endPage: 102, section: '5.1', sectionTitle: 'Fire Safety', contentType: 'text', documentName: 'code-of-safety' }, similarity: 0.8 },
-      { id: 3, content: 'Building heights are regulated by zone...', metadata: { page: 30, startPage: 30, endPage: 31, section: '2.1', sectionTitle: 'Heights', documentName: 'dubai-building-code-2021' }, similarity: 0.7 },
+      { id: 3, content: 'Building heights are regulated by zone...', metadata: { page: 30, startPage: 30, endPage: 31, section: '2.1', sectionTitle: 'Heights', documentName: 'building-code-2021' }, similarity: 0.7 },
     ];
 
     it('should create citations from chunks with correct metadata', () => {
@@ -37,7 +37,7 @@ describe('Citation Parser', () => {
       expect(citations[0].section).toBe('3.1');
       expect(citations[0].sectionTitle).toBe('Parking');
       expect(citations[0].isVerified).toBe(true);
-      expect(citations[0].documentName).toBe('dubai-building-code-2021');
+      expect(citations[0].documentName).toBe('building-code-2021');
     });
 
     it('should respect maxCitations parameter', () => {
