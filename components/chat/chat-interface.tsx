@@ -35,7 +35,7 @@ const MIN_REQUEST_INTERVAL = 2000; // 2 seconds between requests
 
 interface ChatInterfaceProps {
   sessionId?: string | null;
-  onSessionCreated?: (sessionId: string) => void;
+  onSessionCreated?: (sessionId: string | null) => void;
 }
 
 export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProps) {
@@ -409,7 +409,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     setStreamingContent('');
     setIsVerifyingSources(false);
     if (onSessionCreated) {
-      onSessionCreated(null!);
+      onSessionCreated(null);
     }
   };
 

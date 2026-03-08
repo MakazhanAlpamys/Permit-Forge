@@ -239,7 +239,7 @@ CREATE TABLE permit_status_history (
   permit_id UUID NOT NULL REFERENCES permit_applications(id) ON DELETE CASCADE,
   from_status TEXT,
   to_status TEXT NOT NULL,
-  changed_by UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+  changed_by UUID REFERENCES users(id) ON DELETE SET NULL,
   comment TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -258,7 +258,7 @@ CREATE TABLE permit_attachments (
   file_size INTEGER NOT NULL,
   file_type TEXT NOT NULL,
   storage_path TEXT NOT NULL,
-  uploaded_by UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+  uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
   uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -739,8 +739,8 @@ BEGIN
     END AS page_match_type
   FROM dubai_code_chunks d
   WHERE (
-      (d.metadata->>'startPage')::INT <= target_page
-      AND (d.metadata->>'endPage')::INT >= target_page
+      ((d.metadata->>'startPage')::INT <= target_page
+       AND (d.metadata->>'endPage')::INT >= target_page)
     OR (d.metadata->>'page')::INT = target_page
     )
     AND (filter_document IS NULL OR d.document_name = filter_document)
@@ -847,8 +847,8 @@ BEGIN
     )::INT AS match_score
   FROM dubai_code_chunks d
   WHERE (
-      (d.metadata->>'startPage')::INT <= citation_page
-      AND (d.metadata->>'endPage')::INT >= citation_page
+      ((d.metadata->>'startPage')::INT <= citation_page
+       AND (d.metadata->>'endPage')::INT >= citation_page)
     OR (d.metadata->>'page')::INT = citation_page
     )
     AND (filter_document IS NULL OR d.document_name = filter_document)
@@ -966,6 +966,8 @@ RETURNS TABLE (
   current_count INT
 )
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
 AS $$
 DECLARE
   v_window_start TIMESTAMP WITH TIME ZONE;
@@ -1454,9 +1456,11 @@ CREATE POLICY "Authenticated users can view own profile" ON users
 CREATE POLICY "Authenticated users can update own profile" ON users
   FOR UPDATE TO authenticated USING (id = auth.uid()) WITH CHECK (id = auth.uid());
 
--- dubai_code_chunks: full access (RAG + ingestion)
-CREATE POLICY "Allow all chunks operations" ON dubai_code_chunks
-  FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+-- dubai_code_chunks: read for authenticated, full for service_role (ingestion)
+CREATE POLICY "Allow read chunks" ON dubai_code_chunks
+  FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Service role full access to chunks" ON dubai_code_chunks
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- document_trees: read for all, write for service_role
 CREATE POLICY "Allow read document trees" ON document_trees
@@ -1464,41 +1468,53 @@ CREATE POLICY "Allow read document trees" ON document_trees
 CREATE POLICY "Service role full access to document trees" ON document_trees
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- chat_sessions: full access (auth in app layer)
+-- chat_sessions: authenticated + service_role only (auth in app layer)
 CREATE POLICY "Allow all sessions operations" ON chat_sessions
-  FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
 
--- chat_messages: full access (auth in app layer)
+-- chat_messages: authenticated + service_role only (auth in app layer)
 CREATE POLICY "Allow all messages operations" ON chat_messages
-  FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
 
--- audit_logs: full access (auth in app layer)
-CREATE POLICY "Allow all audit operations" ON audit_logs
-  FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+-- audit_logs: service_role only (written by server actions)
+CREATE POLICY "Service role full access to audit_logs" ON audit_logs
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- rate_limits: full access
-CREATE POLICY "Allow all rate limits operations" ON rate_limits
-  FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+-- rate_limits: service_role only
+CREATE POLICY "Service role full access to rate_limits" ON rate_limits
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- permit_applications: full access (auth in app layer)
+-- permit_applications: authenticated + service_role (auth in app layer)
 CREATE POLICY "Allow all permit_applications operations" ON permit_applications
-  FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
 
--- permit_status_history: full access
+-- permit_status_history: authenticated + service_role
 CREATE POLICY "Allow all permit_status_history operations" ON permit_status_history
-  FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
 
--- permit_attachments: full access
+-- permit_attachments: authenticated + service_role
 CREATE POLICY "Allow all permit_attachments operations" ON permit_attachments
-  FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
 
--- notifications: full access
+-- notifications: authenticated + service_role
 CREATE POLICY "Allow all notifications operations" ON notifications
-  FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
 
--- permit_certificates: full access
+-- permit_certificates: authenticated + service_role
 CREATE POLICY "Allow all permit_certificates operations" ON permit_certificates
-  FOR ALL TO anon, authenticated, service_role USING (true) WITH CHECK (true);
+  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+
+-- parent_chunks: read for authenticated, full for service_role
+CREATE POLICY "Allow read parent_chunks" ON parent_chunks
+  FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Service role full access to parent_chunks" ON parent_chunks
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- semantic_cache: read for authenticated, full for service_role
+CREATE POLICY "Allow read semantic_cache" ON semantic_cache
+  FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Service role full access to semantic_cache" ON semantic_cache
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- document_registry: read for all, write via service_role only
 CREATE POLICY "Allow read document registry" ON document_registry
@@ -1755,7 +1771,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 REVOKE ALL ON FUNCTION cleanup_old_sessions(INT) FROM public, anon;
-GRANT EXECUTE ON FUNCTION cleanup_old_sessions(INT) TO authenticated;
+GRANT EXECUTE ON FUNCTION cleanup_old_sessions(INT) TO service_role;
 
 -- Clean old audit logs (older than retention_days)
 CREATE OR REPLACE FUNCTION cleanup_old_audit_logs(retention_days INT DEFAULT 365)
@@ -1775,7 +1791,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 REVOKE ALL ON FUNCTION cleanup_old_audit_logs(INT) FROM public, anon;
-GRANT EXECUTE ON FUNCTION cleanup_old_audit_logs(INT) TO authenticated;
+GRANT EXECUTE ON FUNCTION cleanup_old_audit_logs(INT) TO service_role;
 
 -- Clean expired rate limit entries (older than 1 hour)
 CREATE OR REPLACE FUNCTION cleanup_expired_rate_limits()
@@ -1795,7 +1811,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 REVOKE ALL ON FUNCTION cleanup_expired_rate_limits() FROM public, anon;
-GRANT EXECUTE ON FUNCTION cleanup_expired_rate_limits() TO authenticated;
+GRANT EXECUTE ON FUNCTION cleanup_expired_rate_limits() TO service_role;
 
 -- Run all cleanup functions at once
 CREATE OR REPLACE FUNCTION run_all_cleanup(
@@ -1821,7 +1837,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 REVOKE ALL ON FUNCTION run_all_cleanup(INT, INT) FROM public, anon;
-GRANT EXECUTE ON FUNCTION run_all_cleanup(INT, INT) TO authenticated;
+GRANT EXECUTE ON FUNCTION run_all_cleanup(INT, INT) TO service_role;
 
 -- ============================================================================
 -- 13. DEFAULT ADMIN USER

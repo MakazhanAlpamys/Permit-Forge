@@ -8,8 +8,8 @@ import { SESSION_COOKIE_NAME, getJWTSecret } from '@/lib/constants';
 const BLOCK_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
 // In-memory cache for blocked users (Edge Runtime compatible)
-// Key: userId, Value: { blocked: boolean, checkedAt: number }
-const blockStatusCache = new Map<string, { blocked: boolean; checkedAt: number }>();
+// Key: userId, Value: { blocked: boolean, reason: string | undefined, checkedAt: number }
+const blockStatusCache = new Map<string, { blocked: boolean; reason?: string; checkedAt: number }>();
 
 // Clear session and redirect to login
 function clearSessionAndRedirect(request: NextRequest, reason?: string): NextResponse {
@@ -56,7 +56,7 @@ async function checkUserBlocked(userId: string): Promise<{ blocked: boolean; rea
   
   // Return cached result if still valid
   if (cached && (now - cached.checkedAt) < BLOCK_CHECK_INTERVAL_MS) {
-    return { blocked: cached.blocked };
+    return { blocked: cached.blocked, reason: cached.reason };
   }
   
   try {
@@ -95,14 +95,14 @@ async function checkUserBlocked(userId: string): Promise<{ blocked: boolean; rea
     
     if (!user) {
       // User not found - they're effectively blocked (deleted)
-      blockStatusCache.set(userId, { blocked: true, checkedAt: now });
+      blockStatusCache.set(userId, { blocked: true, reason: 'User not found', checkedAt: now });
       return { blocked: true, reason: 'User not found' };
     }
-    
+
     const blocked = user.blocked === true;
-    
-    // Update cache
-    blockStatusCache.set(userId, { blocked, checkedAt: now });
+
+    // Update cache (include reason so cached lookups show it)
+    blockStatusCache.set(userId, { blocked, reason: user.blocked_reason, checkedAt: now });
     
     // Clean up old cache entries (prevent memory leak)
     if (blockStatusCache.size > 1000) {

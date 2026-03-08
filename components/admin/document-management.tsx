@@ -245,7 +245,7 @@ export function DocumentManagement() {
       const uploadData = new FormData();
       uploadData.append('file', pdfFile);
 
-      const uploadResult = await uploadDocumentPDF(docId, uploadData);
+      const uploadResult = await uploadDocumentPDF(docId, uploadData, csrfTokenRef.current || '');
       setUploading(false);
 
       if (!uploadResult.success) {

@@ -83,7 +83,13 @@ export async function classifyTopic(userQuery: string): Promise<TopicClassificat
       new HumanMessage(TOPIC_CLASSIFIER_PROMPT + userQuery),
     ]);
 
-    const content = (response.content as string).trim().toUpperCase();
+    const rawContent = response.content;
+    const content = (typeof rawContent === 'string'
+      ? rawContent
+      : Array.isArray(rawContent)
+        ? rawContent.map(c => (typeof c === 'string' ? c : 'text' in c ? c.text : '')).join('')
+        : String(rawContent)
+    ).trim().toUpperCase();
     const isOnTopic = content.includes('ON_TOPIC');
 
     return { isOnTopic, shouldUseRAG: isOnTopic };

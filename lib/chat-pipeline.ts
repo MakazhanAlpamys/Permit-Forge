@@ -106,7 +106,13 @@ export async function executeRAGPipeline(query: string): Promise<PipelineResult>
   await loadSearchProfiles(); // populates document selector profiles
 
   // Step 1: Generate embedding (reused for cache lookup AND search)
-  const queryEmbedding = await generateEmbedding(query);
+  let queryEmbedding: number[];
+  try {
+    queryEmbedding = await generateEmbedding(query);
+  } catch (error) {
+    console.error('Embedding generation failed:', error);
+    return { chunks: [], queryEmbedding: [], fromCache: false };
+  }
 
   // Step 2: Semantic Cache check
   if (CHAT_PIPELINE_CONFIG.ENABLE_CACHE) {

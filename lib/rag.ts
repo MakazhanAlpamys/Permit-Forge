@@ -74,7 +74,7 @@ export async function hybridSearch(
   }) => ({
     id: item.id,
     content: item.content,
-    metadata: item.metadata || {},
+    metadata: { ...(item.metadata || {}), page: (item.metadata?.page ?? 0), startPage: (item.metadata?.startPage ?? 0), endPage: (item.metadata?.endPage ?? 0) } as ChunkMetadata,
     vectorSimilarity: item.vector_similarity || 0,
     keywordRank: item.keyword_rank || 0,
     hybridScore: item.hybrid_score || 0,
@@ -119,7 +119,7 @@ async function exactSearch(
   }) => ({
     id: item.id,
     content: item.content,
-    metadata: item.metadata || {},
+    metadata: { ...(item.metadata || {}), page: (item.metadata?.page ?? 0), startPage: (item.metadata?.startPage ?? 0), endPage: (item.metadata?.endPage ?? 0) } as ChunkMetadata,
     similarity: 1.0,
   }));
 }
@@ -165,7 +165,7 @@ export async function queryBuildingCode(
     id: result.id,
     content: result.content,
     metadata: result.metadata,
-    similarity: result.hybridScore * 10,
+    similarity: Math.min(result.hybridScore * 10, 1.0),
   }));
 
   // Merge, deduplicate
@@ -289,7 +289,7 @@ export async function filteredHybridSearch(
   }) => ({
     id: item.id,
     content: item.content,
-    metadata: item.metadata || {},
+    metadata: { ...(item.metadata || {}), page: (item.metadata?.page ?? 0), startPage: (item.metadata?.startPage ?? 0), endPage: (item.metadata?.endPage ?? 0) } as ChunkMetadata,
     vectorSimilarity: item.vector_similarity || 0,
     keywordRank: item.keyword_rank || 0,
     hybridScore: item.hybrid_score || 0,
@@ -308,8 +308,8 @@ async function hybridSearchWithPostFilter(
   });
 
   const filtered = results.filter(result => {
-    const chunkStart = result.metadata.startPage || result.metadata.page || 0;
-    const chunkEnd = result.metadata.endPage || result.metadata.page || 0;
+    const chunkStart = result.metadata.startPage ?? result.metadata.page ?? 0;
+    const chunkEnd = result.metadata.endPage ?? result.metadata.page ?? 0;
 
     return pageRanges.some(range =>
       chunkStart <= range.endPage && chunkEnd >= range.startPage
@@ -356,7 +356,7 @@ export async function queryBuildingCodeFiltered(
     id: result.id,
     content: result.content,
     metadata: result.metadata,
-    similarity: result.hybridScore * 10,
+    similarity: Math.min(result.hybridScore * 10, 1.0),
   }));
 
   const seenIds = new Set(chunks.map(c => c.id));

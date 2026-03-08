@@ -6,7 +6,7 @@
 
 import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
-import { requireAuth } from '@/lib/security';
+import { requireAuth, requireCSRF } from '@/lib/security';
 import { uuidSchema } from '@/lib/validations';
 import { validateFile, generateStoragePath } from '@/lib/file-upload';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
@@ -32,13 +32,17 @@ function transformAttachment(row: any): PermitAttachment {
 
 export async function uploadPermitAttachment(
   permitId: string,
-  formData: FormData
+  formData: FormData,
+  csrfToken?: string
 ): Promise<{ success: boolean; attachment?: PermitAttachment; error?: string }> {
   try {
     const authCheck = await requireAuth();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     // Rate limiting
     const rateLimitResult = await checkRateLimit(authCheck.user.id);
@@ -153,13 +157,17 @@ export async function uploadPermitAttachment(
 // -----------------------------------------------------------------------------
 
 export async function deletePermitAttachment(
-  attachmentId: string
+  attachmentId: string,
+  csrfToken?: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const authCheck = await requireAuth();
     if (!authCheck.success || !authCheck.user) {
       return { success: false, error: authCheck.error };
     }
+
+    const csrf = await requireCSRF(csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error };
 
     const idValidation = uuidSchema.safeParse(attachmentId);
     if (!idValidation.success) {
@@ -188,19 +196,20 @@ export async function deletePermitAttachment(
       return { success: false, error: 'Can only delete attachments from draft permits' };
     }
 
-    // Delete from storage
-    const adminClient = createAdminClient();
-    await adminClient.storage
-      .from(FILE_UPLOAD_LIMITS.storageBucket)
-      .remove([attachment.storage_path]);
-
-    // Delete record
+    // Delete DB record first (reversible orphan in storage is safer than
+    // a DB record pointing to a deleted file)
     const { error } = await supabase
       .from('permit_attachments')
       .delete()
       .eq('id', attachmentId);
 
     if (error) throw error;
+
+    // Then delete from storage (failure leaves an orphan file, not a broken reference)
+    const adminClient = createAdminClient();
+    await adminClient.storage
+      .from(FILE_UPLOAD_LIMITS.storageBucket)
+      .remove([attachment.storage_path]);
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({

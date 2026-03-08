@@ -80,20 +80,28 @@ export async function GET(
     const pdfBuffer = await generateCertificatePDF(certData);
 
     // Save certificate record if it doesn't exist
+    // Handle race condition: if concurrent request already inserted, ignore duplicate error
     if (!existingCert) {
-      await adminClient.from('permit_certificates').insert({
+      const { error: certInsertError } = await adminClient.from('permit_certificates').insert({
         permit_id: permitId,
         certificate_number: certNumber,
         generated_by: user.id,
       });
 
-      const metadata = await getRequestMetadata();
-      await logAuditEvent({
-        userId: user.id,
-        action: 'permit_certificate_generated',
-        metadata: { permitId, certificateNumber: certNumber },
-        ...metadata,
-      });
+      if (certInsertError) {
+        // 23505 = unique_violation — another request already created the cert
+        if (certInsertError.code !== '23505') {
+          console.error('Certificate insert error:', certInsertError);
+        }
+      } else {
+        const metadata = await getRequestMetadata();
+        await logAuditEvent({
+          userId: user.id,
+          action: 'permit_certificate_generated',
+          metadata: { permitId, certificateNumber: certNumber },
+          ...metadata,
+        });
+      }
     }
 
     return new Response(new Uint8Array(pdfBuffer), {

@@ -43,15 +43,16 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
   }
 
   // SECURITY: Validate MIME type matches extension to prevent disguised files
-  if (file.type) {
-    const ext = '.' + fileName.split('.').pop();
-    const allowedMimes = ALLOWED_MIME_TYPES[ext];
-    if (allowedMimes && !allowedMimes.includes(file.type)) {
-      return {
-        valid: false,
-        error: `File MIME type (${file.type}) does not match extension (${ext})`,
-      };
-    }
+  const ext = '.' + fileName.split('.').pop();
+  const allowedMimes = ALLOWED_MIME_TYPES[ext];
+  if (!file.type) {
+    return { valid: false, error: 'File type could not be determined' };
+  }
+  if (allowedMimes && !allowedMimes.includes(file.type)) {
+    return {
+      valid: false,
+      error: `File MIME type (${file.type}) does not match extension (${ext})`,
+    };
   }
 
   return { valid: true };

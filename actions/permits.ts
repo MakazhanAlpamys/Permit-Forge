@@ -21,6 +21,7 @@ import type {
   PermitStatusHistoryEntry,
 } from '@/types';
 import { transformPermit } from '@/lib/transforms';
+import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
 
 // Re-export input types for components
 export type { CreatePermitInput, UpdateBuildingDetailsInput, UpdateComplianceRequirementsInput };
@@ -492,7 +493,6 @@ export async function deletePermit(
     }
 
     // Delete attachments from storage first
-    const adminClient = createAdminClient();
     const { data: attachments } = await supabase
       .from('permit_attachments')
       .select('storage_path')
@@ -500,8 +500,8 @@ export async function deletePermit(
 
     if (attachments && attachments.length > 0) {
       const paths = attachments.map((a: { storage_path: string }) => a.storage_path);
-      await adminClient.storage
-        .from('permit-attachments')
+      await supabase.storage
+        .from(FILE_UPLOAD_LIMITS.storageBucket)
         .remove(paths);
     }
 
@@ -569,8 +569,8 @@ export async function runComplianceCheck(
       return { success: false, error: 'Permit not found' };
     }
 
-    if (permit.status !== 'draft') {
-      return { success: false, error: 'Can only run compliance check on draft permits' };
+    if (permit.status !== 'draft' && permit.status !== 'revision_requested') {
+      return { success: false, error: 'Can only run compliance check on draft or revision-requested permits' };
     }
 
     const bd = permit.building_details;
@@ -651,8 +651,8 @@ export async function revisePermit(
       return { success: false, error: 'Permit not found' };
     }
 
-    if (permit.status !== 'rejected' && permit.status !== 'revision_requested') {
-      return { success: false, error: 'Can only revise rejected or revision-requested permits' };
+    if (permit.status !== 'revision_requested') {
+      return { success: false, error: 'Can only revise permits with revision requested' };
     }
 
     const { error } = await supabase

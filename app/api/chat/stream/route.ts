@@ -217,7 +217,12 @@ export async function POST(request: NextRequest) {
           let fullContent = '';
 
           for await (const chunk of streamResponse) {
-            const text = chunk.content as string;
+            const raw = chunk.content;
+            const text = typeof raw === 'string'
+              ? raw
+              : Array.isArray(raw)
+                ? raw.map(c => (typeof c === 'string' ? c : 'text' in c ? c.text : '')).join('')
+                : String(raw);
             if (text) {
               fullContent += text;
               controller.enqueue(encoder.encode(text));
@@ -239,10 +244,9 @@ export async function POST(request: NextRequest) {
           controller.close();
         } catch (error) {
           console.error('Streaming error:', error);
-          const errorMsg = error instanceof Error ? error.message : 'Stream processing failed';
           try {
             controller.enqueue(encoder.encode(
-              `\n\n__ERROR__${JSON.stringify({ code: 'STREAM_ERROR', message: errorMsg })}`
+              `\n\n__ERROR__${JSON.stringify({ code: 'STREAM_ERROR', message: 'An error occurred while generating a response' })}`
             ));
             controller.close();
           } catch {

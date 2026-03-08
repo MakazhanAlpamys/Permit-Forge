@@ -25,6 +25,16 @@ const LOGIN_MAX_ATTEMPTS = 10;
 
 function checkLoginRateLimit(ip: string): boolean {
   const now = Date.now();
+
+  // Periodically purge expired entries to prevent memory leak
+  if (loginAttempts.size > 1000) {
+    for (const [key, val] of loginAttempts) {
+      if (now - val.firstAttempt > LOGIN_WINDOW_MS) {
+        loginAttempts.delete(key);
+      }
+    }
+  }
+
   const entry = loginAttempts.get(ip);
   if (!entry || now - entry.firstAttempt > LOGIN_WINDOW_MS) {
     loginAttempts.set(ip, { count: 1, firstAttempt: now });

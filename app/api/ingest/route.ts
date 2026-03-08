@@ -126,16 +126,19 @@ export async function POST(request: NextRequest) {
         onProgress: sendProgress,
       });
     } catch (error) {
-      await sendProgress({
-        stage: 'error',
-        progress: 0,
-        total: 100,
-        message: 'Ingestion failed',
-        done: true,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
+      console.error('Ingestion error:', error);
+      try {
+        await sendProgress({
+          stage: 'error',
+          progress: 0,
+          total: 100,
+          message: 'Ingestion failed',
+          done: true,
+          error: 'Ingestion pipeline encountered an error',
+        });
+      } catch { /* client disconnected */ }
     } finally {
-      await writer.close();
+      try { await writer.close(); } catch { /* client disconnected */ }
     }
   })();
 

@@ -170,12 +170,12 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 // Helper Functions
 // ============================================================================
 
-function formatTimestamp(date: Date): string {
+function formatTimestamp(date: Date | string): string {
   return new Intl.DateTimeFormat('en-US', {
     hour: 'numeric',
     minute: 'numeric',
     hour12: true,
-  }).format(date);
+  }).format(new Date(date));
 }
 
 // ============================================================================

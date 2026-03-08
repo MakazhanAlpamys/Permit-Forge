@@ -110,6 +110,7 @@ export async function splitWithPageTracking(
     if (chunkContent.trim().length < MIN_CHUNK_LENGTH) continue;
 
     const chunkStart = fullText.indexOf(chunkContent, currentPosition);
+    if (chunkStart === -1) continue; // Skip chunks not found (duplicate content)
     const chunkEnd = chunkStart + chunkContent.length;
 
     let position = 0;
@@ -564,6 +565,7 @@ async function createParentChunks(
     if (chunkContent.trim().length < MIN_CHUNK_LENGTH) continue;
 
     const chunkStart = fullText.indexOf(chunkContent, currentPosition);
+    if (chunkStart === -1) continue; // Skip chunks not found (duplicate content)
     const chunkEnd = chunkStart + chunkContent.length;
 
     let position = 0;

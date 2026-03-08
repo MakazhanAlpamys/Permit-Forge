@@ -113,12 +113,17 @@ export async function reviewPermit(
       updateData.revision_notes = comments;
     }
 
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from('permit_applications')
       .update(updateData)
-      .eq('id', permitId);
+      .eq('id', permitId)
+      .in('status', ['submitted', 'under_review'])
+      .select('id');
 
     if (error) throw error;
+    if (!updated || updated.length === 0) {
+      return { success: false, error: 'Permit status has changed. Please refresh and try again.' };
+    }
 
     await supabase.from('permit_status_history').insert({
       permit_id: permitId,
@@ -201,12 +206,17 @@ export async function setPermitUnderReview(
       return { success: false, error: 'Can only review submitted permits' };
     }
 
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from('permit_applications')
-      .update({ status: 'under_review' })
-      .eq('id', permitId);
+      .update({ status: 'under_review', reviewed_by: authCheck.user.id })
+      .eq('id', permitId)
+      .eq('status', 'submitted')
+      .select('id');
 
     if (error) throw error;
+    if (!updated || updated.length === 0) {
+      return { success: false, error: 'Permit status has changed. Please refresh and try again.' };
+    }
 
     await supabase.from('permit_status_history').insert({
       permit_id: permitId,

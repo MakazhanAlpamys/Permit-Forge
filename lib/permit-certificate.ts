@@ -137,9 +137,13 @@ export async function generateCertificatePDF(data: CertificateData): Promise<Buf
       if (data.plotNumber) {
         drawRow(doc, 'Plot Number:', s(data.plotNumber), pageWidth);
       }
-      drawRow(doc, 'Approval Date:', new Date(s(data.approvalDate)).toLocaleDateString('en-US', {
-        year: 'numeric', month: 'long', day: 'numeric',
-      }), pageWidth);
+      const approvalDateObj = new Date(s(data.approvalDate));
+      const approvalDateStr = isNaN(approvalDateObj.getTime())
+        ? 'N/A'
+        : approvalDateObj.toLocaleDateString('en-US', {
+            year: 'numeric', month: 'long', day: 'numeric',
+          });
+      drawRow(doc, 'Approval Date:', approvalDateStr, pageWidth);
 
       doc.moveDown(0.8);
 

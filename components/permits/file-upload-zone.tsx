@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Upload, X, FileText, Image, File } from 'lucide-react';
 import { uploadPermitAttachment, deletePermitAttachment } from '@/actions/permit-attachments';
+import { getCSRFTokenAction } from '@/actions/auth';
 import { formatFileSize } from '@/lib/file-upload';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
 import type { PermitAttachment } from '@/types';
@@ -26,7 +27,12 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
   const [deleting, setDeleting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [csrfToken, setCsrfToken] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    getCSRFTokenAction().then(setCsrfToken);
+  }, []);
 
   const handleUpload = useCallback(async (file: File) => {
     setError(null);
@@ -35,7 +41,7 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const result = await uploadPermitAttachment(permitId, formData);
+      const result = await uploadPermitAttachment(permitId, formData, csrfToken || undefined);
 
       if (!result.success) {
         setError(result.error || 'Upload failed');
@@ -52,7 +58,7 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
   const handleDelete = async (attachmentId: string) => {
     setDeleting(attachmentId);
     try {
-      const result = await deletePermitAttachment(attachmentId);
+      const result = await deletePermitAttachment(attachmentId, csrfToken || undefined);
       if (result.success) {
         onUpdate();
       } else {

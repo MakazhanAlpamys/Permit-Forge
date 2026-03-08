@@ -200,7 +200,12 @@ ${context || 'No relevant code sections found. Mark all areas as requires_review
       new HumanMessage(userMessage),
     ]);
 
-    const responseText = response.content as string;
+    const raw = response.content;
+    const responseText = typeof raw === 'string'
+      ? raw
+      : Array.isArray(raw)
+        ? raw.map(c => (typeof c === 'string' ? c : 'text' in c ? c.text : '')).join('')
+        : String(raw);
 
     // Extract JSON from response (handle potential markdown wrapping)
     let jsonStr = responseText.trim();

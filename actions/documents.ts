@@ -183,7 +183,7 @@ export async function upsertDocument(
 export async function deleteDocument(
   documentId: string,
   clearChunks: boolean = false,
-  csrfToken: string = ''
+  csrfToken: string
 ): Promise<{ success: boolean; error?: string }> {
   const authCheck = await requireAdmin();
   if (!authCheck.success || !authCheck.user) {
@@ -317,12 +317,16 @@ export async function restoreDocument(
 
 export async function uploadDocumentPDF(
   documentId: string,
-  formData: FormData
+  formData: FormData,
+  csrfToken?: string
 ): Promise<{ success: boolean; storagePath?: string; error?: string }> {
   const authCheck = await requireAdmin();
   if (!authCheck.success || !authCheck.user) {
     return { success: false, error: authCheck.error || 'Unauthorized' };
   }
+
+  const csrf = await requireCSRF(csrfToken);
+  if (!csrf.valid) return { success: false, error: csrf.error };
 
   if (!documentId) {
     return { success: false, error: 'Missing documentId' };

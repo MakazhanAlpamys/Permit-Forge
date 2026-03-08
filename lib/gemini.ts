@@ -80,7 +80,11 @@ export async function generateEmbedding(text: string, maxRetries = 7): Promise<n
         contents: text,
         config: { outputDimensionality: 768 },
       });
-      return result.embeddings?.[0]?.values ?? [];
+      const values = result.embeddings?.[0]?.values;
+      if (!values || values.length === 0) {
+        throw new Error('Embedding API returned empty vector');
+      }
+      return values;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       const errorMessage = lastError.message;
@@ -193,7 +197,12 @@ export async function generateChatResponse(options: GeminiChatOptions): Promise<
   messages.push(new HumanMessage(fullUserMessage));
 
   const response = await chatModel.invoke(messages);
-  return response.content as string;
+  const raw = response.content;
+  return typeof raw === 'string'
+    ? raw
+    : Array.isArray(raw)
+      ? raw.map(c => (typeof c === 'string' ? c : 'text' in c ? c.text : '')).join('')
+      : String(raw);
 }
 
 // -----------------------------------------------------------------------------

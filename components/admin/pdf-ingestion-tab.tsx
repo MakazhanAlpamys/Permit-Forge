@@ -198,7 +198,7 @@ export function PdfIngestionTab() {
   };
 
   useEffect(() => {
-    getAllRegisteredDocuments().then(r => setDocuments(r.data.filter(d => d.isActive)));
+    getAllRegisteredDocuments().then(r => setDocuments((r.data || []).filter(d => d.isActive)));
     runDiagnostics();
     getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
   }, []);
