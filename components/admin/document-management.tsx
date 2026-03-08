@@ -219,49 +219,56 @@ export function DocumentManagement() {
     setSaving(true);
     setFormError(null);
 
-    // Step 1: Save metadata
-    const result = await upsertDocument({
-      id: docId,
-      displayName: formData.displayName,
-      shortName: formData.shortName,
-      fileName,
-      sourceUrl: formData.sourceUrl,
-      authority: formData.authority,
-      description: formData.description,
-      badgeColor: formData.badgeColor,
-      keywords: formData.keywords.split(',').map(k => k.trim()).filter(Boolean),
-      categories: formData.categories.split(',').map(c => c.trim()).filter(Boolean),
-    }, csrfTokenRef.current || '');
+    try {
+      // Step 1: Save metadata
+      const result = await upsertDocument({
+        id: docId,
+        displayName: formData.displayName,
+        shortName: formData.shortName,
+        fileName,
+        sourceUrl: formData.sourceUrl,
+        authority: formData.authority,
+        description: formData.description,
+        badgeColor: formData.badgeColor,
+        keywords: formData.keywords.split(',').map(k => k.trim()).filter(Boolean),
+        categories: formData.categories.split(',').map(c => c.trim()).filter(Boolean),
+      }, csrfTokenRef.current || '');
 
-    if (!result.success) {
-      setSaving(false);
-      setFormError(result.error || 'Failed to save');
-      return;
-    }
-
-    // Step 2: Upload PDF if selected
-    if (pdfFile) {
-      setUploading(true);
-      const uploadData = new FormData();
-      uploadData.append('file', pdfFile);
-
-      const uploadResult = await uploadDocumentPDF(docId, uploadData, csrfTokenRef.current || '');
-      setUploading(false);
-
-      if (!uploadResult.success) {
-        setSaving(false);
-        setFormError(uploadResult.error || 'PDF upload failed');
-        // Metadata saved but upload failed — user can retry upload via edit
-        loadDocuments();
+      if (!result.success) {
+        setFormError(result.error || 'Failed to save');
         return;
       }
-    }
 
-    setSaving(false);
-    setShowForm(false);
-    setPdfFile(null);
-    loadDocuments();
-    runDiagnostics();
+      // Step 2: Upload PDF if selected
+      if (pdfFile) {
+        setUploading(true);
+        const uploadData = new FormData();
+        uploadData.append('file', pdfFile);
+
+        let uploadResult: { success: boolean; error?: string };
+        try {
+          uploadResult = await uploadDocumentPDF(docId, uploadData, csrfTokenRef.current || '');
+        } finally {
+          setUploading(false);
+        }
+
+        if (!uploadResult.success) {
+          setFormError(uploadResult.error || 'PDF upload failed');
+          // Metadata saved but upload failed — user can retry upload via edit
+          loadDocuments();
+          return;
+        }
+      }
+
+      setShowForm(false);
+      setPdfFile(null);
+      loadDocuments();
+      runDiagnostics();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'An unexpected error occurred');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleDelete = async (docId: string, docName: string) => {
