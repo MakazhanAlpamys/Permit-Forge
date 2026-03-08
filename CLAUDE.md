@@ -28,7 +28,7 @@ Pattern match: `npx vitest run -t "pattern"`
 - **Database:** Supabase (PostgreSQL) with pgvector (HNSW) + pg_trgm extensions, 30+ RPC functions
 - **Auth:** JWT (HS256, jose), bcrypt (12 rounds), CSRF tokens, HttpOnly cookies
 - **Testing:** Vitest 4 (node environment), @testing-library/react, 11 test suites in `test/`
-- **Email:** Resend API (optional, for permit notifications)
+- **Email:** Resend API (optional, for verification emails, password reset, permit notifications)
 - **PDF Generation:** PDFKit (permit certificates)
 
 ## Architecture
@@ -39,6 +39,10 @@ Pattern match: `npx vitest run -t "pattern"`
 |-------|--------|---------|
 | `/` | User | Main dashboard — chat interface + sidebar with session history |
 | `/login` | Public | Login page (redirects logged-in users by role) |
+| `/register` | Public | Self-registration with email verification |
+| `/verify-email` | Public | 6-digit code entry to verify email after registration |
+| `/forgot-password` | Public | Multi-step password reset (email → code → new password) |
+| `/profile` | User | Profile management — edit username/name, email-code-based password change |
 | `/permits` | User | Permit application list |
 | `/permits/new` | User | Multi-step permit creation (3 steps: project → building → compliance) |
 | `/permits/[id]` | User | Permit detail view with status timeline and attachments |
@@ -55,7 +59,8 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 
 | Action | Purpose |
 |--------|---------|
-| `auth.ts` | login, logout with audit logging |
+| `auth.ts` | login, logout, registration, email verification, forgot/reset password |
+| `profile.ts` | User profile CRUD, email-code-based password change, admin password change (no email code) |
 | `admin.ts` | User management: create, block/unblock, role updates |
 | `admin-permits.ts` | Permit review and approval workflow |
 | `permits.ts` | CRUD operations for permit applications |
@@ -163,6 +168,7 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/supabase-server.ts` | Two clients: `createServerClient()` (anon) and `createAdminClient()` (service_role, bypasses RLS) |
 | `lib/logger.ts` | Centralized logging with `LOG_LEVEL` env var support |
 | `lib/file-upload.ts` | File validation (size, extension, MIME), storage path generation |
+| `lib/email.ts` | Email sending via Resend: verification, password reset, password change codes; `generateSixDigitCode()` |
 | `lib/notifications.ts` | In-app + email (Resend API) notifications, failure-silent |
 
 ### Middleware (`middleware.ts`)
@@ -173,6 +179,8 @@ Edge Runtime auth — runs on every non-static request:
 3. Role-based redirects: admins → `/admin`, users → `/`, blocked → clear session + redirect
 4. Injects `x-user-id` and `x-user-role` headers for downstream use
 5. Security headers: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Permissions-Policy` (camera/mic/geo disabled)
+
+Public paths (no auth required): `/login`, `/register`, `/verify-email`, `/forgot-password`, `/reset-password`.
 
 Matcher excludes: `api`, `_next/static`, `_next/image`, static assets (svg/png/jpg/gif/webp).
 
@@ -187,7 +195,7 @@ Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — 
 - `document_registry` — dynamic document metadata, keywords, categories, `storage_path` (Supabase Storage), soft-delete
 - `document_trees` — hierarchical document structure (JSONB tree_data)
 - `chat_sessions` / `chat_messages` — conversation history with citations (JSONB)
-- `users` — accounts with role (admin/user), block status, blocked_reason
+- `users` — accounts with role (admin/user), block status, blocked_reason, email verification (`email`, `email_verified`, `verification_code`, `reset_code`, `code_expires_at`)
 - `audit_logs` — 12 event types, tracks IP + user agent
 - `rate_limits` — per-user per-endpoint request throttling
 - `notifications` — in-app notification storage
@@ -237,5 +245,5 @@ Required in `.env.local`:
 - `JWT_SECRET` — Min 32 chars (64+ for production)
 
 Optional:
-- `RESEND_API_KEY` — For email notifications (permit status updates)
+- `RESEND_API_KEY` — For transactional emails: verification, password reset, permit notifications
 - `LOG_LEVEL` — Logging verbosity (`debug`/`info`/`warn`/`error`)

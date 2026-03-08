@@ -21,7 +21,8 @@ import {
   Plus,
   ClipboardList,
   Search,
-  X
+  X,
+  UserCircle
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -346,12 +347,16 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-border bg-card">
-            <div className="text-xs text-muted-foreground">
-              <p>Building Codes</p>
-              <p className="mt-1">Powered by Gemini AI</p>
-            </div>
+          {/* Profile Link */}
+          <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-border bg-card">
+            <Link
+              href="/profile"
+              onClick={onClose}
+              className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              <UserCircle className="h-5 w-5" />
+              <span className="font-medium">Profile</span>
+            </Link>
           </div>
         </ScrollArea>
       </aside>

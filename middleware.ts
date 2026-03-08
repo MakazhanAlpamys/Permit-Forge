@@ -132,7 +132,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public paths that don't require authentication
-  const publicPaths = ['/login'];
+  const publicPaths = ['/login', '/register', '/verify-email', '/forgot-password', '/reset-password'];
   const isPublicPath = publicPaths.some(path => pathname.startsWith(path));
 
   // If no token
@@ -164,8 +164,8 @@ export async function middleware(request: NextRequest) {
     return clearSessionAndRedirect(request, blockStatus.reason || 'Your account has been blocked');
   }
 
-  // If logged in and trying to access login page
-  if (pathname === '/login') {
+  // If logged in and trying to access public auth pages
+  if (isPublicPath) {
     if (role === 'admin') {
       return NextResponse.redirect(new URL('/admin', request.url));
     }

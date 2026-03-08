@@ -86,6 +86,74 @@ export const loginSchema = z.object({
 
 export type LoginInput = z.infer<typeof loginSchema>;
 
+// -----------------------------------------------------------------------------
+// Registration Schema (with email)
+// -----------------------------------------------------------------------------
+
+export const registerSchema = z.object({
+  username: z.string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(50, 'Username must be 50 characters or less')
+    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores')
+    .transform(s => s.toLowerCase()),
+  email: z.string()
+    .email('Invalid email address')
+    .max(255, 'Email must be 255 characters or less')
+    .transform(s => s.toLowerCase().trim()),
+  password: passwordSchema,
+});
+
+export type RegisterInput = z.infer<typeof registerSchema>;
+
+// -----------------------------------------------------------------------------
+// Email Verification Schema
+// -----------------------------------------------------------------------------
+
+export const verifyEmailSchema = z.object({
+  email: z.string().email('Invalid email address').transform(s => s.toLowerCase().trim()),
+  code: z.string().length(6, 'Verification code must be 6 digits').regex(/^\d{6}$/, 'Code must be 6 digits'),
+});
+
+export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
+
+// -----------------------------------------------------------------------------
+// Forgot Password Schema
+// -----------------------------------------------------------------------------
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().email('Invalid email address').transform(s => s.toLowerCase().trim()),
+});
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+// -----------------------------------------------------------------------------
+// Reset Password Schema
+// -----------------------------------------------------------------------------
+
+export const resetPasswordSchema = z.object({
+  email: z.string().email('Invalid email address').transform(s => s.toLowerCase().trim()),
+  code: z.string().length(6, 'Reset code must be 6 digits').regex(/^\d{6}$/, 'Code must be 6 digits'),
+  newPassword: passwordSchema,
+});
+
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
+// -----------------------------------------------------------------------------
+// Update Profile Schema
+// -----------------------------------------------------------------------------
+
+export const updateProfileSchema = z.object({
+  full_name: z.string().max(100).transform(sanitizeString).optional(),
+  username: z.string()
+    .min(3, 'Username must be at least 3 characters')
+    .max(50, 'Username must be 50 characters or less')
+    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores')
+    .transform(s => s.toLowerCase())
+    .optional(),
+});
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+
 export const createUserSchema = z.object({
   username: z.string()
     .min(3, 'Username must be at least 3 characters')

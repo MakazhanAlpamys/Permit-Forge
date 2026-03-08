@@ -77,7 +77,11 @@ CREATE TABLE users (
   username TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   full_name TEXT,
-  email TEXT,
+  email TEXT UNIQUE,
+  email_verified BOOLEAN DEFAULT FALSE,
+  verification_code TEXT,
+  reset_code TEXT,
+  code_expires_at TIMESTAMPTZ,
   role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
   blocked BOOLEAN DEFAULT FALSE,
   blocked_reason TEXT,
@@ -92,6 +96,7 @@ ALTER TABLE users ADD CONSTRAINT users_blocked_by_fkey
 
 CREATE INDEX users_username_idx ON users(username);
 CREATE INDEX users_blocked_idx ON users(blocked) WHERE blocked = TRUE;
+CREATE INDEX users_email_idx ON users(email) WHERE email IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- 2.2 DUBAI CODE CHUNKS (RAG)

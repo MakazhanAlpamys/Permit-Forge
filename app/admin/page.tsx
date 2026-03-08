@@ -24,7 +24,8 @@ import {
   type TopActiveUser,
 } from '@/actions/analytics';
 import { getAdminPermits, getPermitStats } from '@/actions/admin-permits';
-import { logoutAction } from '@/actions/auth';
+import { logoutAction, getCSRFTokenAction } from '@/actions/auth';
+import { adminChangePasswordAction } from '@/actions/profile';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/theme-toggle';
@@ -48,6 +49,12 @@ import {
   History,
   ClipboardCheck,
   BookOpen,
+  UserCircle,
+  Eye,
+  EyeOff,
+  Loader2,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
 import type { PermitApplication, PermitStats } from '@/types';
 
@@ -73,6 +80,16 @@ export default function AdminPage() {
 
   // User dialog
   const [createUserOpen, setCreateUserOpen] = useState(false);
+
+  // Admin profile dialog
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [profileSuccess, setProfileSuccess] = useState(false);
 
   // Load dashboard data
   const loadDashboardData = useCallback(async () => {
@@ -138,6 +155,34 @@ export default function AdminPage() {
     }
   }, [activeTab, loadUsers, loadPermits]);
 
+  const handleAdminPasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileLoading(true);
+    setProfileError('');
+    setProfileSuccess(false);
+
+    const csrfToken = await getCSRFTokenAction();
+    if (!csrfToken) {
+      setProfileError('Session expired. Please refresh.');
+      setProfileLoading(false);
+      return;
+    }
+
+    const result = await adminChangePasswordAction(currentPassword, newPassword, csrfToken);
+    if (result.error) {
+      setProfileError(result.error);
+    } else {
+      setProfileSuccess(true);
+      setCurrentPassword('');
+      setNewPassword('');
+      setTimeout(() => {
+        setProfileOpen(false);
+        setProfileSuccess(false);
+      }, 1500);
+    }
+    setProfileLoading(false);
+  };
+
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: LayoutDashboard },
     { id: 'users' as Tab, label: 'Users', icon: Users },
@@ -159,15 +204,23 @@ export default function AdminPage() {
               <h1 className="text-lg font-semibold hidden sm:block">PermitForge</h1>
             </div>
             <div className="flex items-center gap-2">
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => loadDashboardData()}
                 disabled={dataLoading}
               >
                 <RefreshCw className={`h-4 w-4 ${dataLoading ? 'animate-spin' : ''}`} />
               </Button>
               <ThemeToggle variant="text" />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setProfileOpen(true); setProfileError(''); setProfileSuccess(false); }}
+              >
+                <UserCircle className="h-4 w-4 mr-2" />
+                Profile
+              </Button>
               <form action={logoutAction}>
                 <Button variant="ghost" size="sm" type="submit">
                   <LogOut className="h-4 w-4 mr-2" />
@@ -313,6 +366,83 @@ export default function AdminPage() {
           </div>
         </main>
       </div>
+
+      {/* Admin Profile Dialog */}
+      {profileOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="bg-card border border-border rounded-lg p-6 max-w-sm w-full mx-4 shadow-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Admin Profile</h3>
+              <button onClick={() => setProfileOpen(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {profileSuccess ? (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <CheckCircle2 className="h-12 w-12 text-green-500" />
+                <p className="text-sm text-muted-foreground">Password changed successfully!</p>
+              </div>
+            ) : (
+              <form onSubmit={handleAdminPasswordChange} className="space-y-4">
+                <p className="text-sm text-muted-foreground">Change your password</p>
+
+                <div className="space-y-2">
+                  <label htmlFor="currentPw" className="text-sm font-medium">Current Password</label>
+                  <div className="relative">
+                    <input
+                      id="currentPw"
+                      type={showCurrentPw ? 'text' : 'password'}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      required
+                      disabled={profileLoading}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
+                      placeholder="Current password"
+                    />
+                    <button type="button" onClick={() => setShowCurrentPw(!showCurrentPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" tabIndex={-1}>
+                      {showCurrentPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="newPw" className="text-sm font-medium">New Password</label>
+                  <div className="relative">
+                    <input
+                      id="newPw"
+                      type={showNewPw ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      required
+                      disabled={profileLoading}
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
+                      placeholder="Min 8 chars, uppercase, lowercase, digit, special"
+                    />
+                    <button type="button" onClick={() => setShowNewPw(!showNewPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" tabIndex={-1}>
+                      {showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {profileError && (
+                  <div className="p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
+                    {profileError}
+                  </div>
+                )}
+
+                <div className="flex gap-3 justify-end">
+                  <Button variant="outline" type="button" onClick={() => setProfileOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={profileLoading}>
+                    {profileLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Change Password
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
