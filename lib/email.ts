@@ -59,9 +59,12 @@ export async function sendVerificationEmail(email: string, code: string): Promis
   try {
     const { Resend } = await import('resend');
     const resend = new Resend(process.env.RESEND_API_KEY);
+    const fromEmail = getFromEmail();
 
-    await resend.emails.send({
-      from: getFromEmail(),
+    console.log('[Email] Sending verification email to:', email, 'from:', fromEmail);
+
+    const result = await resend.emails.send({
+      from: fromEmail,
       to: email,
       subject: 'Verify your email — PermitForge',
       html: codeEmailHtml(
@@ -70,9 +73,14 @@ export async function sendVerificationEmail(email: string, code: string): Promis
         'Use the code below to verify your email address.'
       ),
     });
+
+    console.log('[Email] Resend API response:', JSON.stringify(result));
     return true;
   } catch (error) {
     console.error('Failed to send verification email:', error instanceof Error ? error.message : error);
+    if (error instanceof Error && 'statusCode' in error) {
+      console.error('[Email] Status code:', (error as Record<string, unknown>).statusCode);
+    }
     return false;
   }
 }
@@ -86,9 +94,12 @@ export async function sendPasswordResetEmail(email: string, code: string): Promi
   try {
     const { Resend } = await import('resend');
     const resend = new Resend(process.env.RESEND_API_KEY);
+    const fromEmail = getFromEmail();
 
-    await resend.emails.send({
-      from: getFromEmail(),
+    console.log('[Email] Sending password reset email to:', email, 'from:', fromEmail);
+
+    const result = await resend.emails.send({
+      from: fromEmail,
       to: email,
       subject: 'Password Reset — PermitForge',
       html: codeEmailHtml(
@@ -97,6 +108,8 @@ export async function sendPasswordResetEmail(email: string, code: string): Promi
         'Use the code below to reset your password.'
       ),
     });
+
+    console.log('[Email] Resend API response:', JSON.stringify(result));
     return true;
   } catch (error) {
     console.error('Failed to send password reset email:', error instanceof Error ? error.message : error);
@@ -113,9 +126,12 @@ export async function sendPasswordChangeCodeEmail(email: string, code: string): 
   try {
     const { Resend } = await import('resend');
     const resend = new Resend(process.env.RESEND_API_KEY);
+    const fromEmail = getFromEmail();
 
-    await resend.emails.send({
-      from: getFromEmail(),
+    console.log('[Email] Sending password change email to:', email, 'from:', fromEmail);
+
+    const result = await resend.emails.send({
+      from: fromEmail,
       to: email,
       subject: 'Password Change Code — PermitForge',
       html: codeEmailHtml(
@@ -124,6 +140,8 @@ export async function sendPasswordChangeCodeEmail(email: string, code: string): 
         'Use the code below to confirm your password change.'
       ),
     });
+
+    console.log('[Email] Resend API response:', JSON.stringify(result));
     return true;
   } catch (error) {
     console.error('Failed to send password change email:', error instanceof Error ? error.message : error);
