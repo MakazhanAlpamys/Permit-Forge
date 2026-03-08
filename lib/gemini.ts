@@ -7,37 +7,73 @@ import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages
 import { GoogleGenAI } from '@google/genai';
 import { MAX_MESSAGE_LENGTH, MAX_CONTEXT_LENGTH } from './constants';
 
-// Environment variable validation
-const geminiApiKey = process.env.GEMINI_API_KEY;
+// -----------------------------------------------------------------------------
+// Lazy model initialization — avoids crashing non-AI pages when key is absent
+// -----------------------------------------------------------------------------
 
-if (!geminiApiKey) {
-  throw new Error('Configuration error: GEMINI_API_KEY environment variable is missing. Please set it in your .env file with a valid Google AI API key.');
+function getApiKey(): string {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) {
+    throw new Error(
+      'Configuration error: GEMINI_API_KEY environment variable is missing. ' +
+      'Please set it in your .env file with a valid Google AI API key.'
+    );
+  }
+  return key;
 }
 
-// -----------------------------------------------------------------------------
-// LangChain Models Configuration
-// -----------------------------------------------------------------------------
+let _chatModel: ChatGoogleGenerativeAI | null = null;
+let _streamingModel: ChatGoogleGenerativeAI | null = null;
+let _genaiClient: GoogleGenAI | null = null;
 
-// Chat model for compliance analysis - temperature=0 for deterministic responses
-export const chatModel = new ChatGoogleGenerativeAI({
-  model: 'gemini-2.5-flash', // Latest model for best quality
-  apiKey: geminiApiKey,
-  temperature: 0,
-  maxOutputTokens: 4096,
-  maxRetries: 0, // Disable retries to save quota
+export function getChatModel(): ChatGoogleGenerativeAI {
+  if (!_chatModel) {
+    _chatModel = new ChatGoogleGenerativeAI({
+      model: 'gemini-2.5-flash',
+      apiKey: getApiKey(),
+      temperature: 0,
+      maxOutputTokens: 4096,
+      maxRetries: 0,
+    });
+  }
+  return _chatModel;
+}
+
+export function getStreamingModel(): ChatGoogleGenerativeAI {
+  if (!_streamingModel) {
+    _streamingModel = new ChatGoogleGenerativeAI({
+      model: 'gemini-2.5-flash',
+      apiKey: getApiKey(),
+      temperature: 0,
+      maxOutputTokens: 4096,
+      streaming: true,
+    });
+  }
+  return _streamingModel;
+}
+
+function getGenaiClient(): GoogleGenAI {
+  if (!_genaiClient) {
+    _genaiClient = new GoogleGenAI({ apiKey: getApiKey() });
+  }
+  return _genaiClient;
+}
+
+// Backward-compatible named exports (used by existing callers)
+// These are aliases for the getter functions — callers can migrate gradually
+/** @deprecated Use getChatModel() instead */
+export const chatModel = new Proxy({} as ChatGoogleGenerativeAI, {
+  get(_target, prop) {
+    return (getChatModel() as unknown as Record<string | symbol, unknown>)[prop];
+  },
 });
 
-// Streaming chat model for API routes (same config but with streaming enabled)
-export const streamingModel = new ChatGoogleGenerativeAI({
-  model: 'gemini-2.5-flash',
-  apiKey: geminiApiKey,
-  temperature: 0,
-  maxOutputTokens: 4096,
-  streaming: true,
+/** @deprecated Use getStreamingModel() instead */
+export const streamingModel = new Proxy({} as ChatGoogleGenerativeAI, {
+  get(_target, prop) {
+    return (getStreamingModel() as unknown as Record<string | symbol, unknown>)[prop];
+  },
 });
-
-// New Google GenAI client for embeddings (gemini-embedding-001)
-const genaiClient = new GoogleGenAI({ apiKey: geminiApiKey });
 
 // Legacy LangChain embeddings model — kept for backward compatibility import
 // Use generateEmbedding() or embedQuery() instead
@@ -75,7 +111,7 @@ export async function generateEmbedding(text: string, maxRetries = 7): Promise<n
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const result = await genaiClient.models.embedContent({
+      const result = await getGenaiClient().models.embedContent({
         model: 'gemini-embedding-001',
         contents: text,
         config: { outputDimensionality: 768 },
@@ -196,7 +232,7 @@ export async function generateChatResponse(options: GeminiChatOptions): Promise<
   // Add current message
   messages.push(new HumanMessage(fullUserMessage));
 
-  const response = await chatModel.invoke(messages);
+  const response = await getChatModel().invoke(messages);
   const raw = response.content;
   return typeof raw === 'string'
     ? raw

@@ -73,6 +73,8 @@ export default function AdminPage() {
   const [permits, setPermits] = useState<(PermitApplication & { username?: string })[]>([]);
   const [permitStats, setPermitStatsData] = useState<PermitStats | null>(null);
   const [dataLoading, setDataLoading] = useState(true);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [permitsLoading, setPermitsLoading] = useState(false);
 
   // Analytics data
   const [analyticsStats, setAnalyticsStats] = useState<AnalyticsDashboardStats | null>(null);
@@ -126,10 +128,10 @@ export default function AdminPage() {
 
   // Load users
   const loadUsers = useCallback(async (search?: string) => {
-    setDataLoading(true);
+    setUsersLoading(true);
     const result = await getAllUsers(50, 0, search);
     setUsers(result.data);
-    setDataLoading(false);
+    setUsersLoading(false);
   }, []);
 
   // Initial load
@@ -139,14 +141,14 @@ export default function AdminPage() {
 
   // Load permits
   const loadPermits = useCallback(async (status?: string) => {
-    setDataLoading(true);
+    setPermitsLoading(true);
     const [permitsResult, statsResult] = await Promise.all([
       getAdminPermits(status),
       getPermitStats(),
     ]);
     setPermits(permitsResult.data);
     if (statsResult.data) setPermitStatsData(statsResult.data);
-    setDataLoading(false);
+    setPermitsLoading(false);
   }, []);
 
   // Load data when tab changes
@@ -304,7 +306,13 @@ export default function AdminPage() {
 
                 {/* Document Usage + Permit Status (2-col) */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-                  <DocumentUsageChart data={documentUsage} loading={dataLoading} />
+                  <DocumentUsageChart
+                    data={documentUsage}
+                    loading={dataLoading}
+                    displayNames={Object.fromEntries(
+                      documentUsage.map(d => [d.documentName, d.displayName || d.documentName])
+                    )}
+                  />
                   <PermitStatusChart data={permitBreakdown} loading={dataLoading} />
                 </div>
 
@@ -326,7 +334,7 @@ export default function AdminPage() {
                 
                 <UserManagement
                   users={users}
-                  loading={dataLoading}
+                  loading={usersLoading}
                   onRefresh={() => loadUsers()}
                   onSearch={(query) => loadUsers(query)}
                   onCreateUser={() => setCreateUserOpen(true)}
@@ -351,7 +359,7 @@ export default function AdminPage() {
                 <PermitManagement
                   permits={permits}
                   stats={permitStats}
-                  loading={dataLoading}
+                  loading={permitsLoading}
                   onRefresh={() => loadPermits()}
                   onFilterStatus={(status) => loadPermits(status)}
                 />

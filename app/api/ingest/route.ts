@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { NextRequest } from 'next/server';
-import { getQuickSession } from '@/lib/auth';
+import { getQuickSession, validateCSRFToken } from '@/lib/auth';
 import { checkRateLimit } from '@/lib/supabase-server';
 import { runIngestionPipeline, type IngestionProgress } from '@/lib/pdf-ingestion';
 import { createAdminClient } from '@/lib/supabase-server';
@@ -18,6 +18,16 @@ export async function POST(request: NextRequest) {
   if (!user || user.role !== 'admin') {
     return new Response(JSON.stringify({ error: 'Unauthorized' }), {
       status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // CSRF validation
+  const csrfToken = request.headers.get('x-csrf-token');
+  const csrfValid = csrfToken ? await validateCSRFToken(csrfToken) : false;
+  if (!csrfValid) {
+    return new Response(JSON.stringify({ error: 'CSRF token invalid' }), {
+      status: 403,
       headers: { 'Content-Type': 'application/json' },
     });
   }

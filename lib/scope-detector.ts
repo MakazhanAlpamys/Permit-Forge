@@ -40,9 +40,13 @@ export function detectScope(query: string): ScopeFilter {
     sections.push(match[1]);
   }
 
-  // Standalone section numbers like "4.2.1" (3+ digits with dots)
-  const standaloneSections = query.matchAll(/\b(\d+\.\d+(?:\.\d+)+)\b/g);
+  // Standalone section numbers like "4.2.1" (each part max 2 digits to exclude IPs and semver)
+  // Pattern: 1-2 digit parts only, to avoid matching 192.168.1.1 or 1.0.0-style versions
+  const standaloneSections = query.matchAll(/\b(\d{1,2}\.\d{1,2}(?:\.\d{1,2})+)\b/g);
   for (const match of standaloneSections) {
+    const parts = match[1].split('.');
+    // Skip if it looks like an IP (exactly 4 parts)
+    if (parts.length === 4) continue;
     if (!sections.includes(match[1])) {
       sections.push(match[1]);
     }

@@ -45,6 +45,18 @@ function formatProjectType(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+// Page layout constants
+const PAGE_MARGIN = 40;
+const FOOTER_HEIGHT = 80; // reserved space at page bottom
+
+/** Add a new page if there isn't enough vertical space remaining. */
+function maybePageBreak(doc: PDFKit.PDFDocument, neededHeight: number) {
+  const usableBottom = doc.page.height - PAGE_MARGIN - FOOTER_HEIGHT;
+  if (doc.y + neededHeight > usableBottom) {
+    doc.addPage();
+  }
+}
+
 // Colors
 const NAVY = '#1a365d';
 const DARK = '#2d3748';
@@ -129,6 +141,7 @@ export async function generateCertificatePDF(data: CertificateData): Promise<Buf
       doc.y = badgeY + badgeHeight + 16;
 
       // ── Section: Project Information ────────────────────────────────────
+      maybePageBreak(doc, 120);
       drawSectionTitle(doc, 'Project Information', pageWidth);
 
       drawRow(doc, 'Project Name:', s(data.projectName), pageWidth);
@@ -148,6 +161,7 @@ export async function generateCertificatePDF(data: CertificateData): Promise<Buf
       doc.moveDown(0.8);
 
       // ── Section: Building Details ───────────────────────────────────────
+      maybePageBreak(doc, 130);
       drawSectionTitle(doc, 'Building Details', pageWidth);
 
       const bd = data.buildingDetails;
@@ -167,11 +181,13 @@ export async function generateCertificatePDF(data: CertificateData): Promise<Buf
 
       // ── Section: Review Comments (optional) ─────────────────────────────
       if (data.reviewComments) {
+        const textOpts = { width: pageWidth - 24 };
+        const commentHeight = doc.font('Helvetica').fontSize(10).heightOfString(s(data.reviewComments), textOpts);
+        maybePageBreak(doc, commentHeight + 60);
         drawSectionTitle(doc, 'Review Comments', pageWidth);
 
         const boxY = doc.y;
-        const textOpts = { width: pageWidth - 24 };
-        const textHeight = doc.font('Helvetica').fontSize(10).heightOfString(s(data.reviewComments), textOpts);
+        const textHeight = commentHeight;
 
         doc
           .roundedRect(40, boxY, pageWidth, textHeight + 24, 4)
@@ -239,21 +255,27 @@ function drawSectionTitle(doc: PDFKit.PDFDocument, title: string, pageWidth: num
 }
 
 function drawRow(doc: PDFKit.PDFDocument, label: string, value: string, pageWidth: number) {
-  const y = doc.y;
   const labelWidth = pageWidth * 0.4;
   const valueWidth = pageWidth * 0.6;
+  const rowHeight = Math.max(
+    doc.font('Helvetica').fontSize(10).heightOfString(label, { width: labelWidth }),
+    doc.font('Helvetica-Bold').fontSize(10).heightOfString(value, { width: valueWidth }),
+  );
+  maybePageBreak(doc, rowHeight + 4);
+
+  const y = doc.y;
 
   doc
     .font('Helvetica')
     .fontSize(10)
     .fillColor(GRAY)
-    .text(label, 40, y, { width: labelWidth });
+    .text(label, PAGE_MARGIN, y, { width: labelWidth });
 
   doc
     .font('Helvetica-Bold')
     .fontSize(10)
     .fillColor(DARK)
-    .text(value, 40 + labelWidth, y, { width: valueWidth });
+    .text(value, PAGE_MARGIN + labelWidth, y, { width: valueWidth });
 
-  doc.y = Math.max(doc.y, y + 16);
+  doc.y = Math.max(doc.y, y + rowHeight + 4);
 }

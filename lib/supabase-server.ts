@@ -51,15 +51,21 @@ function getAnonKey(): string {
 // -----------------------------------------------------------------------------
 // Admin Client (SERVICE_ROLE - Bypasses RLS)
 // Use ONLY for admin operations: user management, analytics, etc.
+// Singleton: safe to reuse because autoRefreshToken and persistSession are false.
 // -----------------------------------------------------------------------------
 
+let _adminClient: SupabaseClient | null = null;
+
 export function createAdminClient(): SupabaseClient {
-  return createClient(getSupabaseUrl(), getServiceRoleKey(), {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  });
+  if (!_adminClient) {
+    _adminClient = createClient(getSupabaseUrl(), getServiceRoleKey(), {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
+  }
+  return _adminClient;
 }
 
 // -----------------------------------------------------------------------------

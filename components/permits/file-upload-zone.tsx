@@ -27,11 +27,11 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
   const [deleting, setDeleting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [csrfToken, setCsrfToken] = useState<string | null>(null);
+  const csrfTokenRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    getCSRFTokenAction().then(setCsrfToken);
+    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
   }, []);
 
   const handleUpload = useCallback(async (file: File) => {
@@ -41,7 +41,7 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const result = await uploadPermitAttachment(permitId, formData, csrfToken || undefined);
+      const result = await uploadPermitAttachment(permitId, formData, csrfTokenRef.current || undefined);
 
       if (!result.success) {
         setError(result.error || 'Upload failed');
@@ -58,7 +58,7 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
   const handleDelete = async (attachmentId: string) => {
     setDeleting(attachmentId);
     try {
-      const result = await deletePermitAttachment(attachmentId, csrfToken || undefined);
+      const result = await deletePermitAttachment(attachmentId, csrfTokenRef.current || undefined);
       if (result.success) {
         onUpdate();
       } else {

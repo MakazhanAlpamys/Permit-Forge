@@ -299,7 +299,10 @@ export function DocumentManagement() {
     try {
       const response = await fetch('/api/ingest', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': csrfTokenRef.current || '',
+        },
         body: JSON.stringify({ documentId }),
       });
 

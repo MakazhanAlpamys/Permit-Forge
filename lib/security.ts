@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { getQuickSession, logAuditEvent, getRequestMetadata, validateCSRFToken } from '@/lib/auth';
+import { createAdminClient } from '@/lib/supabase-server';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -35,15 +36,30 @@ export async function requireAuth(): Promise<SecurityCheckResult> {
     const user = await getQuickSession();
     
     if (!user) {
-      return { 
-        success: false, 
-        error: 'Authentication required' 
+      return {
+        success: false,
+        error: 'Authentication required'
       };
     }
-    
-    return { 
-      success: true, 
-      user 
+
+    // Verify user is not blocked (JWT alone doesn't reflect current block status)
+    const supabase = createAdminClient();
+    const { data: dbUser } = await supabase
+      .from('users')
+      .select('blocked')
+      .eq('id', user.id)
+      .single();
+
+    if (dbUser?.blocked) {
+      return {
+        success: false,
+        error: 'Your account has been blocked',
+      };
+    }
+
+    return {
+      success: true,
+      user
     };
   } catch (error) {
     console.error('Auth check error:', error);

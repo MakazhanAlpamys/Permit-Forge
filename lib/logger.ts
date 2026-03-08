@@ -27,11 +27,12 @@ const LOG_LEVELS: Record<LogLevel, number> = {
     error: 3,
 };
 
-// Minimum log level (can be configured via environment variable)
-const MIN_LOG_LEVEL: LogLevel = (process.env.LOG_LEVEL as LogLevel) || 'info';
-
 // Check if we're in production
 const isProduction = process.env.NODE_ENV === 'production';
+
+// Minimum log level — defaults to 'warn' in production, 'debug' in development.
+// Override with LOG_LEVEL env var (e.g. LOG_LEVEL=info for production info logs).
+const MIN_LOG_LEVEL: LogLevel = (process.env.LOG_LEVEL as LogLevel) || (isProduction ? 'warn' : 'debug');
 
 // -----------------------------------------------------------------------------
 // Formatting Helpers
@@ -72,9 +73,7 @@ export const logger = {
             data: args.length > 0 ? args : undefined,
         };
 
-        if (!isProduction) {
-            console.debug(formatLogEntry(entry), ...args);
-        }
+        console.debug(formatLogEntry(entry), ...args);
     },
 
     /**
@@ -90,10 +89,7 @@ export const logger = {
             data: args.length > 0 ? args : undefined,
         };
 
-        if (!isProduction) {
-            console.info(formatLogEntry(entry), ...args);
-        }
-        // In production, you might want to send to a logging service
+        console.info(formatLogEntry(entry), ...args);
     },
 
     /**

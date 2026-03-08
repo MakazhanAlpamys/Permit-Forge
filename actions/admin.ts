@@ -185,7 +185,12 @@ export async function blockUser(
     if (!validation.success) {
       return { success: false, error: 'Invalid user ID' };
     }
-    
+
+    // Prevent admin from blocking themselves
+    if (blocked && authCheck.user.id === userId) {
+      return { success: false, error: 'You cannot block your own account' };
+    }
+
     const supabase = createAdminClient();
     const { error } = await supabase.rpc('admin_block_user', {
       p_admin_id: authCheck.user.id,

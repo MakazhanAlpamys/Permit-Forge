@@ -6,18 +6,32 @@ import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 
 function getFromEmail(): string {
-  return `PermitForge <${process.env.SMTP_USER}>`;
+  return `PermitForge <${process.env.SMTP_USER || 'noreply@permitforge.app'}>`;
 }
 
-export const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.gmail.com',
-  port: parseInt(process.env.SMTP_PORT || '587'),
-  secure: process.env.SMTP_PORT === '465',
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
+// Lazy transporter — created on first use so env vars are always read at call time,
+// not at module load time (fixes broken state when SMTP_* vars arrive after startup)
+let _transporter: nodemailer.Transporter | null = null;
+
+export function getTransporter(): nodemailer.Transporter {
+  if (!_transporter) {
+    _transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.SMTP_PORT || '587'),
+      secure: process.env.SMTP_PORT === '465',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+  }
+  return _transporter;
+}
+
+/** Reset cached transporter (useful in tests or after env var changes) */
+export function resetTransporter(): void {
+  _transporter = null;
+}
 
 function escapeHtml(str: string): string {
   return str
@@ -69,7 +83,7 @@ export async function sendVerificationEmail(email: string, code: string): Promis
     const fromEmail = getFromEmail();
     console.log('[Email] Sending verification email to:', email, 'from:', fromEmail);
 
-    await transporter.sendMail({
+    await getTransporter().sendMail({
       from: fromEmail,
       to: email,
       subject: 'Verify your email — PermitForge',
@@ -98,7 +112,7 @@ export async function sendPasswordResetEmail(email: string, code: string): Promi
     const fromEmail = getFromEmail();
     console.log('[Email] Sending password reset email to:', email, 'from:', fromEmail);
 
-    await transporter.sendMail({
+    await getTransporter().sendMail({
       from: fromEmail,
       to: email,
       subject: 'Password Reset — PermitForge',
@@ -127,7 +141,7 @@ export async function sendPasswordChangeCodeEmail(email: string, code: string): 
     const fromEmail = getFromEmail();
     console.log('[Email] Sending password change email to:', email, 'from:', fromEmail);
 
-    await transporter.sendMail({
+    await getTransporter().sendMail({
       from: fromEmail,
       to: email,
       subject: 'Password Change Code — PermitForge',

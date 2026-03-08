@@ -492,19 +492,13 @@ export async function deletePermit(
       return { success: false, error: 'Can only delete draft permits' };
     }
 
-    // Delete attachments from storage first
+    // Fetch attachment paths before deleting (needed for storage cleanup after DB delete)
     const { data: attachments } = await supabase
       .from('permit_attachments')
       .select('storage_path')
       .eq('permit_id', permitId);
 
-    if (attachments && attachments.length > 0) {
-      const paths = attachments.map((a: { storage_path: string }) => a.storage_path);
-      await supabase.storage
-        .from(FILE_UPLOAD_LIMITS.storageBucket)
-        .remove(paths);
-    }
-
+    // Delete permit record FIRST — if this fails, no files are touched (prevents orphans)
     const { error } = await supabase
       .from('permit_applications')
       .delete()
@@ -512,6 +506,14 @@ export async function deletePermit(
       .eq('user_id', authCheck.user.id);
 
     if (error) throw error;
+
+    // Only clean up storage after the DB delete succeeds
+    if (attachments && attachments.length > 0) {
+      const paths = attachments.map((a: { storage_path: string }) => a.storage_path);
+      await supabase.storage
+        .from(FILE_UPLOAD_LIMITS.storageBucket)
+        .remove(paths);
+    }
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({

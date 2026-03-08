@@ -90,6 +90,13 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
     getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
   }, [currentSessionId]);
 
+  // Clear pending debounce timeout on unmount to prevent state updates on unmounted component
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
+  }, []);
+
   const loadSessions = async () => {
     setLoading(true);
     const { sessions: data } = await getChatSessions();

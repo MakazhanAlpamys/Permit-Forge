@@ -79,7 +79,10 @@ export function PermitDetailView({ permit }: PermitDetailViewProps) {
                     {(bd.totalBuiltUpArea / bd.plotArea).toFixed(2)}
                     {' · '}
                     <span className="font-medium">Coverage:</span>{' '}
-                    {((bd.totalBuiltUpArea / bd.numberOfFloors / bd.plotArea) * 100).toFixed(1)}%
+                    {(bd.numberOfFloors > 0
+                      ? (bd.totalBuiltUpArea / bd.numberOfFloors / bd.plotArea) * 100
+                      : 0
+                    ).toFixed(1)}%
                   </span>
                 </div>
               </div>

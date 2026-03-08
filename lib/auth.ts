@@ -306,7 +306,9 @@ export async function logAuditEvent(entry: AuditLogEntry): Promise<void> {
 export async function getRequestMetadata() {
   const headersList = await headers();
   return {
-    ipAddress: headersList.get('x-forwarded-for') || headersList.get('x-real-ip') || 'unknown',
+    // Take only the first IP in x-forwarded-for (leftmost = client IP) to prevent
+    // header spoofing where an attacker injects extra IPs into the header.
+    ipAddress: (headersList.get('x-forwarded-for')?.split(',')[0]?.trim()) || headersList.get('x-real-ip') || 'unknown',
     userAgent: headersList.get('user-agent') || 'unknown',
   };
 }

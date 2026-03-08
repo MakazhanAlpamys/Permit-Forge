@@ -104,20 +104,25 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     const scrollContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
     const prevScrollHeight = scrollContainer?.scrollHeight || 0;
 
-    const result = await getSessionMessages(currentSessionId, messageCursor);
-    if (result.messages.length > 0) {
-      setMessages(prev => [...result.messages, ...prev]);
-      setHasMoreMessages(result.hasMore);
-      setMessageCursor(result.nextCursor);
+    try {
+      const result = await getSessionMessages(currentSessionId, messageCursor);
+      if (result.messages.length > 0) {
+        setMessages(prev => [...result.messages, ...prev]);
+        setHasMoreMessages(result.hasMore);
+        setMessageCursor(result.nextCursor);
 
-      // Restore scroll position so view doesn't jump
-      requestAnimationFrame(() => {
-        if (scrollContainer) {
-          scrollContainer.scrollTop = scrollContainer.scrollHeight - prevScrollHeight;
-        }
-      });
+        // Restore scroll position so view doesn't jump
+        requestAnimationFrame(() => {
+          if (scrollContainer) {
+            scrollContainer.scrollTop = scrollContainer.scrollHeight - prevScrollHeight;
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load earlier messages:', err);
+    } finally {
+      setIsLoadingMore(false);
     }
-    setIsLoadingMore(false);
   };
 
   // Fetch CSRF token on mount
@@ -188,13 +193,16 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     let activeSessionId = currentSessionId;
     if (!activeSessionId) {
       const { sessionId: newSessionId } = await createChatSession(text.substring(0, 50));
-      if (newSessionId) {
-        activeSessionId = newSessionId;
-        setCurrentSessionId(newSessionId);
-        if (onSessionCreated) {
-          isInternalSessionCreateRef.current = true;
-          onSessionCreated(newSessionId);
-        }
+      if (!newSessionId) {
+        // Session creation failed — abort streaming to avoid a detached request
+        setIsLoading(false);
+        return;
+      }
+      activeSessionId = newSessionId;
+      setCurrentSessionId(newSessionId);
+      if (onSessionCreated) {
+        isInternalSessionCreateRef.current = true;
+        onSessionCreated(newSessionId);
       }
     }
 

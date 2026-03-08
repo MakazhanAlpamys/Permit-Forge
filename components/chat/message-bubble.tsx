@@ -10,18 +10,14 @@ import { CitationsList } from './source-citation';
 import { complianceStatusConfig } from '@/lib/constants';
 import { User, Bot, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import DOMPurify from 'isomorphic-dompurify';
-import { useMemo, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import type { ChatMessage } from '@/types';
 
-// XSS Protection: Sanitize content before rendering
-function sanitizeContent(content: string): string {
-  return DOMPurify.sanitize(content, {
-    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'p', 'br', 'ul', 'ol', 'li', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'a', 'blockquote'],
-    ALLOWED_ATTR: ['href', 'title', 'target', 'rel'],
-    ALLOW_DATA_ATTR: false,
-  });
-}
+// XSS NOTE: DOMPurify is NOT applied before ReactMarkdown.
+// ReactMarkdown (without rehype-raw) escapes raw HTML in markdown by default.
+// Applying DOMPurify to the markdown source mangles valid markdown syntax (e.g. strips
+// characters like > used in blockquotes, or < in text). Link URLs are sanitized via
+// the custom `a` component below (http/https protocol allow-list).
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -34,11 +30,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     : null;
   const [copied, setCopied] = useState(false);
 
-  // Sanitize content to prevent XSS attacks
-  const sanitizedContent = useMemo(() => sanitizeContent(message.content), [message.content]);
-
-  // LLM no longer writes inline citations, so no stripping needed
-  const displayContent = sanitizedContent;
+  const displayContent = message.content;
 
   // Copy answer text to clipboard
   const handleCopy = useCallback(async () => {

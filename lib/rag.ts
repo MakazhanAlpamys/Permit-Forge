@@ -84,7 +84,9 @@ export async function hybridSearch(
   if (options.documentFilter && options.documentFilter.length > 1) {
     const allowedDocs = new Set(options.documentFilter);
     results = results.filter((r: HybridSearchResult) =>
-      !r.metadata.documentName || allowedDocs.has(r.metadata.documentName)
+      typeof r.metadata.documentName === 'string' &&
+      r.metadata.documentName.length > 0 &&
+      allowedDocs.has(r.metadata.documentName)
     );
   }
 

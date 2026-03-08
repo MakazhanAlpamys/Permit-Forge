@@ -35,6 +35,8 @@ interface RegistryCache {
 }
 
 let cache: RegistryCache | null = null;
+// In-flight refresh promise — deduplicates concurrent cache misses
+let refreshPromise: Promise<RegistryCache> | null = null;
 
 function isCacheValid(): boolean {
   return cache !== null && Date.now() - cache.ts < CACHE_TTL;
@@ -43,14 +45,15 @@ function isCacheValid(): boolean {
 /** Force-invalidate the registry cache (call after admin edits documents) */
 export function invalidateRegistryCache(): void {
   cache = null;
+  // Don't cancel an in-flight refresh; it will complete and overwrite with fresh data
 }
 
 // -----------------------------------------------------------------------------
 // Async Functions — DB-backed with cache
 // -----------------------------------------------------------------------------
 
-/** Load all active documents from DB into cache */
-async function refreshCache(): Promise<RegistryCache> {
+/** Internal: fetch from DB and populate cache */
+async function doRefreshCache(): Promise<RegistryCache> {
   try {
     const { createAdminClient } = await import('@/lib/supabase-server');
     const supabase = createAdminClient();
@@ -77,6 +80,15 @@ async function refreshCache(): Promise<RegistryCache> {
     cache = empty;
     return empty;
   }
+}
+
+/** Load all active documents from DB into cache (deduplicates concurrent calls) */
+async function refreshCache(): Promise<RegistryCache> {
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = doRefreshCache().finally(() => {
+    refreshPromise = null;
+  });
+  return refreshPromise;
 }
 
 /** Get all active documents (async, refreshes cache if stale) */

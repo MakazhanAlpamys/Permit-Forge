@@ -6,6 +6,7 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { requireAdmin } from '@/lib/security';
+import { getAllDocuments } from '@/lib/document-registry';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -34,6 +35,8 @@ export interface MessageActivityDay {
 
 export interface DocumentUsageStat {
   documentName: string;
+  /** Short display name resolved server-side from document_registry */
+  displayName?: string;
   chunkCount: number;
   minPage: number;
   maxPage: number;
@@ -187,9 +190,14 @@ export async function getDocumentUsageStats(): Promise<{
       return { data: stats };
     }
 
+    // Resolve display names server-side to avoid importing registry in client components
+    const allDocs = await getAllDocuments();
+    const nameMap = new Map(allDocs.map(d => [d.id, d.shortName]));
+
     return {
       data: (data || []).map((row: { document_name: string; chunk_count: number; min_page: number; max_page: number }) => ({
         documentName: row.document_name,
+        displayName: nameMap.get(row.document_name) || row.document_name,
         chunkCount: Number(row.chunk_count) || 0,
         minPage: Number(row.min_page) || 0,
         maxPage: Number(row.max_page) || 0,

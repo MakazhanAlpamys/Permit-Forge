@@ -25,14 +25,18 @@ export default function RegisterPage() {
     setError('');
 
     const formData = new FormData(e.currentTarget);
-    const result = await registerAction(formData);
-
-    if (result?.error) {
-      setError(result.error);
+    try {
+      const result = await registerAction(formData);
+      if (result?.error) {
+        setError(result.error);
+      } else if (result?.success) {
+        const email = formData.get('email') as string;
+        router.push(`/verify-email?email=${encodeURIComponent(email)}`);
+      }
+    } catch {
+      setError('Registration failed. Please try again.');
+    } finally {
       setLoading(false);
-    } else if (result?.success) {
-      const email = formData.get('email') as string;
-      router.push(`/verify-email?email=${encodeURIComponent(email)}`);
     }
   };
 

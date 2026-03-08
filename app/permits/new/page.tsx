@@ -165,11 +165,17 @@ export default function NewPermitPage() {
     setError('');
     setCheckLoading(true);
 
-    // Save compliance requirements first
-    await updatePermitComplianceRequirements({
+    // Save compliance requirements first — abort if save fails
+    const saveResult = await updatePermitComplianceRequirements({
       permitId,
       complianceRequirements: step3Data,
     }, csrfToken || '');
+
+    if (!saveResult.success) {
+      setCheckLoading(false);
+      setError(saveResult.error || 'Failed to save compliance requirements');
+      return;
+    }
 
     const result = await runComplianceCheck(permitId, csrfToken || '');
     setCheckLoading(false);

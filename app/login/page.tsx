@@ -27,10 +27,15 @@ export default function LoginPage() {
     setError('');
 
     const formData = new FormData(e.currentTarget);
-    const result = await loginAction(formData);
-
-    if (result?.error) {
-      setError(result.error);
+    try {
+      const result = await loginAction(formData);
+      if (result?.error) {
+        setError(result.error);
+        setLoading(false);
+      }
+      // On success loginAction redirects — no need to reset loading
+    } catch {
+      setError('Login failed. Please try again.');
       setLoading(false);
     }
   };

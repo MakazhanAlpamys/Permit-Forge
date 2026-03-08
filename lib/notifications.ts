@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { createAdminClient } from './supabase-server';
-import { transporter } from './email';
+import { getTransporter } from './email';
 
 import type { NotificationType } from '@/types';
 
@@ -58,7 +58,7 @@ export async function createNotification(params: CreateNotificationParams): Prom
           .single();
 
         if (user?.email) {
-          await transporter.sendMail({
+          await getTransporter().sendMail({
             from: getFromEmail(),
             to: user.email,
             subject: title,
@@ -108,6 +108,11 @@ export function getNotificationContent(
       return {
         title: 'Revision Requested',
         body: `Your permit application "${permitName}" requires revisions.${comments ? ` Details: ${comments}` : ''}`,
+      };
+    default:
+      return {
+        title: 'Permit Update',
+        body: `Your permit application "${permitName}" has been updated.`,
       };
   }
 }

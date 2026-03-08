@@ -4,11 +4,21 @@
 // Profile Server Actions (User profile management + password change via email)
 // ============================================================================
 
+import crypto from 'crypto';
 import { createAdminClient } from '@/lib/supabase-server';
 import { requireAuth, requireAdmin, requireCSRF } from '@/lib/security';
 import { hashPassword, verifyPassword, logAuditEvent, getRequestMetadata, createSession } from '@/lib/auth';
 import { updateProfileSchema, validatePassword } from '@/lib/validations';
 import { generateSixDigitCode, sendPasswordChangeCodeEmail } from '@/lib/email';
+
+function safeEqual(a: string, b: string): boolean {
+  const maxLen = Math.max(a.length, b.length);
+  const bufA = Buffer.alloc(maxLen);
+  const bufB = Buffer.alloc(maxLen);
+  bufA.write(a);
+  bufB.write(b);
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 const CODE_EXPIRY_MINUTES = 15;
 
@@ -126,7 +136,7 @@ export async function requestPasswordChangeCodeAction(
 
   await supabase
     .from('users')
-    .update({ reset_code: code, code_expires_at: expiresAt })
+    .update({ reset_code: code, reset_code_expires_at: expiresAt })
     .eq('id', auth.user.id);
 
   await sendPasswordChangeCodeEmail(user.email, code);
@@ -158,19 +168,34 @@ export async function confirmPasswordChangeAction(
 
   const { data: user } = await supabase
     .from('users')
-    .select('reset_code, code_expires_at')
+    .select('reset_code, reset_code_expires_at')
     .eq('id', auth.user.id)
     .single();
 
-  if (!user?.reset_code || !user?.code_expires_at) {
+  if (!user?.reset_code || !user?.reset_code_expires_at) {
     return { error: 'No code found. Please request a new one.' };
   }
 
-  if (new Date(user.code_expires_at) < new Date()) {
+  if (new Date(user.reset_code_expires_at) < new Date()) {
     return { error: 'Code has expired. Please request a new one.' };
   }
 
-  if (user.reset_code !== code) {
+  // Brute-force protection: max 5 attempts within the code TTL window
+  const { data: rlData, error: rlError } = await supabase.rpc('check_rate_limit', {
+    p_user_id: auth.user.id,
+    p_window_seconds: 15 * 60,
+    p_max_requests: 5,
+    p_min_interval_ms: 0,
+  });
+  if (!rlError && rlData?.[0]?.allowed === false) {
+    await supabase
+      .from('users')
+      .update({ reset_code: null, reset_code_expires_at: null })
+      .eq('id', auth.user.id);
+    return { error: 'Too many failed attempts. Please request a new code.' };
+  }
+
+  if (!safeEqual(user.reset_code, code)) {
     return { error: 'Invalid code' };
   }
 
@@ -178,7 +203,7 @@ export async function confirmPasswordChangeAction(
 
   const { error } = await supabase
     .from('users')
-    .update({ password_hash, reset_code: null, code_expires_at: null })
+    .update({ password_hash, reset_code: null, reset_code_expires_at: null })
     .eq('id', auth.user.id);
 
   if (error) return { error: 'Password change failed' };

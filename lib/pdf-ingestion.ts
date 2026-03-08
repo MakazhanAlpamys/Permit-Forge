@@ -39,10 +39,6 @@ export const PDF_INGESTION_CONFIG = {
 // Types
 // -----------------------------------------------------------------------------
 
-interface PageTextSegment {
-  text: string;
-  pageNumber: number;
-}
 
 export interface IngestionProgress {
   stage: string;
@@ -85,24 +81,23 @@ export async function splitWithPageTracking(
     ],
   });
 
-  // Build a map of character positions to page numbers
-  const segments: PageTextSegment[] = [];
+  // Build fullText and record exact char-offset boundaries for each page so that
+  // page-range attribution is based on actual positions, not on recomputed lengths
+  // (which can drift when page.text has trailing whitespace / newlines).
+  const pageBoundaries: Array<{ start: number; end: number; pageNumber: number }> = [];
   let fullText = '';
 
   for (const page of pages) {
     if (page.text.trim().length === 0) continue;
-
+    const start = fullText.length;
     fullText += page.text + '\n\n';
-    segments.push({
-      text: page.text,
-      pageNumber: page.pageNumber,
-    });
+    pageBoundaries.push({ start, end: fullText.length, pageNumber: page.pageNumber });
   }
 
   // Split the full text
   const rawChunks = await textSplitter.splitText(fullText);
 
-  // For each chunk, determine which pages it spans
+  // For each chunk, determine which pages it spans using precomputed boundaries.
   const chunksWithPages: ChunkWithPageRange[] = [];
   let currentPosition = 0;
 
@@ -110,32 +105,20 @@ export async function splitWithPageTracking(
     if (chunkContent.trim().length < MIN_CHUNK_LENGTH) continue;
 
     const chunkStart = fullText.indexOf(chunkContent, currentPosition);
-    if (chunkStart === -1) continue; // Skip chunks not found (duplicate content)
+    if (chunkStart === -1) continue;
     const chunkEnd = chunkStart + chunkContent.length;
 
-    let position = 0;
-    let startPage = 1;
-    let endPage = 1;
-    let foundStart = false;
+    // Find start page: first boundary whose end exceeds chunkStart
+    let startPage = pageBoundaries[0]?.pageNumber ?? 1;
+    for (const pb of pageBoundaries) {
+      if (chunkStart < pb.end) { startPage = pb.pageNumber; break; }
+    }
 
-    for (const segment of segments) {
-      const segmentEnd = position + segment.text.length + 2; // +2 for '\n\n'
-
-      if (!foundStart && chunkStart < segmentEnd) {
-        startPage = segment.pageNumber;
-        foundStart = true;
-      }
-
-      if (chunkEnd <= segmentEnd) {
-        endPage = segment.pageNumber;
-        break;
-      }
-
-      if (foundStart) {
-        endPage = segment.pageNumber;
-      }
-
-      position = segmentEnd;
+    // Find end page: last boundary that the chunk overlaps
+    let endPage = startPage;
+    for (const pb of pageBoundaries) {
+      if (pb.start < chunkEnd) endPage = pb.pageNumber;
+      if (pb.end >= chunkEnd) break;
     }
 
     const sectionInfo = parser.findSectionForPage(startPage);

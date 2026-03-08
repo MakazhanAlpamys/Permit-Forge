@@ -16,21 +16,22 @@ import {
   ResponsiveContainer,
   Cell,
 } from 'recharts';
-import { getDocumentByIdSync } from '@/lib/document-registry';
 import type { DocumentUsageStat } from '@/actions/analytics';
 
 interface DocumentUsageChartProps {
   data: DocumentUsageStat[];
   loading?: boolean;
+  /** Display names resolved server-side: maps documentName → shortName */
+  displayNames?: Record<string, string>;
 }
 
 // Color palette for chart bars — cycles through for dynamic documents
 const CHART_COLORS = ['#3b82f6', '#ef4444', '#7c3aed', '#a855f7', '#06b6d4', '#f59e0b', '#10b981', '#f97316'];
 const DEFAULT_COLOR = '#6b7280';
 
-export function DocumentUsageChart({ data, loading }: DocumentUsageChartProps) {
+export function DocumentUsageChart({ data, loading, displayNames }: DocumentUsageChartProps) {
   const chartData = data.map((d) => ({
-    name: getDocumentByIdSync(d.documentName)?.shortName || d.documentName,
+    name: displayNames?.[d.documentName] || d.documentName,
     chunks: d.chunkCount,
     pages: `pp. ${d.minPage}-${d.maxPage}`,
     id: d.documentName,

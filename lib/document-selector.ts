@@ -19,6 +19,8 @@ interface DocumentSearchProfile {
 let profileCache: Record<string, DocumentSearchProfile> = {};
 let profileCacheTs = 0;
 const PROFILE_CACHE_TTL = 5 * 60 * 1000; // 5 min
+// In-flight load promise — deduplicates concurrent cache misses
+let profileLoadPromise: Promise<void> | null = null;
 
 function isProfileCacheValid(): boolean {
   return profileCacheTs > 0 && Date.now() - profileCacheTs < PROFILE_CACHE_TTL;
@@ -28,12 +30,11 @@ function isProfileCacheValid(): boolean {
 export function invalidateProfileCache(): void {
   profileCache = {};
   profileCacheTs = 0;
+  // Don't cancel in-flight load; it will complete and store fresh data
 }
 
-/** Load search profiles from DB into cache (skips if cache is fresh) */
-export async function loadSearchProfiles(): Promise<void> {
-  if (isProfileCacheValid()) return;
-
+/** Internal: fetch profiles from DB */
+async function doLoadSearchProfiles(): Promise<void> {
   try {
     const { createAdminClient } = await import('@/lib/supabase-server');
     const supabase = createAdminClient();
@@ -61,6 +62,16 @@ export async function loadSearchProfiles(): Promise<void> {
   } catch {
     profileCacheTs = Date.now(); // Mark as loaded (empty)
   }
+}
+
+/** Load search profiles from DB into cache (deduplicates concurrent calls) */
+export async function loadSearchProfiles(): Promise<void> {
+  if (isProfileCacheValid()) return;
+  if (profileLoadPromise) return profileLoadPromise;
+  profileLoadPromise = doLoadSearchProfiles().finally(() => {
+    profileLoadPromise = null;
+  });
+  return profileLoadPromise;
 }
 
 // -----------------------------------------------------------------------------

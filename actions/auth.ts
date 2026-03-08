@@ -4,6 +4,7 @@
 // Authentication Server Actions (with JWT, CSRF, and Audit Logging)
 // ============================================================================
 
+import crypto from 'crypto';
 import { createAdminClient } from '@/lib/supabase-server';
 import {
   verifyPassword,
@@ -25,31 +26,65 @@ import { redirect } from 'next/navigation';
 import { getRequestMetadata, getCSRFToken } from '@/lib/auth';
 import { generateSixDigitCode, sendVerificationEmail, sendPasswordResetEmail } from '@/lib/email';
 
-// In-memory login rate limiter (keyed by IP, not DB-backed)
-// The DB check_rate_limit RPC requires a UUID user_id, which doesn't exist pre-login
-const loginAttempts = new Map<string, { count: number; firstAttempt: number }>();
-const LOGIN_WINDOW_MS = 60_000; // 1 minute
+const LOGIN_WINDOW_SECONDS = 60;
 const LOGIN_MAX_ATTEMPTS = 10;
 
-function checkLoginRateLimit(ip: string): boolean {
-  const now = Date.now();
+/** Constant-time string comparison to prevent timing side-channel attacks on short codes */
+function safeEqual(a: string, b: string): boolean {
+  // Pad both to equal length before comparing (prevents length oracle)
+  const maxLen = Math.max(a.length, b.length);
+  const bufA = Buffer.alloc(maxLen);
+  const bufB = Buffer.alloc(maxLen);
+  bufA.write(a);
+  bufB.write(b);
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
-  // Periodically purge expired entries to prevent memory leak
-  if (loginAttempts.size > 1000) {
-    for (const [key, val] of loginAttempts) {
-      if (now - val.firstAttempt > LOGIN_WINDOW_MS) {
-        loginAttempts.delete(key);
-      }
+// In-memory code attempt tracker (keyed by "verify:<email>" or "reset:<email>")
+// Prevents brute-force of 6-digit codes (1,000,000 possibilities / 5 tries = lockout)
+const codeAttempts = new Map<string, { count: number; firstAttempt: number }>();
+const CODE_ATTEMPT_WINDOW_MS = 15 * 60 * 1000; // 15 min (matches code TTL)
+const CODE_MAX_ATTEMPTS = 5;
+
+function checkCodeAttempts(key: string): boolean {
+  const now = Date.now();
+  if (codeAttempts.size > 500) {
+    for (const [k, v] of codeAttempts) {
+      if (now - v.firstAttempt > CODE_ATTEMPT_WINDOW_MS) codeAttempts.delete(k);
     }
   }
-
-  const entry = loginAttempts.get(ip);
-  if (!entry || now - entry.firstAttempt > LOGIN_WINDOW_MS) {
-    loginAttempts.set(ip, { count: 1, firstAttempt: now });
+  const entry = codeAttempts.get(key);
+  if (!entry || now - entry.firstAttempt > CODE_ATTEMPT_WINDOW_MS) {
+    codeAttempts.set(key, { count: 1, firstAttempt: now });
     return true;
   }
   entry.count++;
-  return entry.count <= LOGIN_MAX_ATTEMPTS;
+  return entry.count <= CODE_MAX_ATTEMPTS;
+}
+
+function resetCodeAttempts(key: string): void {
+  codeAttempts.delete(key);
+}
+
+// DB-backed IP rate limiter (works in serverless/multi-instance environments)
+// Uses the ip_rate_limits table via check_ip_rate_limit() RPC (migration 001)
+async function checkLoginRateLimit(ip: string): Promise<boolean> {
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase.rpc('check_ip_rate_limit', {
+      p_ip: ip,
+      p_window_seconds: LOGIN_WINDOW_SECONDS,
+      p_max_requests: LOGIN_MAX_ATTEMPTS,
+    });
+    if (error) {
+      // Fail-open: allow the request if the DB check fails to avoid lockouts
+      console.error('IP rate limit check error:', error.message);
+      return true;
+    }
+    return data?.[0]?.allowed ?? true;
+  } catch {
+    return true; // Fail-open
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -61,7 +96,7 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
   
   try {
     // Rate limit by IP to prevent brute force attacks (in-memory, not DB)
-    if (!checkLoginRateLimit(metadata.ipAddress || 'unknown')) {
+    if (!await checkLoginRateLimit(metadata.ipAddress || 'unknown')) {
       return { error: 'Too many login attempts. Please try again later.' };
     }
 
@@ -200,7 +235,7 @@ export async function registerAction(formData: FormData): Promise<{ error?: stri
   const metadata = await getRequestMetadata();
 
   try {
-    if (!checkLoginRateLimit(metadata.ipAddress || 'unknown')) {
+    if (!await checkLoginRateLimit(metadata.ipAddress || 'unknown')) {
       return { error: 'Too many attempts. Please try again later.' };
     }
 
@@ -256,7 +291,12 @@ export async function registerAction(formData: FormData): Promise<{ error?: stri
       return { error: 'Registration failed. Please try again.' };
     }
 
-    await sendVerificationEmail(validation.data.email, code);
+    const emailSent = await sendVerificationEmail(validation.data.email, code);
+    if (!emailSent) {
+      // Roll back the user creation so they don't end up with an unverifiable account
+      await supabase.from('users').delete().eq('email', validation.data.email);
+      return { error: 'Failed to send verification email. Please try again.' };
+    }
 
     await logAuditEvent({
       action: 'user_created',
@@ -309,7 +349,18 @@ export async function verifyEmailAction(
       return { error: 'Verification code has expired. Please register again.' };
     }
 
-    if (user.verification_code !== validation.data.code) {
+    // Brute-force protection: max 5 attempts per email within the code TTL window
+    const attemptKey = `verify:${validation.data.email}`;
+    if (!checkCodeAttempts(attemptKey)) {
+      // Invalidate the code so attacker must trigger a new one
+      await supabase
+        .from('users')
+        .update({ verification_code: null, code_expires_at: null })
+        .eq('id', user.id);
+      return { error: 'Too many failed attempts. Please request a new verification code.' };
+    }
+
+    if (!safeEqual(user.verification_code, validation.data.code)) {
       return { error: 'Invalid verification code' };
     }
 
@@ -326,6 +377,7 @@ export async function verifyEmailAction(
       return { error: 'Verification failed. Please try again.' };
     }
 
+    resetCodeAttempts(attemptKey);
     return { success: true };
   } catch (error) {
     console.error('Email verification error:', error);
@@ -343,7 +395,7 @@ export async function forgotPasswordAction(
   const metadata = await getRequestMetadata();
 
   try {
-    if (!checkLoginRateLimit(metadata.ipAddress || 'unknown')) {
+    if (!await checkLoginRateLimit(metadata.ipAddress || 'unknown')) {
       return { error: 'Too many attempts. Please try again later.' };
     }
 
@@ -372,7 +424,7 @@ export async function forgotPasswordAction(
       .from('users')
       .update({
         reset_code: code,
-        code_expires_at: expiresAt,
+        reset_code_expires_at: expiresAt,
       })
       .eq('id', user.id);
 
@@ -404,7 +456,7 @@ export async function resetPasswordAction(
 
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, reset_code, code_expires_at')
+      .select('id, reset_code, reset_code_expires_at')
       .eq('email', validation.data.email)
       .single();
 
@@ -412,15 +464,26 @@ export async function resetPasswordAction(
       return { error: 'Invalid request' };
     }
 
-    if (!user.reset_code || !user.code_expires_at) {
+    if (!user.reset_code || !user.reset_code_expires_at) {
       return { error: 'No reset code found. Please request a new one.' };
     }
 
-    if (new Date(user.code_expires_at) < new Date()) {
+    if (new Date(user.reset_code_expires_at) < new Date()) {
       return { error: 'Reset code has expired. Please request a new one.' };
     }
 
-    if (user.reset_code !== validation.data.code) {
+    // Brute-force protection: max 5 attempts per email within the code TTL window
+    const resetAttemptKey = `reset:${validation.data.email}`;
+    if (!checkCodeAttempts(resetAttemptKey)) {
+      // Invalidate the reset code so attacker must request a new one
+      await supabase
+        .from('users')
+        .update({ reset_code: null, reset_code_expires_at: null })
+        .eq('id', user.id);
+      return { error: 'Too many failed attempts. Please request a new reset code.' };
+    }
+
+    if (!safeEqual(user.reset_code, validation.data.code)) {
       return { error: 'Invalid reset code' };
     }
 
@@ -431,13 +494,15 @@ export async function resetPasswordAction(
       .update({
         password_hash,
         reset_code: null,
-        code_expires_at: null,
+        reset_code_expires_at: null,
       })
       .eq('id', user.id);
 
     if (updateError) {
       return { error: 'Password reset failed. Please try again.' };
     }
+
+    resetCodeAttempts(resetAttemptKey);
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({
