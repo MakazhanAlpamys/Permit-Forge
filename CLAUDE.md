@@ -27,7 +27,7 @@ Pattern match: `npx vitest run -t "pattern"`
 - **AI:** Google Gemini 2.5 Flash via LangChain 0.3 (chat), gemini-embedding-001 via @google/genai SDK (embeddings, 768-dim vectors)
 - **Database:** Supabase (PostgreSQL) with pgvector (HNSW) + pg_trgm extensions, 30+ RPC functions
 - **Auth:** JWT (HS256, jose), bcrypt (12 rounds), CSRF tokens, HttpOnly cookies
-- **Testing:** Vitest 4 (node environment), @testing-library/react, 11 test suites in `test/`
+- **Testing:** Vitest 4 (node environment), @testing-library/react, 25 test suites in `test/` (566 tests)
 - **Email:** Resend API (optional, for verification emails, password reset, permit notifications)
 - **PDF Generation:** PDFKit (permit certificates)
 
@@ -219,12 +219,16 @@ Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — 
 
 ## Testing
 
-11 test suites in `test/`: auth, validations, citation-parser, admin, agents, tree-reasoning, rag, chat-pipeline, api-chat-stream, permit-compliance, permits-actions.
+25 test suites in `test/` (566 tests). Run with `--pool forks` on Windows for reliability.
+
+**Existing suites:** auth, validations, citation-parser, admin, agents, tree-reasoning, rag, chat-pipeline, api-chat-stream, permit-compliance, permits-actions.
+
+**New suites:** validations-new (10 schemas), auth-actions (login/register/verify/reset), profile-actions (profile CRUD, password change), email (Resend service + code generation), admin-actions (7 admin functions), admin-permits-actions (review workflow), permits-actions-extended (building details, compliance, revise), permit-attachments (file upload/delete), chat-history (session CRUD, search), documents-actions (registry CRUD + PDF upload), analytics-actions (5 stats endpoints), notifications-actions (read/mark), api-routes (health, export, certificate), lib-modules (security, file-upload, reranker, scope-detector).
 
 Test setup (`test/setup.ts`) mocks:
 - `@/lib/supabase-server` — both `createServerClient` and `createAdminClient` with chainable query builder
 - `next/headers` — cookies and headers
-- 11 environment variables pre-set
+- 6 environment variables pre-set
 
 Coverage targets: `lib/**/*.ts`, `actions/**/*.ts`, `components/**/*.tsx`.
 
