@@ -47,8 +47,10 @@ const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
 const mockOrder = vi.fn();
 const mockFrom = vi.fn();
+const mockRpc = vi.fn();
 
 function resetChainMocks() {
+  mockRpc.mockResolvedValue({ data: [{ allowed: true, retry_after_ms: 0, current_count: 1 }], error: null });
   mockSingle.mockResolvedValue({ data: null, error: null });
   mockOrder.mockReturnValue({ data: [], error: null });
   mockEq.mockReturnValue({ eq: mockEq, single: mockSingle, select: mockSelect, order: mockOrder, delete: mockDelete });
@@ -70,9 +72,11 @@ function resetChainMocks() {
 vi.mock('@/lib/supabase-server', () => ({
   createServerClient: vi.fn(() => ({
     from: (...args: unknown[]) => mockFrom(...args),
+    rpc: (...args: unknown[]) => mockRpc(...args),
   })),
   createAdminClient: vi.fn(() => ({
     from: (...args: unknown[]) => mockFrom(...args),
+    rpc: (...args: unknown[]) => mockRpc(...args),
   })),
 }));
 
@@ -263,7 +267,7 @@ describe('Profile Server Actions', () => {
     it('should change password successfully', async () => {
       const futureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
       mockSingle.mockResolvedValueOnce({
-        data: { reset_code: '123456', code_expires_at: futureDate },
+        data: { reset_code: '123456', reset_code_expires_at: futureDate },
         error: null,
       });
 
@@ -275,7 +279,7 @@ describe('Profile Server Actions', () => {
         expect.objectContaining({
           password_hash: '$2b$12$newhashedpassword',
           reset_code: null,
-          code_expires_at: null,
+          reset_code_expires_at: null,
         })
       );
       expect(mockLogAuditEvent).toHaveBeenCalledWith(
@@ -292,7 +296,7 @@ describe('Profile Server Actions', () => {
     it('should return error for wrong code', async () => {
       const futureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
       mockSingle.mockResolvedValueOnce({
-        data: { reset_code: '654321', code_expires_at: futureDate },
+        data: { reset_code: '654321', reset_code_expires_at: futureDate },
         error: null,
       });
 
@@ -304,7 +308,7 @@ describe('Profile Server Actions', () => {
     it('should return error for expired code', async () => {
       const pastDate = new Date(Date.now() - 10 * 60 * 1000).toISOString();
       mockSingle.mockResolvedValueOnce({
-        data: { reset_code: '123456', code_expires_at: pastDate },
+        data: { reset_code: '123456', reset_code_expires_at: pastDate },
         error: null,
       });
 

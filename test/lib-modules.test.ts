@@ -468,8 +468,10 @@ describe('lib/scope-detector', () => {
   });
 
   it('should detect standalone section number with multiple levels', () => {
-    const result = detectScope('What about 1.2.3.4 in the code?');
+    // 4-part numbers (x.x.x.x) are intentionally skipped to avoid matching IP addresses.
+    // Use a 3-part section number to test multi-level detection.
+    const result = detectScope('What about 1.2.3 in the code?');
     expect(result.hasScope).toBe(true);
-    expect(result.sections).toContain('1.2.3.4');
+    expect(result.sections).toContain('1.2.3');
   });
 });

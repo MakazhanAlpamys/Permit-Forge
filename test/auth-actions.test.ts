@@ -461,7 +461,7 @@ describe('Auth Server Actions', () => {
         data: {
           id: 'user-123',
           reset_code: '123456',
-          code_expires_at: futureDate,
+          reset_code_expires_at: futureDate,
         },
         error: null,
       });
@@ -474,7 +474,7 @@ describe('Auth Server Actions', () => {
         expect.objectContaining({
           password_hash: '$2b$12$newhashedpassword',
           reset_code: null,
-          code_expires_at: null,
+          reset_code_expires_at: null,
         })
       );
       expect(mockLogAuditEvent).toHaveBeenCalledWith(
@@ -488,7 +488,7 @@ describe('Auth Server Actions', () => {
         data: {
           id: 'user-123',
           reset_code: '654321',
-          code_expires_at: futureDate,
+          reset_code_expires_at: futureDate,
         },
         error: null,
       });
@@ -504,7 +504,7 @@ describe('Auth Server Actions', () => {
         data: {
           id: 'user-123',
           reset_code: '123456',
-          code_expires_at: pastDate,
+          reset_code_expires_at: pastDate,
         },
         error: null,
       });
