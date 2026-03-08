@@ -132,7 +132,7 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public paths that don't require authentication
-  const publicPaths = ['/login', '/register', '/verify-email', '/forgot-password', '/reset-password'];
+  const publicPaths = ['/login', '/register', '/verify-email', '/forgot-password'];
   const isPublicPath = publicPaths.some(path => pathname.startsWith(path));
 
   // If no token

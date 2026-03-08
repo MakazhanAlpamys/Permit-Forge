@@ -181,7 +181,7 @@ Edge Runtime auth — runs on every non-static request:
 4. Injects `x-user-id` and `x-user-role` headers for downstream use
 5. Security headers: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Permissions-Policy` (camera/mic/geo disabled)
 
-Public paths (no auth required): `/login`, `/register`, `/verify-email`, `/forgot-password`, `/reset-password`.
+Public paths (no auth required): `/login`, `/register`, `/verify-email`, `/forgot-password`.
 
 Matcher excludes: `api`, `_next/static`, `_next/image`, static assets (svg/png/jpg/gif/webp).
 
