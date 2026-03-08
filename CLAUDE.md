@@ -28,7 +28,7 @@ Pattern match: `npx vitest run -t "pattern"`
 - **Database:** Supabase (PostgreSQL) with pgvector (HNSW) + pg_trgm extensions, 30+ RPC functions
 - **Auth:** JWT (HS256, jose), bcrypt (12 rounds), CSRF tokens, HttpOnly cookies
 - **Testing:** Vitest 4 (node environment), @testing-library/react, 25 test suites in `test/` (566 tests)
-- **Email:** Resend API (optional, for verification emails, password reset, permit notifications)
+- **Email:** Nodemailer + Gmail SMTP (optional, for verification emails, password reset, permit notifications)
 - **PDF Generation:** PDFKit (permit certificates)
 
 ## Architecture
@@ -69,7 +69,7 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 | `ingest-pdf.ts` | PDF ingestion trigger with cache invalidation |
 | `documents.ts` | Document registry CRUD: add, update, delete, restore + PDF upload to Supabase Storage |
 | `analytics.ts` | Admin stats and analytics queries |
-| `notifications.ts` | In-app + email notifications (Resend) |
+| `notifications.ts` | In-app + email notifications (Nodemailer SMTP) |
 
 ### RAG Pipeline (`lib/chat-pipeline.ts` → central orchestrator)
 
@@ -168,9 +168,9 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/supabase-server.ts` | Two clients: `createServerClient()` (anon) and `createAdminClient()` (service_role, bypasses RLS) |
 | `lib/logger.ts` | Centralized logging with `LOG_LEVEL` env var support |
 | `lib/file-upload.ts` | File validation (size, extension, MIME), storage path generation |
-| `lib/email.ts` | Email sending via Resend: verification, password reset, password change codes; `generateSixDigitCode()` |
+| `lib/email.ts` | Email sending via Nodemailer SMTP: verification, password reset, password change codes; `generateSixDigitCode()` |
 | `lib/transforms.ts` | Shared data transforms: permit DB row → TypeScript object |
-| `lib/notifications.ts` | In-app + email (Resend API) notifications, failure-silent |
+| `lib/notifications.ts` | In-app + email (Nodemailer SMTP) notifications, failure-silent |
 
 ### Middleware (`middleware.ts`)
 
@@ -223,7 +223,7 @@ Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — 
 
 25 test suites in `test/` (566 tests). Run with `--pool forks` on Windows for reliability.
 
-**Suites:** auth, auth-actions (login/register/verify/reset), profile-actions (profile CRUD, password change), validations, validations-new (10 schemas), citation-parser, admin, admin-actions (7 admin functions), admin-permits-actions (review workflow), agents, tree-reasoning, rag, chat-pipeline, api-chat-stream, api-routes (health, export, certificate), permit-compliance, permits-actions, permits-actions-extended (building details, compliance, revise), permit-attachments (file upload/delete), chat-history (session CRUD, search), documents-actions (registry CRUD + PDF upload), analytics-actions (5 stats endpoints), email (Resend service + code generation), notifications-actions (read/mark), lib-modules (security, file-upload, reranker, scope-detector).
+**Suites:** auth, auth-actions (login/register/verify/reset), profile-actions (profile CRUD, password change), validations, validations-new (10 schemas), citation-parser, admin, admin-actions (7 admin functions), admin-permits-actions (review workflow), agents, tree-reasoning, rag, chat-pipeline, api-chat-stream, api-routes (health, export, certificate), permit-compliance, permits-actions, permits-actions-extended (building details, compliance, revise), permit-attachments (file upload/delete), chat-history (session CRUD, search), documents-actions (registry CRUD + PDF upload), analytics-actions (5 stats endpoints), email (Nodemailer SMTP + code generation), notifications-actions (read/mark), lib-modules (security, file-upload, reranker, scope-detector).
 
 Test setup (`test/setup.ts`) mocks:
 - `@/lib/supabase-server` — both `createServerClient` and `createAdminClient` with chainable query builder
@@ -249,5 +249,8 @@ Required in `.env.local`:
 - `JWT_SECRET` — Min 32 chars (64+ for production)
 
 Optional:
-- `RESEND_API_KEY` — For transactional emails: verification, password reset, permit notifications
+- `SMTP_HOST` — SMTP server host (default: `smtp.gmail.com`)
+- `SMTP_PORT` — SMTP port (default: `587`)
+- `SMTP_USER` — Gmail address for sending emails
+- `SMTP_PASS` — Gmail App Password (16 chars)
 - `LOG_LEVEL` — Logging verbosity (`debug`/`info`/`warn`/`error`)

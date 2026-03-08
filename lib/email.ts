@@ -1,14 +1,23 @@
 // ============================================================================
-// Email Service — Verification & Password Reset emails via Resend
+// Email Service — Verification & Password Reset emails via Nodemailer (SMTP)
 // ============================================================================
 
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 
-// Resend free tier only allows sending from onboarding@resend.dev
-// To use a custom domain, verify it in https://resend.com/domains
 function getFromEmail(): string {
-  return process.env.RESEND_FROM_EMAIL || 'PermitForge <onboarding@resend.dev>';
+  return `PermitForge <${process.env.SMTP_USER}>`;
 }
+
+export const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtp.gmail.com',
+  port: parseInt(process.env.SMTP_PORT || '587'),
+  secure: process.env.SMTP_PORT === '465',
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
 function escapeHtml(str: string): string {
   return str
@@ -51,19 +60,16 @@ function codeEmailHtml(title: string, code: string, message: string): string {
 }
 
 export async function sendVerificationEmail(email: string, code: string): Promise<boolean> {
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('RESEND_API_KEY not set — skipping verification email');
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn('SMTP_USER/SMTP_PASS not set — skipping verification email');
     return false;
   }
 
   try {
-    const { Resend } = await import('resend');
-    const resend = new Resend(process.env.RESEND_API_KEY);
     const fromEmail = getFromEmail();
-
     console.log('[Email] Sending verification email to:', email, 'from:', fromEmail);
 
-    const result = await resend.emails.send({
+    await transporter.sendMail({
       from: fromEmail,
       to: email,
       subject: 'Verify your email — PermitForge',
@@ -74,31 +80,25 @@ export async function sendVerificationEmail(email: string, code: string): Promis
       ),
     });
 
-    console.log('[Email] Resend API response:', JSON.stringify(result));
+    console.log('[Email] Verification email sent successfully');
     return true;
   } catch (error) {
     console.error('Failed to send verification email:', error instanceof Error ? error.message : error);
-    if (error instanceof Error && 'statusCode' in error) {
-      console.error('[Email] Status code:', (error as Record<string, unknown>).statusCode);
-    }
     return false;
   }
 }
 
 export async function sendPasswordResetEmail(email: string, code: string): Promise<boolean> {
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('RESEND_API_KEY not set — skipping password reset email');
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn('SMTP_USER/SMTP_PASS not set — skipping password reset email');
     return false;
   }
 
   try {
-    const { Resend } = await import('resend');
-    const resend = new Resend(process.env.RESEND_API_KEY);
     const fromEmail = getFromEmail();
-
     console.log('[Email] Sending password reset email to:', email, 'from:', fromEmail);
 
-    const result = await resend.emails.send({
+    await transporter.sendMail({
       from: fromEmail,
       to: email,
       subject: 'Password Reset — PermitForge',
@@ -109,7 +109,7 @@ export async function sendPasswordResetEmail(email: string, code: string): Promi
       ),
     });
 
-    console.log('[Email] Resend API response:', JSON.stringify(result));
+    console.log('[Email] Password reset email sent successfully');
     return true;
   } catch (error) {
     console.error('Failed to send password reset email:', error instanceof Error ? error.message : error);
@@ -118,19 +118,16 @@ export async function sendPasswordResetEmail(email: string, code: string): Promi
 }
 
 export async function sendPasswordChangeCodeEmail(email: string, code: string): Promise<boolean> {
-  if (!process.env.RESEND_API_KEY) {
-    console.warn('RESEND_API_KEY not set — skipping password change email');
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn('SMTP_USER/SMTP_PASS not set — skipping password change email');
     return false;
   }
 
   try {
-    const { Resend } = await import('resend');
-    const resend = new Resend(process.env.RESEND_API_KEY);
     const fromEmail = getFromEmail();
-
     console.log('[Email] Sending password change email to:', email, 'from:', fromEmail);
 
-    const result = await resend.emails.send({
+    await transporter.sendMail({
       from: fromEmail,
       to: email,
       subject: 'Password Change Code — PermitForge',
@@ -141,7 +138,7 @@ export async function sendPasswordChangeCodeEmail(email: string, code: string): 
       ),
     });
 
-    console.log('[Email] Resend API response:', JSON.stringify(result));
+    console.log('[Email] Password change email sent successfully');
     return true;
   } catch (error) {
     console.error('Failed to send password change email:', error instanceof Error ? error.message : error);

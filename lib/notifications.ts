@@ -1,13 +1,14 @@
 // ============================================================================
-// Notification Service — In-App + Email (Resend)
+// Notification Service — In-App + Email (Nodemailer SMTP)
 // ============================================================================
 
 import { createAdminClient } from './supabase-server';
+import { transporter } from './email';
 
 import type { NotificationType } from '@/types';
 
 function getFromEmail(): string {
-  return process.env.RESEND_FROM_EMAIL || 'PermitForge <onboarding@resend.dev>';
+  return `PermitForge <${process.env.SMTP_USER}>`;
 }
 
 interface CreateNotificationParams {
@@ -46,8 +47,8 @@ export async function createNotification(params: CreateNotificationParams): Prom
       return;
     }
 
-    // 2. Send email if Resend is configured
-    if (sendEmail && process.env.RESEND_API_KEY) {
+    // 2. Send email if SMTP is configured
+    if (sendEmail && process.env.SMTP_USER && process.env.SMTP_PASS) {
       try {
         // Fetch user's email
         const { data: user } = await supabase
@@ -57,10 +58,7 @@ export async function createNotification(params: CreateNotificationParams): Prom
           .single();
 
         if (user?.email) {
-          const { Resend } = await import('resend');
-          const resend = new Resend(process.env.RESEND_API_KEY);
-
-          await resend.emails.send({
+          await transporter.sendMail({
             from: getFromEmail(),
             to: user.email,
             subject: title,

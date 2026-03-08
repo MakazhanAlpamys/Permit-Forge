@@ -101,7 +101,7 @@
 - **PDF certificate generation** — `PF-CERT-{YEAR}-{ID}` format via PDFKit
 - **Status timeline** tracking with full admin review interface
 - **Revision workflow** — admins can request revisions; users resubmit with incremented count
-- **In-app + email notifications** via Resend API on every status change
+- **In-app + email notifications** via Nodemailer (SMTP) on every status change
 
 </td>
 <td>
@@ -154,7 +154,7 @@
 
 ### Notification System
 - In-app notifications with unread badges
-- Email notifications via Resend API (optional)
+- Email notifications via Nodemailer SMTP (optional)
 - 5 notification types: permit submitted, under review, approved, rejected, revision requested
 - Branded HTML email templates with status indicators
 - Silent failure handling — never breaks calling action
@@ -214,8 +214,11 @@ GEMINI_API_KEY=your_gemini_api_key
 # JWT (min 32 chars, 64+ recommended)
 JWT_SECRET=your_secure_random_jwt_secret
 
-# Optional
-RESEND_API_KEY=your_resend_api_key       # Email notifications for permit updates
+# Optional — Email via Nodemailer (Gmail SMTP)
+SMTP_HOST=smtp.gmail.com                 # SMTP server host
+SMTP_PORT=587                            # SMTP port (587 for TLS, 465 for SSL)
+SMTP_USER=your_gmail@gmail.com           # Gmail address
+SMTP_PASS=your_app_password              # Gmail App Password (16 chars)
 LOG_LEVEL=info                           # debug | info | warn | error
 ```
 
@@ -279,7 +282,7 @@ graph TB
     subgraph External["EXTERNAL SERVICES"]
         SB["Supabase<br/>PostgreSQL + RLS · pgvector (HNSW)<br/>Full-Text Search · Storage"]
         GM["Google Gemini<br/>2.5 Flash (chat) · embedding-001"]
-        RS["Resend (optional)<br/>Email notifications"]
+        RS["Nodemailer SMTP (optional)<br/>Email notifications"]
     end
 
     Frontend --> Server
@@ -704,7 +707,7 @@ Pattern match: `npx vitest run -t "pattern"`
 | **Chat Pipeline** | `test/chat-pipeline.test.ts` | 7 | RAG pipeline, semantic cache, CRAG, citation generation |
 | **Citations** | `test/citation-parser.test.ts` | 14 | Chunk-based citations, confidence scoring, stats |
 | **Documents** | `test/documents-actions.test.ts` | 26 | Document registry CRUD, PDF upload |
-| **Email** | `test/email.test.ts` | 18 | Resend service, code generation, HTML templates |
+| **Email** | `test/email.test.ts` | 18 | Nodemailer SMTP, code generation, HTML templates |
 | **Lib Modules** | `test/lib-modules.test.ts` | 42 | Security guards, file-upload, reranker, scope-detector |
 | **Notifications** | `test/notifications-actions.test.ts` | 13 | Read/mark notifications |
 | **Permit Attachments** | `test/permit-attachments.test.ts` | 19 | File upload/delete |
@@ -791,13 +794,13 @@ PermitForge/
 │   ├── auth.ts                        #   JWT, sessions, passwords, CSRF
 │   ├── security.ts                    #   requireAuth / requireAdmin guards
 │   ├── gemini.ts                      #   Gemini + LangChain configuration
-│   ├── email.ts                       #   Email via Resend: verification, reset, password change
+│   ├── email.ts                       #   Email via Nodemailer SMTP: verification, reset, password change
 │   ├── pdf-parser.ts                  #   PDF.js text & TOC extraction
 │   ├── pdf-ingestion.ts               #   Parent-child chunking, embedding, tree building
 │   ├── tree-cache.ts                  #   Two-tier document tree cache
 │   ├── permit-compliance.ts           #   RAG-powered compliance analysis
 │   ├── permit-certificate.ts          #   PDF certificate via PDFKit
-│   ├── notifications.ts               #   In-app + email (Resend) notifications
+│   ├── notifications.ts               #   In-app + email (Nodemailer SMTP) notifications
 │   ├── file-upload.ts                 #   File validation, storage path generation
 │   ├── transforms.ts                  #   Shared data transforms (permit row → TS object)
 │   ├── supabase-server.ts             #   Supabase client factory (anon + admin)
@@ -847,7 +850,10 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role key (private, bypasses RLS) |
 | `GEMINI_API_KEY` | Yes | Google Gemini API key |
 | `JWT_SECRET` | Yes | JWT signing secret (min 32 chars, 64+ for production) |
-| `RESEND_API_KEY` | — | Resend API key for email notifications |
+| `SMTP_HOST` | — | SMTP server host (default: `smtp.gmail.com`) |
+| `SMTP_PORT` | — | SMTP port (default: `587`) |
+| `SMTP_USER` | — | Gmail address for sending emails |
+| `SMTP_PASS` | — | Gmail App Password (16 chars) |
 | `LOG_LEVEL` | — | Logging verbosity: `debug` / `info` / `warn` / `error` |
 | `NODE_ENV` | — | `development` / `production` |
 
@@ -871,7 +877,7 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 | **XSS** | [isomorphic-dompurify](https://github.com/kkomelin/isomorphic-dompurify) | — |
 | **PDF Parse** | [PDF.js](https://mozilla.github.io/pdf.js/) (pdfjs-dist) | — |
 | **PDF Generate** | [PDFKit](https://pdfkit.org/) (permit certificates) | 0.17 |
-| **Email** | [Resend](https://resend.com/) (optional, permit notifications) | — |
+| **Email** | [Nodemailer](https://nodemailer.com/) (SMTP, optional) | — |
 | **Charts** | [Recharts](https://recharts.org/) (admin analytics) | — |
 | **Icons** | [Lucide React](https://lucide.dev/) | — |
 | **Markdown** | [react-markdown](https://github.com/remarkjs/react-markdown) | 10 |

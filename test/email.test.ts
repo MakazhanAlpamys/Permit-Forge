@@ -1,12 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import crypto from 'crypto';
 
-// The email module uses dynamic import: `const { Resend } = await import('resend')`
-// We need to mock at the module level for dynamic imports to work
-const mockSend = vi.fn().mockResolvedValue({ id: 'test-id' });
-vi.mock('resend', () => ({
-  Resend: class MockResend {
-    emails = { send: mockSend };
+const mockSendMail = vi.hoisted(() => vi.fn().mockResolvedValue({ messageId: 'test-id' }));
+
+vi.mock('nodemailer', () => ({
+  default: {
+    createTransport: () => ({ sendMail: mockSendMail }),
   },
 }));
 
@@ -68,49 +67,58 @@ describe('generateSixDigitCode', () => {
 // sendVerificationEmail
 // ============================================================================
 describe('sendVerificationEmail', () => {
-  const originalEnv = process.env.RESEND_API_KEY;
+  const originalUser = process.env.SMTP_USER;
+  const originalPass = process.env.SMTP_PASS;
 
   beforeEach(() => {
-    mockSend.mockClear();
-    mockSend.mockResolvedValue({ id: 'test-id' });
+    mockSendMail.mockClear();
+    mockSendMail.mockResolvedValue({ messageId: 'test-id' });
   });
 
   afterEach(() => {
-    if (originalEnv !== undefined) {
-      process.env.RESEND_API_KEY = originalEnv;
+    if (originalUser !== undefined) {
+      process.env.SMTP_USER = originalUser;
     } else {
-      delete process.env.RESEND_API_KEY;
+      delete process.env.SMTP_USER;
+    }
+    if (originalPass !== undefined) {
+      process.env.SMTP_PASS = originalPass;
+    } else {
+      delete process.env.SMTP_PASS;
     }
   });
 
-  it('should return false when RESEND_API_KEY is not set', async () => {
-    delete process.env.RESEND_API_KEY;
+  it('should return false when SMTP credentials are not set', async () => {
+    delete process.env.SMTP_USER;
+    delete process.env.SMTP_PASS;
     const result = await sendVerificationEmail('user@test.com', '123456');
     expect(result).toBe(false);
   });
 
   it('should return true on successful send', async () => {
-    process.env.RESEND_API_KEY = 'test-key';
+    process.env.SMTP_USER = 'test@gmail.com';
+    process.env.SMTP_PASS = 'test-pass';
     const result = await sendVerificationEmail('user@test.com', '123456');
     expect(result).toBe(true);
-    expect(mockSend).toHaveBeenCalledOnce();
+    expect(mockSendMail).toHaveBeenCalledOnce();
   });
 
   it('should call with correct params', async () => {
-    process.env.RESEND_API_KEY = 'test-key';
+    process.env.SMTP_USER = 'test@gmail.com';
+    process.env.SMTP_PASS = 'test-pass';
     await sendVerificationEmail('user@test.com', '123456');
-    expect(mockSend).toHaveBeenCalledWith(
+    expect(mockSendMail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'user@test.com',
         subject: 'Verify your email — PermitForge',
-        from: 'PermitForge <onboarding@resend.dev>',
       })
     );
   });
 
   it('should return false when send throws', async () => {
-    process.env.RESEND_API_KEY = 'test-key';
-    mockSend.mockRejectedValueOnce(new Error('API error'));
+    process.env.SMTP_USER = 'test@gmail.com';
+    process.env.SMTP_PASS = 'test-pass';
+    mockSendMail.mockRejectedValueOnce(new Error('SMTP error'));
     const result = await sendVerificationEmail('user@test.com', '123456');
     expect(result).toBe(false);
   });
@@ -120,38 +128,47 @@ describe('sendVerificationEmail', () => {
 // sendPasswordResetEmail
 // ============================================================================
 describe('sendPasswordResetEmail', () => {
-  const originalEnv = process.env.RESEND_API_KEY;
+  const originalUser = process.env.SMTP_USER;
+  const originalPass = process.env.SMTP_PASS;
 
   beforeEach(() => {
-    mockSend.mockClear();
-    mockSend.mockResolvedValue({ id: 'test-id' });
+    mockSendMail.mockClear();
+    mockSendMail.mockResolvedValue({ messageId: 'test-id' });
   });
 
   afterEach(() => {
-    if (originalEnv !== undefined) {
-      process.env.RESEND_API_KEY = originalEnv;
+    if (originalUser !== undefined) {
+      process.env.SMTP_USER = originalUser;
     } else {
-      delete process.env.RESEND_API_KEY;
+      delete process.env.SMTP_USER;
+    }
+    if (originalPass !== undefined) {
+      process.env.SMTP_PASS = originalPass;
+    } else {
+      delete process.env.SMTP_PASS;
     }
   });
 
-  it('should return false when RESEND_API_KEY is not set', async () => {
-    delete process.env.RESEND_API_KEY;
+  it('should return false when SMTP credentials are not set', async () => {
+    delete process.env.SMTP_USER;
+    delete process.env.SMTP_PASS;
     const result = await sendPasswordResetEmail('user@test.com', '654321');
     expect(result).toBe(false);
   });
 
   it('should return true on successful send', async () => {
-    process.env.RESEND_API_KEY = 'test-key';
+    process.env.SMTP_USER = 'test@gmail.com';
+    process.env.SMTP_PASS = 'test-pass';
     const result = await sendPasswordResetEmail('user@test.com', '654321');
     expect(result).toBe(true);
-    expect(mockSend).toHaveBeenCalledOnce();
+    expect(mockSendMail).toHaveBeenCalledOnce();
   });
 
   it('should call with correct subject', async () => {
-    process.env.RESEND_API_KEY = 'test-key';
+    process.env.SMTP_USER = 'test@gmail.com';
+    process.env.SMTP_PASS = 'test-pass';
     await sendPasswordResetEmail('user@test.com', '654321');
-    expect(mockSend).toHaveBeenCalledWith(
+    expect(mockSendMail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'user@test.com',
         subject: 'Password Reset — PermitForge',
@@ -160,8 +177,9 @@ describe('sendPasswordResetEmail', () => {
   });
 
   it('should return false when send throws', async () => {
-    process.env.RESEND_API_KEY = 'test-key';
-    mockSend.mockRejectedValueOnce(new Error('Network error'));
+    process.env.SMTP_USER = 'test@gmail.com';
+    process.env.SMTP_PASS = 'test-pass';
+    mockSendMail.mockRejectedValueOnce(new Error('Network error'));
     const result = await sendPasswordResetEmail('user@test.com', '654321');
     expect(result).toBe(false);
   });
@@ -171,49 +189,58 @@ describe('sendPasswordResetEmail', () => {
 // sendPasswordChangeCodeEmail
 // ============================================================================
 describe('sendPasswordChangeCodeEmail', () => {
-  const originalEnv = process.env.RESEND_API_KEY;
+  const originalUser = process.env.SMTP_USER;
+  const originalPass = process.env.SMTP_PASS;
 
   beforeEach(() => {
-    mockSend.mockClear();
-    mockSend.mockResolvedValue({ id: 'test-id' });
+    mockSendMail.mockClear();
+    mockSendMail.mockResolvedValue({ messageId: 'test-id' });
   });
 
   afterEach(() => {
-    if (originalEnv !== undefined) {
-      process.env.RESEND_API_KEY = originalEnv;
+    if (originalUser !== undefined) {
+      process.env.SMTP_USER = originalUser;
     } else {
-      delete process.env.RESEND_API_KEY;
+      delete process.env.SMTP_USER;
+    }
+    if (originalPass !== undefined) {
+      process.env.SMTP_PASS = originalPass;
+    } else {
+      delete process.env.SMTP_PASS;
     }
   });
 
-  it('should return false when RESEND_API_KEY is not set', async () => {
-    delete process.env.RESEND_API_KEY;
+  it('should return false when SMTP credentials are not set', async () => {
+    delete process.env.SMTP_USER;
+    delete process.env.SMTP_PASS;
     const result = await sendPasswordChangeCodeEmail('user@test.com', '111111');
     expect(result).toBe(false);
   });
 
   it('should return true on successful send', async () => {
-    process.env.RESEND_API_KEY = 'test-key';
+    process.env.SMTP_USER = 'test@gmail.com';
+    process.env.SMTP_PASS = 'test-pass';
     const result = await sendPasswordChangeCodeEmail('user@test.com', '111111');
     expect(result).toBe(true);
-    expect(mockSend).toHaveBeenCalledOnce();
+    expect(mockSendMail).toHaveBeenCalledOnce();
   });
 
   it('should call with correct subject', async () => {
-    process.env.RESEND_API_KEY = 'test-key';
+    process.env.SMTP_USER = 'test@gmail.com';
+    process.env.SMTP_PASS = 'test-pass';
     await sendPasswordChangeCodeEmail('user@test.com', '111111');
-    expect(mockSend).toHaveBeenCalledWith(
+    expect(mockSendMail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'user@test.com',
         subject: 'Password Change Code — PermitForge',
-        from: 'PermitForge <onboarding@resend.dev>',
       })
     );
   });
 
   it('should return false when send throws', async () => {
-    process.env.RESEND_API_KEY = 'test-key';
-    mockSend.mockRejectedValueOnce(new Error('Timeout'));
+    process.env.SMTP_USER = 'test@gmail.com';
+    process.env.SMTP_PASS = 'test-pass';
+    mockSendMail.mockRejectedValueOnce(new Error('Timeout'));
     const result = await sendPasswordChangeCodeEmail('user@test.com', '111111');
     expect(result).toBe(false);
   });
