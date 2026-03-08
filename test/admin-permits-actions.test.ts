@@ -358,9 +358,8 @@ describe('Admin Permits Server Actions', () => {
       // Step 2: from().update().eq().eq().select()
       // The second .eq() call returns chain, and .select('id') must return final result
       // Override mockSelect for the second call (first call is step 1's .select())
-      const origSelect = mockSelect.getMockImplementation();
       let selectCallCount = 0;
-      mockSelect.mockImplementation((...args: unknown[]) => {
+      mockSelect.mockImplementation(() => {
         selectCallCount++;
         if (selectCallCount === 2) {
           // This is the update's .select('id')

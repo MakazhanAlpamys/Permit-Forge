@@ -402,7 +402,7 @@ describe('complianceRequirementsSchema', () => {
   });
 
   it('should reject missing required boolean field', () => {
-    const { accessibility, ...missing } = valid;
+    const { accessibility: _accessibility, ...missing } = valid;
     const result = complianceRequirementsSchema.safeParse(missing);
     expect(result.success).toBe(false);
   });
