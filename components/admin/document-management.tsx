@@ -309,12 +309,15 @@ export function DocumentManagement() {
       const decoder = new TextDecoder();
       if (!reader) throw new Error('No response stream');
 
+      let buffer = '';
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const text = decoder.decode(value);
-        const lines = text.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        // Keep the last (potentially incomplete) line in the buffer
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
@@ -346,7 +349,7 @@ export function DocumentManagement() {
                 });
               }
             } catch {
-              // Ignore parse errors
+              // Ignore parse errors for incomplete lines
             }
           }
         }

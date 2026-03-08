@@ -741,9 +741,9 @@ BEGIN
   WHERE (
       (d.metadata->>'startPage')::INT <= target_page
       AND (d.metadata->>'endPage')::INT >= target_page
-    )
     OR (d.metadata->>'page')::INT = target_page
-  AND (filter_document IS NULL OR d.document_name = filter_document)
+    )
+    AND (filter_document IS NULL OR d.document_name = filter_document)
   ORDER BY
     CASE
       WHEN (d.metadata->>'startPage')::INT = target_page
@@ -849,9 +849,9 @@ BEGIN
   WHERE (
       (d.metadata->>'startPage')::INT <= citation_page
       AND (d.metadata->>'endPage')::INT >= citation_page
-    )
     OR (d.metadata->>'page')::INT = citation_page
-  AND (filter_document IS NULL OR d.document_name = filter_document)
+    )
+    AND (filter_document IS NULL OR d.document_name = filter_document)
   ORDER BY match_score DESC
   LIMIT match_count;
 END;
@@ -941,8 +941,11 @@ AS $$
 DECLARE
   deleted_count BIGINT;
 BEGIN
+  -- Delete child chunks (must go first due to parent_id FK)
   DELETE FROM dubai_code_chunks WHERE document_name = target_document;
   GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  -- Delete orphaned parent chunks for this document
+  DELETE FROM parent_chunks WHERE document_name = target_document;
   RETURN deleted_count;
 END;
 $$;
@@ -1636,6 +1639,7 @@ RETURNS TABLE (
   display_name TEXT,
   short_name TEXT,
   file_name TEXT,
+  storage_path TEXT,
   source_url TEXT,
   authority TEXT,
   description TEXT,
@@ -1654,7 +1658,7 @@ AS $$
 BEGIN
   RETURN QUERY
   SELECT dr.id, dr.display_name, dr.short_name, dr.file_name,
-         dr.source_url, dr.authority, dr.description, dr.badge_color,
+         dr.storage_path, dr.source_url, dr.authority, dr.description, dr.badge_color,
          dr.keywords, dr.categories, dr.is_active, dr.keywords_auto_generated,
          dr.created_at, dr.updated_at
   FROM document_registry dr
@@ -1846,10 +1850,17 @@ VALUES (
 ON CONFLICT (id) DO NOTHING;
 
 -- Policy: only service_role can manage files (our server actions use adminClient)
-CREATE POLICY "Service role full access to document-pdfs"
-  ON storage.objects FOR ALL TO service_role
-  USING (bucket_id = 'document-pdfs')
-  WITH CHECK (bucket_id = 'document-pdfs');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE tablename = 'objects' AND policyname = 'Service role full access to document-pdfs'
+  ) THEN
+    CREATE POLICY "Service role full access to document-pdfs"
+      ON storage.objects FOR ALL TO service_role
+      USING (bucket_id = 'document-pdfs')
+      WITH CHECK (bucket_id = 'document-pdfs');
+  END IF;
+END $$;
 
 -- ============================================================================
 -- VERIFICATION

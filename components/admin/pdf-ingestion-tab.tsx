@@ -95,7 +95,7 @@ export function PdfIngestionTab() {
     }
   };
 
-  const handleIngestDocument = async (documentId: string, pdfPath: string) => {
+  const handleIngestDocument = async (documentId: string) => {
     setIngestionStatus(prev => ({ ...prev, [documentId]: 'loading' }));
     setIngestionMessages(prev => ({ ...prev, [documentId]: 'Starting ingestion...' }));
     setActiveProgress(prev => ({ ...prev, [documentId]: { stage: 'starting', progress: 0, total: 100, message: 'Connecting...' } }));
@@ -104,7 +104,7 @@ export function PdfIngestionTab() {
       const response = await fetch('/api/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentId, pdfPath }),
+        body: JSON.stringify({ documentId }),
       });
 
       if (!response.ok) {
@@ -118,12 +118,15 @@ export function PdfIngestionTab() {
         throw new Error('No response stream');
       }
 
+      let buffer = '';
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        const text = decoder.decode(value);
-        const lines = text.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        // Keep the last (potentially incomplete) line in the buffer
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
@@ -156,7 +159,7 @@ export function PdfIngestionTab() {
                 });
               }
             } catch {
-              // Ignore parse errors
+              // Ignore parse errors for incomplete lines
             }
           }
         }
@@ -367,7 +370,7 @@ export function PdfIngestionTab() {
                 <div className="flex gap-2">
                   <Button
                     onClick={async () => {
-                      await handleIngestDocument(doc.id, `public/${doc.fileName}`);
+                      await handleIngestDocument(doc.id);
                       runDiagnostics();
                     }}
                     disabled={status === 'loading' || !diagnostic.dbConnected}

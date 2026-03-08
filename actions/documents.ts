@@ -238,13 +238,13 @@ export async function deleteDocument(
       clearDocumentTreeCache(documentId);
 
       // Delete PDF from Storage if exists
-      const { data: docRow } = await supabase
+      const { data: docRow, error: docError } = await supabase
         .from('document_registry')
         .select('storage_path')
         .eq('id', documentId)
         .single();
 
-      if (docRow?.storage_path) {
+      if (!docError && docRow?.storage_path) {
         await supabase.storage
           .from(DOCUMENT_PDF_LIMITS.storageBucket)
           .remove([docRow.storage_path]);

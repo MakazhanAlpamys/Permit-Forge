@@ -44,7 +44,7 @@ export async function ingestPDF(
   const supabase = createAdminClient();
   const { data: dbDoc } = await supabase
     .from('document_registry')
-    .select('file_name, is_active')
+    .select('file_name, is_active, storage_path')
     .eq('id', documentId)
     .single();
 
@@ -56,17 +56,38 @@ export async function ingestPDF(
     };
   }
 
-  // SECURITY: strict filename validation — only allow safe PDF filenames
-  const rawName = dbDoc.file_name as string;
-  const fileName = rawName.split(/[\/\\]/).pop() || '';
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.pdf$/i.test(fileName)) {
-    return {
-      success: false,
-      chunksProcessed: 0,
-      error: 'Invalid file name in document registry',
-    };
+  // Determine PDF source: Supabase Storage or local file
+  let pdfBuffer: Buffer | undefined;
+  let pdfPath: string | undefined;
+
+  if (dbDoc.storage_path) {
+    // Download from Supabase Storage
+    const { data: blob, error: dlError } = await supabase.storage
+      .from('document-pdfs')
+      .download(dbDoc.storage_path as string);
+
+    if (dlError || !blob) {
+      return {
+        success: false,
+        chunksProcessed: 0,
+        error: `Failed to download PDF from storage: ${dlError?.message || 'No data'}`,
+      };
+    }
+
+    pdfBuffer = Buffer.from(await blob.arrayBuffer());
+  } else {
+    // Fallback: read from public/ folder (local dev)
+    const rawName = dbDoc.file_name as string;
+    const fileName = rawName.split(/[\/\\]/).pop() || '';
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.pdf$/i.test(fileName)) {
+      return {
+        success: false,
+        chunksProcessed: 0,
+        error: 'No PDF uploaded. Upload a PDF file first.',
+      };
+    }
+    pdfPath = `public/${fileName}`;
   }
-  const pdfPath = `public/${fileName}`;
 
   console.log(`📄 Starting PDF ingestion for document: ${documentId}...`);
 
@@ -81,7 +102,7 @@ export async function ingestPDF(
 
   const result = await runIngestionPipeline({
     documentId,
-    pdfPath,
+    ...(pdfBuffer ? { pdfBuffer } : { pdfPath }),
   });
 
   // Invalidate the tree cache for this document

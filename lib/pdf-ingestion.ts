@@ -327,15 +327,35 @@ export async function runIngestionPipeline(
     const chunksWithPages = await splitWithPageTracking(pages, parser);
     const totalChunks = chunksWithPages.length;
 
-    // Stage 5: Check for existing chunks (resume support)
-    // SECURITY FIX: Instead of trusting the count, check which chunks actually exist
-    // based on content hash to handle partial batch failures safely
+    // Stage 5: Check for existing chunks and handle re-ingestion
     const { data: existingChunks } = await supabase
       .from('dubai_code_chunks')
       .select('content')
       .eq('document_name', documentId);
 
     const existingContents = new Set((existingChunks || []).map(c => c.content));
+
+    // Detect stale chunks: chunks in DB that no longer exist in the new PDF
+    const newContents = new Set(chunksWithPages.map(c => c.content));
+    const staleChunks = (existingChunks || []).filter(c => !newContents.has(c.content));
+
+    if (staleChunks.length > 0) {
+      // PDF was updated — clear ALL old child chunks to avoid orphans
+      await sendProgress({
+        stage: 'cleaning',
+        progress: 16,
+        total: 100,
+        message: `PDF changed: clearing ${existingContents.size} old chunks before re-ingestion...`,
+      });
+
+      await supabase
+        .from('dubai_code_chunks')
+        .delete()
+        .eq('document_name', documentId);
+
+      existingContents.clear();
+    }
+
     const chunksToProcess = chunksWithPages.filter(
       chunk => !existingContents.has(chunk.content)
     );
