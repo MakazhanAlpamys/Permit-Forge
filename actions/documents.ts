@@ -118,6 +118,10 @@ export async function upsertDocument(
   try {
     const supabase = createAdminClient();
 
+    // If admin explicitly provided keywords, mark them as manually set so the
+    // ingestion pipeline won't overwrite them with auto-extracted keywords.
+    const keywordsManuallySet = (input.keywords?.length ?? 0) > 0;
+
     const { error } = await supabase.rpc('upsert_document', {
       p_id: sanitizedId,
       p_display_name: input.displayName,
@@ -129,6 +133,7 @@ export async function upsertDocument(
       p_badge_color: input.badgeColor || 'bg-gray-500/20 text-gray-400 border-gray-500/30',
       p_keywords: input.keywords || [],
       p_categories: input.categories || [],
+      p_keywords_auto_generated: !keywordsManuallySet,
     });
 
     if (error) {
@@ -146,6 +151,7 @@ export async function upsertDocument(
           badge_color: input.badgeColor || 'bg-gray-500/20 text-gray-400 border-gray-500/30',
           keywords: input.keywords || [],
           categories: input.categories || [],
+          keywords_auto_generated: !keywordsManuallySet,
           is_active: true,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'id' });
