@@ -19,6 +19,7 @@ DROP TABLE IF EXISTS notifications CASCADE;
 DROP TABLE IF EXISTS permit_status_history CASCADE;
 DROP TABLE IF EXISTS permit_applications CASCADE;
 DROP TABLE IF EXISTS audit_logs CASCADE;
+DROP TABLE IF EXISTS ip_rate_limits CASCADE;
 DROP TABLE IF EXISTS rate_limits CASCADE;
 DROP TABLE IF EXISTS chat_messages CASCADE;
 DROP TABLE IF EXISTS chat_sessions CASCADE;
@@ -48,7 +49,8 @@ BEGIN
       'cleanup_expired_rate_limits', 'run_all_cleanup',
       'search_semantic_cache', 'insert_semantic_cache', 'cleanup_semantic_cache',
       'get_parent_chunks',
-      'get_all_documents', 'upsert_document', 'delete_document'
+      'get_all_documents', 'upsert_document', 'delete_document',
+      'check_ip_rate_limit'
     )
     AND pg_function_is_visible(oid)
   LOOP
@@ -82,6 +84,7 @@ CREATE TABLE users (
   verification_code TEXT,
   reset_code TEXT,
   code_expires_at TIMESTAMPTZ,
+  reset_code_expires_at TIMESTAMPTZ,
   role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
   blocked BOOLEAN DEFAULT FALSE,
   blocked_reason TEXT,
@@ -1885,6 +1888,65 @@ END $$;
 
 -- ============================================================================
 -- VERIFICATION
+-- ============================================================================
+
+-- ============================================================================
+-- IP Rate Limits (pre-login brute-force protection)
+-- ============================================================================
+
+CREATE TABLE ip_rate_limits (
+  id BIGSERIAL PRIMARY KEY,
+  ip_address TEXT NOT NULL,
+  request_timestamp TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX ip_rate_limits_ip_time_idx
+  ON ip_rate_limits(ip_address, request_timestamp DESC);
+
+ALTER TABLE ip_rate_limits ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role full access to ip_rate_limits" ON ip_rate_limits
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+GRANT ALL ON ip_rate_limits TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE ip_rate_limits_id_seq TO service_role;
+
+CREATE OR REPLACE FUNCTION check_ip_rate_limit(
+  p_ip TEXT,
+  p_window_seconds INT DEFAULT 60,
+  p_max_requests INT DEFAULT 10
+)
+RETURNS TABLE(allowed BOOLEAN, request_count INT)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  v_window_start TIMESTAMPTZ;
+  v_request_count BIGINT;
+BEGIN
+  v_window_start := NOW() - (p_window_seconds || ' seconds')::INTERVAL;
+
+  SELECT COUNT(*)
+  INTO v_request_count
+  FROM ip_rate_limits
+  WHERE ip_address = p_ip AND request_timestamp > v_window_start;
+
+  IF v_request_count >= p_max_requests THEN
+    RETURN QUERY SELECT FALSE, v_request_count::INT;
+    RETURN;
+  END IF;
+
+  -- Allowed — record request and cleanup old entries
+  INSERT INTO ip_rate_limits (ip_address, request_timestamp) VALUES (p_ip, NOW());
+  DELETE FROM ip_rate_limits
+    WHERE ip_address = p_ip AND request_timestamp < NOW() - INTERVAL '1 hour';
+
+  RETURN QUERY SELECT TRUE, (v_request_count + 1)::INT;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION check_ip_rate_limit(TEXT, INT, INT) FROM public, anon;
+GRANT EXECUTE ON FUNCTION check_ip_rate_limit(TEXT, INT, INT) TO service_role;
+
 -- ============================================================================
 
 SELECT

@@ -187,11 +187,7 @@ Matcher excludes: `api`, `_next/static`, `_next/image`, static assets (svg/png/j
 
 ### Database
 
-Schema in two migrations (run in order):
-- `supabase/migrations/000_full_setup.sql` — main schema, drops and recreates everything
-- `supabase/migrations/001_split_code_expires.sql` — adds `reset_code_expires_at` column to `users`
-
-All tables use Row-Level Security (RLS). Service role bypasses RLS.
+Schema in `supabase/migrations/000_full_setup.sql` (single idempotent migration — drops and recreates everything). All tables use Row-Level Security (RLS). Service role bypasses RLS.
 
 **Key tables:**
 - `dubai_code_chunks` — child chunks with VECTOR(768) embeddings + TSVECTOR (GIN index) for FTS, `parent_id` FK

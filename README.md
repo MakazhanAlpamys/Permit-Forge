@@ -227,11 +227,9 @@ LOG_LEVEL=info                           # debug | info | warn | error
 ### 3. Set Up Database
 
 1. Create a project in [Supabase Dashboard](https://supabase.com/dashboard)
-2. Open **SQL Editor** and run the migrations in order:
-   - `supabase/migrations/000_full_setup.sql` — main schema (tables, RPC functions, indexes, RLS, seeds admin user)
-   - `supabase/migrations/001_split_code_expires.sql` — adds `reset_code_expires_at` column to `users` table
+2. Open **SQL Editor** and run `supabase/migrations/000_full_setup.sql`
 
-The first script is idempotent and drops/recreates the entire schema: **15 tables**, **29+ RPC functions**, HNSW vector indexes, GIN full-text search, and RLS policies.
+This single idempotent script drops and recreates the entire schema: **15 tables**, **30+ RPC functions**, HNSW vector indexes, GIN full-text search, and RLS policies. Seeds an admin user.
 
 Default admin credentials: `admin` / `Admin123!`
 
