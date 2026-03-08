@@ -13,6 +13,10 @@ export const metadata: Metadata = {
   description: "AI-powered compliance checking for building codes. Get instant answers about parking requirements, fire safety, building heights, and more.",
   keywords: ["building code", "compliance", "parking requirements", "construction permits", "regulations"],
   authors: [{ name: "PermitForge" }],
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+  },
   openGraph: {
     title: "PermitForge - Building Code Compliance Assistant",
     description: "AI-powered compliance checking for building codes",
