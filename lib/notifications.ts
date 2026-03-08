@@ -3,6 +3,8 @@
 // ============================================================================
 
 import { createAdminClient } from './supabase-server';
+
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'PermitForge <onboarding@resend.dev>';
 import type { NotificationType } from '@/types';
 
 interface CreateNotificationParams {
@@ -56,7 +58,7 @@ export async function createNotification(params: CreateNotificationParams): Prom
           const resend = new Resend(process.env.RESEND_API_KEY);
 
           await resend.emails.send({
-            from: 'PermitForge <noreply@permitforge.com>',
+            from: FROM_EMAIL,
             to: user.email,
             subject: title,
             html: getEmailHtml(type, title, body, data),

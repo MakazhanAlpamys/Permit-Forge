@@ -103,7 +103,7 @@ describe('sendVerificationEmail', () => {
       expect.objectContaining({
         to: 'user@test.com',
         subject: 'Verify your email — PermitForge',
-        from: 'PermitForge <noreply@permitforge.com>',
+        from: 'PermitForge <onboarding@resend.dev>',
       })
     );
   });
@@ -206,7 +206,7 @@ describe('sendPasswordChangeCodeEmail', () => {
       expect.objectContaining({
         to: 'user@test.com',
         subject: 'Password Change Code — PermitForge',
-        from: 'PermitForge <noreply@permitforge.com>',
+        from: 'PermitForge <onboarding@resend.dev>',
       })
     );
   });

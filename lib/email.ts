@@ -4,6 +4,10 @@
 
 import crypto from 'crypto';
 
+// Resend free tier only allows sending from onboarding@resend.dev
+// To use a custom domain, verify it in https://resend.com/domains
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'PermitForge <onboarding@resend.dev>';
+
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, '&amp;')
@@ -55,7 +59,7 @@ export async function sendVerificationEmail(email: string, code: string): Promis
     const resend = new Resend(process.env.RESEND_API_KEY);
 
     await resend.emails.send({
-      from: 'PermitForge <noreply@permitforge.com>',
+      from: FROM_EMAIL,
       to: email,
       subject: 'Verify your email — PermitForge',
       html: codeEmailHtml(
@@ -66,7 +70,7 @@ export async function sendVerificationEmail(email: string, code: string): Promis
     });
     return true;
   } catch (error) {
-    console.error('Failed to send verification email:', error);
+    console.error('Failed to send verification email:', error instanceof Error ? error.message : error);
     return false;
   }
 }
@@ -82,7 +86,7 @@ export async function sendPasswordResetEmail(email: string, code: string): Promi
     const resend = new Resend(process.env.RESEND_API_KEY);
 
     await resend.emails.send({
-      from: 'PermitForge <noreply@permitforge.com>',
+      from: FROM_EMAIL,
       to: email,
       subject: 'Password Reset — PermitForge',
       html: codeEmailHtml(
@@ -93,7 +97,7 @@ export async function sendPasswordResetEmail(email: string, code: string): Promi
     });
     return true;
   } catch (error) {
-    console.error('Failed to send password reset email:', error);
+    console.error('Failed to send password reset email:', error instanceof Error ? error.message : error);
     return false;
   }
 }
@@ -109,7 +113,7 @@ export async function sendPasswordChangeCodeEmail(email: string, code: string): 
     const resend = new Resend(process.env.RESEND_API_KEY);
 
     await resend.emails.send({
-      from: 'PermitForge <noreply@permitforge.com>',
+      from: FROM_EMAIL,
       to: email,
       subject: 'Password Change Code — PermitForge',
       html: codeEmailHtml(
@@ -120,7 +124,7 @@ export async function sendPasswordChangeCodeEmail(email: string, code: string): 
     });
     return true;
   } catch (error) {
-    console.error('Failed to send password change email:', error);
+    console.error('Failed to send password change email:', error instanceof Error ? error.message : error);
     return false;
   }
 }
