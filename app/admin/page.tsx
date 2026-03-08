@@ -26,8 +26,10 @@ import {
 import { getAdminPermits, getPermitStats } from '@/actions/admin-permits';
 import { logoutAction, getCSRFTokenAction } from '@/actions/auth';
 import { adminChangePasswordAction } from '@/actions/profile';
+import Image from 'next/image';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useTheme } from '@/components/theme-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
 import {
   UserManagement,
@@ -61,6 +63,7 @@ import type { PermitApplication, PermitStats } from '@/types';
 type Tab = 'overview' | 'users' | 'permits' | 'documents' | 'logs';
 
 export default function AdminPage() {
+  const { theme } = useTheme();
   // Tab state
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   
@@ -198,10 +201,16 @@ export default function AdminPage() {
         <div className="container mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
+              <Image
+                src={theme === 'dark' ? '/white-icon.svg' : '/black-icon.svg'}
+                alt="PermitForge"
+                width={48}
+                height={48}
+                className="h-10 w-auto"
+              />
               <Badge variant="outline" className="text-orange-500 border-orange-500">
                 Admin Panel
               </Badge>
-              <h1 className="text-lg font-semibold hidden sm:block">PermitForge</h1>
             </div>
             <div className="flex items-center gap-2">
               <Button

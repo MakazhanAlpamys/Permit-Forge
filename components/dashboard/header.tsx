@@ -5,6 +5,7 @@
 // ============================================================================
 
 import Image from 'next/image';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { logoutAction } from '@/actions/auth';
 import { useTheme } from '@/components/theme-provider';
@@ -36,16 +37,16 @@ export function Header({ onMenuClick }: HeaderProps) {
           <span className="sr-only">Toggle menu</span>
         </Button>
 
-        {/* Logo */}
-        <div className="flex items-center gap-2">
-          <Image 
-            src={theme === 'dark' ? '/white-icon.svg' : '/black-icon.svg'} 
+        {/* Logo — click to go home */}
+        <Link href="/" className="flex items-center gap-2">
+          <Image
+            src={theme === 'dark' ? '/white-icon.svg' : '/black-icon.svg'}
             alt="PermitForge"
-            width={48} 
+            width={48}
             height={48}
             className="h-12 w-auto"
           />
-        </div>
+        </Link>
 
         {/* Spacer */}
         <div className="flex-1" />

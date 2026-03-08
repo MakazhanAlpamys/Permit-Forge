@@ -6,7 +6,9 @@ import crypto from 'crypto';
 
 // Resend free tier only allows sending from onboarding@resend.dev
 // To use a custom domain, verify it in https://resend.com/domains
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'PermitForge <onboarding@resend.dev>';
+function getFromEmail(): string {
+  return process.env.RESEND_FROM_EMAIL || 'PermitForge <onboarding@resend.dev>';
+}
 
 function escapeHtml(str: string): string {
   return str
@@ -59,7 +61,7 @@ export async function sendVerificationEmail(email: string, code: string): Promis
     const resend = new Resend(process.env.RESEND_API_KEY);
 
     await resend.emails.send({
-      from: FROM_EMAIL,
+      from: getFromEmail(),
       to: email,
       subject: 'Verify your email — PermitForge',
       html: codeEmailHtml(
@@ -86,7 +88,7 @@ export async function sendPasswordResetEmail(email: string, code: string): Promi
     const resend = new Resend(process.env.RESEND_API_KEY);
 
     await resend.emails.send({
-      from: FROM_EMAIL,
+      from: getFromEmail(),
       to: email,
       subject: 'Password Reset — PermitForge',
       html: codeEmailHtml(
@@ -113,7 +115,7 @@ export async function sendPasswordChangeCodeEmail(email: string, code: string): 
     const resend = new Resend(process.env.RESEND_API_KEY);
 
     await resend.emails.send({
-      from: FROM_EMAIL,
+      from: getFromEmail(),
       to: email,
       subject: 'Password Change Code — PermitForge',
       html: codeEmailHtml(
