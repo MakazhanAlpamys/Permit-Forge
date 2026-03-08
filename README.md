@@ -15,7 +15,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![Tailwind](https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Zod](https://img.shields.io/badge/Zod-4-3E67B1?style=flat-square&logo=zod&logoColor=white)](https://zod.dev/)
-[![Tests](https://img.shields.io/badge/Tests-156_passing-22c55e?style=flat-square)](./test)
+[![Tests](https://img.shields.io/badge/Tests-566_passing-22c55e?style=flat-square)](./test)
 [![License](https://img.shields.io/badge/License-MIT-eab308?style=flat-square)](./LICENSE)
 
 <br />
@@ -265,7 +265,7 @@ graph TB
     end
 
     subgraph Server["SERVER ACTIONS & API ROUTES"]
-        SA["Server Actions (10 files)<br/>auth · admin · permits · documents<br/>chat-history · notifications · analytics · ingest-pdf"]
+        SA["Server Actions (11 files)<br/>auth · profile · admin · permits · documents<br/>chat-history · notifications · analytics · ingest-pdf"]
         API["API Routes<br/>/api/chat/stream · /api/ingest<br/>/api/permits/certificate · /api/health"]
     end
 
@@ -562,6 +562,16 @@ data: {"stage":"complete","progress":100,"total":100,"done":true,"chunksProcesse
 |--------|------|-------------|
 | `loginAction()` | `actions/auth.ts` | Authenticate user, set JWT + CSRF cookies |
 | `logoutAction()` | `actions/auth.ts` | Destroy session cookies, audit log |
+| `getCSRFTokenAction()` | `actions/auth.ts` | Get current CSRF token |
+| `registerAction()` | `actions/auth.ts` | Self-registration with email verification |
+| `verifyEmailAction()` | `actions/auth.ts` | Verify email with 6-digit code |
+| `forgotPasswordAction()` | `actions/auth.ts` | Send password reset code to email |
+| `resetPasswordAction()` | `actions/auth.ts` | Reset password with code verification |
+| `getProfileAction()` | `actions/profile.ts` | Get user profile data |
+| `updateProfileAction()` | `actions/profile.ts` | Update username, full name |
+| `requestPasswordChangeCodeAction()` | `actions/profile.ts` | Send password change code to email |
+| `confirmPasswordChangeAction()` | `actions/profile.ts` | Confirm password change with code |
+| `adminChangePasswordAction()` | `actions/profile.ts` | Admin direct password change (no code) |
 | `createChatSession()` | `actions/chat-history.ts` | Create a new chat session |
 | `getChatSessions()` | `actions/chat-history.ts` | List user's sessions |
 | `getSessionMessages()` | `actions/chat-history.ts` | Fetch messages with citations |
@@ -665,7 +675,7 @@ Generated for approved permits via `GET /api/permits/[id]/certificate`:
 
 ## Testing
 
-**156 tests** across **11 test suites** with comprehensive coverage of all critical systems.
+**566 tests** across **25 test suites** with comprehensive coverage of all critical systems.
 
 ```bash
 npm test              # Run all tests (watch mode)
@@ -676,21 +686,37 @@ npm run test:ui       # Vitest UI dashboard
 Single file: `npx vitest run test/auth.test.ts`
 Pattern match: `npx vitest run -t "pattern"`
 
+> **Note:** On Windows, use `--pool forks` for reliability.
+
 | Suite | File | Tests | Covers |
 |-------|------|:-----:|--------|
 | **Auth** | `test/auth.test.ts` | 8 | JWT create/verify, CSRF tokens, password hashing |
+| **Auth Actions** | `test/auth-actions.test.ts` | 21 | Login, register, verify email, forgot/reset password |
+| **Profile Actions** | `test/profile-actions.test.ts` | 25 | Profile CRUD, email-code-based password change |
 | **Agents** | `test/agents.test.ts` | 20 | Topic classification, query structure, tree reasoning |
+| **Admin** | `test/admin.test.ts` | 21 | User creation, password rules, admin operations |
+| **Admin Actions** | `test/admin-actions.test.ts` | 45 | 7 admin functions: create, block, delete, reset |
+| **Admin Permits** | `test/admin-permits-actions.test.ts` | 31 | Permit review and approval workflow |
+| **Analytics** | `test/analytics-actions.test.ts` | 21 | 5 stats endpoints: dashboard, activity, usage |
 | **API Chat Stream** | `test/api-chat-stream.test.ts` | 9 | Auth (401), rate limit (429), validation (400), CSRF, streaming (200) |
+| **API Routes** | `test/api-routes.test.ts` | 10 | Health, chat export, permit certificate endpoints |
+| **Chat History** | `test/chat-history.test.ts` | 30 | Session CRUD, message loading, search |
 | **Chat Pipeline** | `test/chat-pipeline.test.ts` | 7 | RAG pipeline, semantic cache, CRAG, citation generation |
-| **Citations** | `test/citation-parser.test.ts` | 19 | Chunk-based citations, confidence scoring, stats |
+| **Citations** | `test/citation-parser.test.ts` | 14 | Chunk-based citations, confidence scoring, stats |
+| **Documents** | `test/documents-actions.test.ts` | 26 | Document registry CRUD, PDF upload |
+| **Email** | `test/email.test.ts` | 18 | Resend service, code generation, HTML templates |
+| **Lib Modules** | `test/lib-modules.test.ts` | 42 | Security guards, file-upload, reranker, scope-detector |
+| **Notifications** | `test/notifications-actions.test.ts` | 13 | Read/mark notifications |
+| **Permit Attachments** | `test/permit-attachments.test.ts` | 19 | File upload/delete |
 | **Permit Compliance** | `test/permit-compliance.test.ts` | 6 | AI compliance check, error fallback, malformed JSON handling |
 | **Permit Actions** | `test/permits-actions.test.ts` | 18 | Create, submit, list, get, delete permits |
-| **RAG** | `test/rag.test.ts` | 7 | Hybrid search with pre-computed embeddings, document filter |
+| **Permits Extended** | `test/permits-actions-extended.test.ts` | 28 | Building details, compliance, revise & resubmit |
+| **RAG** | `test/rag.test.ts` | 8 | Hybrid search with pre-computed embeddings, document filter |
 | **Tree Reasoning** | `test/tree-reasoning.test.ts` | 28 | Query structure classification, keyword scoring, page ranges |
 | **Validations** | `test/validations.test.ts` | 17 | Zod schemas, sanitization, edge cases |
-| **Admin** | `test/admin.test.ts` | 20 | User creation, password rules, admin operations |
+| **Validations New** | `test/validations-new.test.ts` | 81 | 10 additional Zod schemas for all input types |
 
-Test setup (`test/setup.ts`) mocks Supabase clients, Next.js headers/cookies, and 11 environment variables.
+Test setup (`test/setup.ts`) mocks Supabase clients, Next.js headers/cookies, and 6 environment variables.
 
 <br />
 
@@ -700,8 +726,9 @@ Test setup (`test/setup.ts`) mocks Supabase clients, Next.js headers/cookies, an
 
 ```
 PermitForge/
-├── actions/                           # Server Actions (10 files)
-│   ├── auth.ts                        #   Login / Logout with audit logging
+├── actions/                           # Server Actions (11 files)
+│   ├── auth.ts                        #   Login, logout, register, verify email, forgot/reset password
+│   ├── profile.ts                     #   Profile CRUD, password change via email code
 │   ├── admin.ts                       #   User CRUD, stats, audit logs
 │   ├── admin-permits.ts               #   Permit review & approval workflow
 │   ├── permits.ts                     #   Permit CRUD, submit, compliance check
@@ -717,6 +744,10 @@ PermitForge/
 │   ├── page.tsx                       #   Main chat dashboard
 │   ├── globals.css                    #   Global styles
 │   ├── login/page.tsx                 #   Login page
+│   ├── register/page.tsx              #   Self-registration page
+│   ├── verify-email/page.tsx          #   Email verification (6-digit code)
+│   ├── forgot-password/page.tsx       #   Multi-step password reset
+│   ├── profile/page.tsx               #   Profile management
 │   ├── admin/page.tsx                 #   Admin panel (5 tabs)
 │   ├── not-found.tsx                  #   Custom 404 page
 │   ├── permits/
@@ -734,16 +765,19 @@ PermitForge/
 │   ├── theme-provider.tsx             #   Dark/light theme context
 │   ├── theme-toggle.tsx               #   Theme switcher
 │   ├── chat/                          #   ChatInterface, MessageBubble, SourceCitation
-│   ├── admin/                         #   UserManagement, DocumentManagement, PermitManagement,
-│   │                                  #   AuditLogs, StatsCards, Charts (6 chart components)
+│   ├── admin/                         #   UserManagement, CreateUserDialog, DocumentManagement,
+│   │                                  #   PdfIngestionTab, PermitManagement, AuditLogs,
+│   │                                  #   EnhancedStatsCards, Charts (3 chart components),
+│   │                                  #   TopUsersTable
 │   ├── dashboard/                     #   Header, Sidebar
+│   ├── login/                         #   DitheringBackground
 │   ├── notifications/                 #   NotificationBell
 │   ├── permits/                       #   FormStep1-3, Stepper, PermitCard, PermitList,
-│   │                                  #   PermitDetail, CompliancePanel, FileUpload,
+│   │                                  #   PermitDetail, CompliancePanel, FileUploadZone,
 │   │                                  #   StatusBadge, StatusTimeline, AttachmentList
-│   └── ui/                            #   shadcn/ui primitives (20+ components)
+│   └── ui/                            #   shadcn/ui primitives (9 components)
 │
-├── lib/                               # Core Business Logic (22 modules)
+├── lib/                               # Core Business Logic (27 modules)
 │   ├── chat-pipeline.ts               #   RAG orchestration + feature flags
 │   ├── rag.ts                         #   Hybrid search, CRAG check, parent expansion
 │   ├── agents.ts                      #   Topic classifier + Tree Reasoner
@@ -757,6 +791,7 @@ PermitForge/
 │   ├── auth.ts                        #   JWT, sessions, passwords, CSRF
 │   ├── security.ts                    #   requireAuth / requireAdmin guards
 │   ├── gemini.ts                      #   Gemini + LangChain configuration
+│   ├── email.ts                       #   Email via Resend: verification, reset, password change
 │   ├── pdf-parser.ts                  #   PDF.js text & TOC extraction
 │   ├── pdf-ingestion.ts               #   Parent-child chunking, embedding, tree building
 │   ├── tree-cache.ts                  #   Two-tier document tree cache
@@ -764,6 +799,7 @@ PermitForge/
 │   ├── permit-certificate.ts          #   PDF certificate via PDFKit
 │   ├── notifications.ts               #   In-app + email (Resend) notifications
 │   ├── file-upload.ts                 #   File validation, storage path generation
+│   ├── transforms.ts                  #   Shared data transforms (permit row → TS object)
 │   ├── supabase-server.ts             #   Supabase client factory (anon + admin)
 │   ├── validations.ts                 #   Zod v4 schemas for all inputs
 │   ├── constants.ts                   #   App-wide constants & configuration
@@ -771,7 +807,7 @@ PermitForge/
 │   └── utils.ts                       #   Utilities (cn, etc.)
 │
 ├── types/index.ts                     # Shared TypeScript definitions
-├── test/                              # Vitest test suites (11 files, 156 tests)
+├── test/                              # Vitest test suites (25 files, 566 tests)
 ├── supabase/migrations/               # Database schema (single 000_full_setup.sql)
 ├── middleware.ts                       # Edge auth + block check + security headers
 └── public/                            # Static assets
@@ -787,6 +823,10 @@ PermitForge/
 |-------|--------|---------|
 | `/` | User | Main dashboard — chat interface + sidebar with session history |
 | `/login` | Public | Login page (redirects logged-in users by role) |
+| `/register` | Public | Self-registration with email verification |
+| `/verify-email` | Public | 6-digit code entry to verify email after registration |
+| `/forgot-password` | Public | Multi-step password reset (email → code → new password) |
+| `/profile` | User | Profile management — edit username/name, email-code-based password change |
 | `/permits` | User | Permit application list |
 | `/permits/new` | User | Multi-step permit creation (3 steps: project → building → compliance) |
 | `/permits/[id]` | User | Permit detail view with status timeline, attachments, compliance results |

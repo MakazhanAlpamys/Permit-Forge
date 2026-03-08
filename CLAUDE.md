@@ -169,6 +169,7 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/logger.ts` | Centralized logging with `LOG_LEVEL` env var support |
 | `lib/file-upload.ts` | File validation (size, extension, MIME), storage path generation |
 | `lib/email.ts` | Email sending via Resend: verification, password reset, password change codes; `generateSixDigitCode()` |
+| `lib/transforms.ts` | Shared data transforms: permit DB row → TypeScript object |
 | `lib/notifications.ts` | In-app + email (Resend API) notifications, failure-silent |
 
 ### Middleware (`middleware.ts`)
@@ -209,8 +210,9 @@ Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — 
 - `components/ui/` — shadcn/ui primitives (button, card, input, dialog, badge, etc.)
 - `components/chat/` — ChatInterface, MessageBubble, SourceCitation
 - `components/dashboard/` — Header, Sidebar
+- `components/login/` — DitheringBackground (shader-based animated background)
 - `components/permits/` — Multi-step form (3 steps), permit list/card/detail, compliance panel, file upload, status timeline
-- `components/admin/` — User management, audit logs, document management (CRUD + ingestion), permit management, analytics charts (recharts)
+- `components/admin/` — UserManagement, CreateUserDialog, DocumentManagement, PdfIngestionTab, PermitManagement, AuditLogs, EnhancedStatsCards, Charts (message activity, document usage, permit status), TopUsersTable
 - `components/notifications/` — NotificationBell
 
 ### Types
@@ -221,9 +223,7 @@ Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — 
 
 25 test suites in `test/` (566 tests). Run with `--pool forks` on Windows for reliability.
 
-**Existing suites:** auth, validations, citation-parser, admin, agents, tree-reasoning, rag, chat-pipeline, api-chat-stream, permit-compliance, permits-actions.
-
-**New suites:** validations-new (10 schemas), auth-actions (login/register/verify/reset), profile-actions (profile CRUD, password change), email (Resend service + code generation), admin-actions (7 admin functions), admin-permits-actions (review workflow), permits-actions-extended (building details, compliance, revise), permit-attachments (file upload/delete), chat-history (session CRUD, search), documents-actions (registry CRUD + PDF upload), analytics-actions (5 stats endpoints), notifications-actions (read/mark), api-routes (health, export, certificate), lib-modules (security, file-upload, reranker, scope-detector).
+**Suites:** auth, auth-actions (login/register/verify/reset), profile-actions (profile CRUD, password change), validations, validations-new (10 schemas), citation-parser, admin, admin-actions (7 admin functions), admin-permits-actions (review workflow), agents, tree-reasoning, rag, chat-pipeline, api-chat-stream, api-routes (health, export, certificate), permit-compliance, permits-actions, permits-actions-extended (building details, compliance, revise), permit-attachments (file upload/delete), chat-history (session CRUD, search), documents-actions (registry CRUD + PDF upload), analytics-actions (5 stats endpoints), email (Resend service + code generation), notifications-actions (read/mark), lib-modules (security, file-upload, reranker, scope-detector).
 
 Test setup (`test/setup.ts`) mocks:
 - `@/lib/supabase-server` — both `createServerClient` and `createAdminClient` with chainable query builder
