@@ -110,9 +110,9 @@
 - **JWT** (HS256, 7-day expiry) with HttpOnly cookies
 - **bcrypt** (12 rounds) password hashing
 - **Timing-safe CSRF** token validation
-- **Rate limiting** — in-memory (login) + database-backed (API, 10 req/min)
+- **Rate limiting** — database-backed for all endpoints (API: per-user 10 req/min via `rate_limits` table; login: per-IP via `ip_rate_limits` table)
 - **Zod v4** schema validation on all inputs
-- **XSS protection** via isomorphic-dompurify
+- **Output escaping** — HTML-escaped user data in email templates
 - **RLS** — PostgreSQL Row-Level Security on all 15 tables
 - **Real-time block check** in Edge middleware (5-min cache)
 - Security headers: `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`
@@ -227,9 +227,11 @@ LOG_LEVEL=info                           # debug | info | warn | error
 ### 3. Set Up Database
 
 1. Create a project in [Supabase Dashboard](https://supabase.com/dashboard)
-2. Open **SQL Editor** and run `supabase/migrations/000_full_setup.sql`
+2. Open **SQL Editor** and run the migrations in order:
+   - `supabase/migrations/000_full_setup.sql` — main schema (tables, RPC functions, indexes, RLS, seeds admin user)
+   - `supabase/migrations/001_split_code_expires.sql` — adds `reset_code_expires_at` column to `users` table
 
-This single idempotent script drops and recreates the entire schema: **15 tables**, **29+ RPC functions**, HNSW vector indexes, GIN full-text search, and RLS policies. Seeds an admin user.
+The first script is idempotent and drops/recreates the entire schema: **15 tables**, **29+ RPC functions**, HNSW vector indexes, GIN full-text search, and RLS policies.
 
 Default admin credentials: `admin` / `Admin123!`
 
@@ -874,7 +876,6 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 | **Database** | [Supabase](https://supabase.com/) (PostgreSQL + [pgvector](https://github.com/pgvector/pgvector) HNSW + pg_trgm) | — |
 | **Auth** | [jose](https://github.com/panva/jose) (JWT HS256) + [bcryptjs](https://github.com/dcodeIO/bcrypt.js) (12 rounds) | — |
 | **Validation** | [Zod](https://zod.dev/) | 4 |
-| **XSS** | [isomorphic-dompurify](https://github.com/kkomelin/isomorphic-dompurify) | — |
 | **PDF Parse** | [PDF.js](https://mozilla.github.io/pdf.js/) (pdfjs-dist) | — |
 | **PDF Generate** | [PDFKit](https://pdfkit.org/) (permit certificates) | 0.17 |
 | **Email** | [Nodemailer](https://nodemailer.com/) (SMTP, optional) | — |

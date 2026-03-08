@@ -165,7 +165,7 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/auth.ts` | JWT create/verify, bcrypt, CSRF, audit logging, session management |
 | `lib/security.ts` | `requireAuth`/`requireAdmin` middleware guards for server actions |
 | `lib/validations.ts` | Zod v4 schemas for all inputs (passwords, chat messages, citations, JWT payloads) |
-| `lib/supabase-server.ts` | Two clients: `createServerClient()` (anon) and `createAdminClient()` (service_role, bypasses RLS) |
+| `lib/supabase-server.ts` | Two clients: `createServerClient()` (anon) and `createAdminClient()` (service_role, bypasses RLS, singleton pattern) |
 | `lib/logger.ts` | Centralized logging with `LOG_LEVEL` env var support |
 | `lib/file-upload.ts` | File validation (size, extension, MIME), storage path generation |
 | `lib/email.ts` | Email sending via Nodemailer SMTP: verification, password reset, password change codes; `generateSixDigitCode()` |
@@ -187,7 +187,11 @@ Matcher excludes: `api`, `_next/static`, `_next/image`, static assets (svg/png/j
 
 ### Database
 
-Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — drops and recreates everything). All tables use Row-Level Security (RLS). Service role bypasses RLS.
+Schema in two migrations (run in order):
+- `supabase/migrations/000_full_setup.sql` — main schema, drops and recreates everything
+- `supabase/migrations/001_split_code_expires.sql` — adds `reset_code_expires_at` column to `users`
+
+All tables use Row-Level Security (RLS). Service role bypasses RLS.
 
 **Key tables:**
 - `dubai_code_chunks` — child chunks with VECTOR(768) embeddings + TSVECTOR (GIN index) for FTS, `parent_id` FK
@@ -196,7 +200,7 @@ Schema in `supabase/migrations/000_full_setup.sql` (single merged migration — 
 - `document_registry` — dynamic document metadata, keywords, categories, `storage_path` (Supabase Storage), soft-delete
 - `document_trees` — hierarchical document structure (JSONB tree_data)
 - `chat_sessions` / `chat_messages` — conversation history with citations (JSONB)
-- `users` — accounts with role (admin/user), block status, blocked_reason, email verification (`email`, `email_verified`, `verification_code`, `reset_code`, `code_expires_at`)
+- `users` — accounts with role (admin/user), block status, blocked_reason, email verification (`email`, `email_verified`, `verification_code`, `code_expires_at`, `reset_code`, `reset_code_expires_at`)
 - `audit_logs` — 12 event types, tracks IP + user agent
 - `rate_limits` — per-user per-endpoint request throttling
 - `notifications` — in-app notification storage
