@@ -47,7 +47,7 @@ export default function LoginPage() {
 
       {/* Theme Toggle - Top Right */}
       <div className="absolute top-4 right-4 z-20">
-        <ThemeToggle />
+        <ThemeToggle className="bg-accent text-accent-foreground" />
       </div>
 
       <Card className="w-full max-w-md relative z-10">
