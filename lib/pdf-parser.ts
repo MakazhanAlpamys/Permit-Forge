@@ -5,8 +5,9 @@
 // Use legacy build for Node.js environment (no DOM required)
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
-// Disable worker for serverless environments (Vercel Lambda, etc.)
-pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+// Disable real worker for serverless environments (Vercel Lambda, etc.)
+// Must be non-empty so pdfjs-dist accepts it and falls back to inline (fake) worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'disabled';
 import type { 
   TOCEntry, 
   DocumentStructure, 
