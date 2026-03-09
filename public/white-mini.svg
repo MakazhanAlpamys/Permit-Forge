@@ -1,25 +1,31 @@
 <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Geist:wght@700&amp;display=swap');
+    </style>
+  </defs>
+  
   <rect width="400" height="400" fill="none"/>
   
   <g id="monogram" transform="translate(200, 200)">
     <text x="-30" y="20" 
           text-anchor="middle"
           dominant-baseline="middle"
-          font-family="'SF Mono', 'Roboto Mono', 'Courier New', monospace" 
+          font-family="'Geist', sans-serif" 
           font-size="180" 
           font-weight="700" 
           fill="#ffffff"
           letter-spacing="0">P</text>
     
-    <circle cx="60" cy="-35" r="32" 
+    <circle cx="60" cy="-55" r="32" 
             fill="none" 
             stroke="#ffffff" 
             stroke-width="5"/>
     
-    <text x="60" y="-35" 
+    <text x="60" y="-55" 
           text-anchor="middle"
           dominant-baseline="central"
-          font-family="'SF Mono', 'Roboto Mono', 'Courier New', monospace" 
+          font-family="'Geist', sans-serif" 
           font-size="60" 
           font-weight="700" 
           fill="#ffffff"
