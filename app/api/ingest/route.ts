@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
 
   // Parse request body for document info
   let documentId: string;
-  let pdfBuffer: Buffer | undefined;
+  let pdfBuffer: Uint8Array | undefined;
   let pdfPath: string | undefined;
 
   try {
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      pdfBuffer = Buffer.from(await blob.arrayBuffer());
+      pdfBuffer = new Uint8Array(await blob.arrayBuffer());
     } else {
       // Fallback: read from public/ folder (local dev)
       const rawName = dbDoc.file_name as string;

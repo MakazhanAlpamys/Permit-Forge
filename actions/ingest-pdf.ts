@@ -57,7 +57,7 @@ export async function ingestPDF(
   }
 
   // Determine PDF source: Supabase Storage or local file
-  let pdfBuffer: Buffer | undefined;
+  let pdfBuffer: Uint8Array | undefined;
   let pdfPath: string | undefined;
 
   if (dbDoc.storage_path) {
@@ -74,7 +74,7 @@ export async function ingestPDF(
       };
     }
 
-    pdfBuffer = Buffer.from(await blob.arrayBuffer());
+    pdfBuffer = new Uint8Array(await blob.arrayBuffer());
   } else {
     // Fallback: read from public/ folder (local dev)
     const rawName = dbDoc.file_name as string;
