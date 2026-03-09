@@ -255,6 +255,12 @@ export async function deleteDocument(
           .from(DOCUMENT_PDF_LIMITS.storageBucket)
           .remove([docRow.storage_path]);
       }
+
+      // Hard delete the registry entry so it fully disappears
+      await supabase
+        .from('document_registry')
+        .delete()
+        .eq('id', documentId);
     }
 
     invalidateRegistryCache();
