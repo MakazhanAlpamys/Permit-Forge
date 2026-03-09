@@ -23,7 +23,7 @@ Pattern match: `npx vitest run -t "pattern"`
 
 ## Tech Stack
 
-- **Frontend:** Next.js 15 (App Router), React 18, TypeScript, Tailwind CSS 4, shadcn/ui
+- **Frontend:** Next.js 15 (App Router), React 18, TypeScript, Tailwind CSS 4, shadcn/ui, Framer Motion (splash screen animations)
 - **AI:** Google Gemini 2.5 Flash via LangChain 0.3 (chat), gemini-embedding-001 via @google/genai SDK (embeddings, 768-dim vectors)
 - **Database:** Supabase (PostgreSQL) with pgvector (HNSW) + pg_trgm extensions, 30+ RPC functions
 - **Auth:** JWT (HS256, jose), bcrypt (12 rounds), CSRF tokens, HttpOnly cookies
@@ -38,7 +38,7 @@ Pattern match: `npx vitest run -t "pattern"`
 | Route | Access | Purpose |
 |-------|--------|---------|
 | `/` | User | Main dashboard — chat interface + sidebar with session history |
-| `/login` | Public | Login page (redirects logged-in users by role) |
+| `/login` | Public | Login page with splash screen animation (redirects logged-in users by role) |
 | `/register` | Public | Self-registration with email verification |
 | `/verify-email` | Public | 6-digit code entry to verify email after registration |
 | `/forgot-password` | Public | Multi-step password reset (email → code → new password) |
@@ -210,6 +210,7 @@ Schema in `supabase/migrations/000_full_setup.sql` (single idempotent migration 
 - `components/ui/` — shadcn/ui primitives (button, card, input, dialog, badge, etc.)
 - `components/chat/` — ChatInterface, MessageBubble, SourceCitation
 - `components/dashboard/` — Header, Sidebar
+- `components/splash-screen.tsx` — "Diamond Forge" splash screen for `/login` (SVG stroke draw → fill → clip-path text reveal → seamless fade to login)
 - `components/login/` — DitheringBackground (shader-based animated background)
 - `components/permits/` — Multi-step form (3 steps), permit list/card/detail, compliance panel, file upload, status timeline
 - `components/admin/` — UserManagement, CreateUserDialog, DocumentManagement, PdfIngestionTab, PermitManagement, AuditLogs, EnhancedStatsCards, Charts (message activity, document usage, permit status), TopUsersTable

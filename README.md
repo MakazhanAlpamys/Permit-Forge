@@ -878,6 +878,7 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 | **PDF Generate** | [PDFKit](https://pdfkit.org/) (permit certificates) | 0.17 |
 | **Email** | [Nodemailer](https://nodemailer.com/) (SMTP, optional) | — |
 | **Charts** | [Recharts](https://recharts.org/) (admin analytics) | — |
+| **Animations** | [Framer Motion](https://www.framer.com/motion/) (splash screen) | — |
 | **Icons** | [Lucide React](https://lucide.dev/) | — |
 | **Markdown** | [react-markdown](https://github.com/remarkjs/react-markdown) | 10 |
 | **Testing** | [Vitest](https://vitest.dev/) + [@testing-library/react](https://testing-library.com/react) + [jsdom](https://github.com/jsdom/jsdom) | 4 |

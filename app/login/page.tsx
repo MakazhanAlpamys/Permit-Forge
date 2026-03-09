@@ -11,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useTheme } from '@/components/theme-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { DitheringBackground } from '@/components/login/dithering-background';
+import { SplashScreen } from '@/components/splash-screen';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
@@ -41,6 +42,7 @@ export default function LoginPage() {
   };
 
   return (
+    <SplashScreen>
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
       {/* Animated shader background */}
       <DitheringBackground />
@@ -162,5 +164,6 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </div>
+    </SplashScreen>
   );
 }
