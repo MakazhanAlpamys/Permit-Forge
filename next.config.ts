@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
   // Suppress Edge Runtime warnings for Supabase client
   // These warnings occur because @supabase/supabase-js checks process.versions internally
   // but this doesn't affect functionality in Edge Runtime
-  serverExternalPackages: ['@supabase/supabase-js', 'pdfjs-dist', 'pdfkit'],
+  serverExternalPackages: ['@supabase/supabase-js', 'pdfkit'],
   
   // Webpack configuration to handle Edge Runtime compatibility
   webpack: (config, { isServer }) => {
@@ -23,8 +23,8 @@ const nextConfig: NextConfig = {
         process: false,
       };
       
-      // Externalize pdfjs-dist to avoid bundling issues
-      config.externals = [...(config.externals || []), 'canvas', 'pdfjs-dist'];
+      // Externalize canvas (native module that can't be bundled)
+      config.externals = [...(config.externals || []), 'canvas'];
     }
     return config;
   },
