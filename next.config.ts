@@ -9,10 +9,16 @@ const nextConfig: NextConfig = {
     },
   },
 
+  // Force Vercel to include pdfjs-dist worker file in Lambda deployments
+  outputFileTracingIncludes: {
+    '/api/ingest': ['./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs'],
+    '/admin': ['./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs'],
+  },
+
   // Suppress Edge Runtime warnings for Supabase client
   // These warnings occur because @supabase/supabase-js checks process.versions internally
   // but this doesn't affect functionality in Edge Runtime
-  serverExternalPackages: ['@supabase/supabase-js', 'pdfkit'],
+  serverExternalPackages: ['@supabase/supabase-js', 'pdfjs-dist', 'pdfkit'],
   
   // Webpack configuration to handle Edge Runtime compatibility
   webpack: (config, { isServer }) => {
@@ -23,8 +29,8 @@ const nextConfig: NextConfig = {
         process: false,
       };
       
-      // Externalize canvas (native module that can't be bundled)
-      config.externals = [...(config.externals || []), 'canvas'];
+      // Externalize native/problematic modules
+      config.externals = [...(config.externals || []), 'canvas', 'pdfjs-dist'];
     }
     return config;
   },
