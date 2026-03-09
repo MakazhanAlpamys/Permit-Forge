@@ -1,0 +1,26 @@
+<svg viewBox="0 0 920 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Geist:wght@600;700&amp;display=swap');
+    </style>
+  </defs>
+
+  <!-- Diamond icon -->
+  <g transform="translate(60, 60)">
+    <polygon fill="#ffffff" points="0,-52 52,0 0,52 -52,0"/>
+  </g>
+
+  <!-- Wordmark -->
+  <g id="wordmark">
+    <text x="490" y="60"
+          text-anchor="middle"
+          dominant-baseline="middle"
+          font-family="'Geist', sans-serif"
+          font-size="72"
+          font-weight="600"
+          fill="#ffffff"
+          letter-spacing="3">
+      PERMIT<tspan dx="25" font-weight="700" letter-spacing="4">FORGE</tspan>
+    </text>
+  </g>
+</svg>

@@ -113,7 +113,7 @@
 - **Rate limiting** — database-backed for all endpoints (API: per-user 10 req/min via `rate_limits` table; login: per-IP via `ip_rate_limits` table)
 - **Zod v4** schema validation on all inputs
 - **Output escaping** — HTML-escaped user data in email templates
-- **RLS** — PostgreSQL Row-Level Security on all 15 tables
+- **RLS** — PostgreSQL Row-Level Security on all 16 tables
 - **Real-time block check** in Edge middleware (5-min cache)
 - Security headers: `X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`, `Referrer-Policy`, `Permissions-Policy`
 
@@ -229,7 +229,7 @@ LOG_LEVEL=info                           # debug | info | warn | error
 1. Create a project in [Supabase Dashboard](https://supabase.com/dashboard)
 2. Open **SQL Editor** and run `supabase/migrations/000_full_setup.sql`
 
-This single idempotent script drops and recreates the entire schema: **15 tables**, **30+ RPC functions**, HNSW vector indexes, GIN full-text search, and RLS policies. Seeds an admin user.
+This single idempotent script drops and recreates the entire schema: **16 tables**, **38 RPC functions**, HNSW vector indexes, GIN full-text search, and RLS policies. Seeds an admin user.
 
 Default admin credentials: `admin` / `Admin123!`
 
@@ -499,7 +499,7 @@ erDiagram
     }
 ```
 
-**15 tables** · 29+ RPC functions · Row-Level Security on all tables · HNSW vector indexes (m=16, ef_construction=64) · GIN full-text search · B-tree indexes on metadata fields
+**16 tables** · 38 RPC functions · Row-Level Security on all tables · HNSW vector indexes (m=16, ef_construction=64) · GIN full-text search · B-tree indexes on metadata fields
 
 <br />
 
