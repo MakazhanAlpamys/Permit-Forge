@@ -69,9 +69,11 @@ vi.mock('@/lib/scope-detector', () => ({
   detectScope: vi.fn().mockReturnValue({ hasScope: false, pageRanges: [] }),
 }));
 
+const mockSearchCache = vi.fn().mockResolvedValue({ hit: false });
+const mockStoreInCache = vi.fn().mockResolvedValue(undefined);
 vi.mock('@/lib/semantic-cache', () => ({
-  searchCache: vi.fn().mockResolvedValue({ hit: false }),
-  storeInCache: vi.fn().mockResolvedValue(undefined),
+  searchCache: (...args: unknown[]) => mockSearchCache(...args),
+  storeInCache: (...args: unknown[]) => mockStoreInCache(...args),
 }));
 
 // Import after mocks
@@ -160,6 +162,41 @@ describe('Chat Pipeline', () => {
 
       expect(result.chunks).toHaveLength(0);
       expect(result.fromCache).toBe(false);
+    });
+
+    // P2-T3: cache HIT path
+    it('returns fromCache=true with cached response when searchCache hits', async () => {
+      mockSearchCache.mockResolvedValueOnce({
+        hit: true,
+        response: 'Cached answer',
+        citations: [{ page: 5, section: '1.1' }],
+        similarity: 0.97,
+      });
+
+      const result = await executeRAGPipeline('cached question');
+
+      expect(result.fromCache).toBe(true);
+      expect(result.cachedResponse).toBe('Cached answer');
+      expect(result.cachedCitations).toEqual([{ page: 5, section: '1.1' }]);
+      // The cache HIT path should short-circuit before vector search.
+      expect(mockQueryBuildingCode).not.toHaveBeenCalled();
+    });
+
+    it('still generates the embedding (it is needed for cache lookup) on a cache HIT', async () => {
+      mockSearchCache.mockResolvedValueOnce({
+        hit: true,
+        response: 'cached',
+        citations: [],
+        similarity: 0.96,
+      });
+      await executeRAGPipeline('q');
+      expect(mockGenerateEmbedding).toHaveBeenCalledTimes(1);
+    });
+
+    // P2-T10: tighten weak assertion — verify the embedding has 768 dims
+    it('result.queryEmbedding has length 768 (mocked)', async () => {
+      const result = await executeRAGPipeline('verify length');
+      expect(result.queryEmbedding).toHaveLength(768);
     });
   });
 
