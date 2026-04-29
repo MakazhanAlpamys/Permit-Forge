@@ -6,7 +6,7 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { logAuditEvent, hashPassword, getRequestMetadata } from '@/lib/auth';
-import { uuidSchema, createUserSchema } from '@/lib/validations';
+import { uuidSchema, createUserSchema, validatePassword } from '@/lib/validations';
 import { requireAdmin, requireCSRF } from '@/lib/security';
 
 // -----------------------------------------------------------------------------
@@ -460,8 +460,9 @@ export async function adminResetPassword(
       return { success: false, error: 'Invalid user ID' };
     }
     
-    // Validate password with complexity requirements
-    const { validatePassword } = await import('@/lib/validations');
+    // S3: validatePassword is now a static import at the top of the file —
+    // the dynamic import here served no code-splitting purpose since this is
+    // already a server action.
     const passwordValidation = validatePassword(newPassword);
     if (!passwordValidation.valid) {
       return { success: false, error: passwordValidation.error };
