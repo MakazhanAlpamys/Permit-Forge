@@ -212,10 +212,6 @@ export const projectTypeSchema = z.enum([
   'residential', 'commercial', 'industrial', 'mixed_use', 'institutional'
 ]);
 
-export const permitStatusSchema = z.enum([
-  'draft', 'submitted', 'under_review', 'approved', 'rejected', 'revision_requested'
-]);
-
 export const buildingDetailsSchema = z.object({
   numberOfFloors: z.number().int().min(1, 'Must have at least 1 floor').max(200),
   totalBuiltUpArea: z.number().positive('Built-up area must be positive').max(1000000),
