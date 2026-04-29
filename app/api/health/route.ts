@@ -1,16 +1,18 @@
 // ============================================================================
 // Health Check Endpoint (public, no auth required)
 // ============================================================================
+// L1: minimal response — only {status, timestamp}. Don't disclose which check
+// failed (env vs DB), service topology, or env-var names to unauthenticated
+// callers; that information is only useful to operators (who can read logs).
 
 import { createAdminClient } from '@/lib/supabase-server';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const checks: Record<string, { status: string; message?: string }> = {};
   let healthy = true;
 
-  // Check required environment variables
+  // Required env vars — fail health if any missing.
   const requiredEnvVars = [
     'NEXT_PUBLIC_SUPABASE_URL',
     'SUPABASE_ANON_KEY',
@@ -18,33 +20,20 @@ export async function GET() {
     'GEMINI_API_KEY',
     'JWT_SECRET',
   ];
-
-  const missingVars = requiredEnvVars.filter(v => !process.env[v]);
-  if (missingVars.length > 0) {
-    // SECURITY: Don't reveal env variable names to unauthenticated users
-    checks.env = { status: 'fail', message: `${missingVars.length} required variable(s) not configured` };
+  if (requiredEnvVars.some(v => !process.env[v])) {
     healthy = false;
-  } else {
-    checks.env = { status: 'ok' };
   }
 
-  // Check Supabase database connectivity
+  // DB connectivity probe — log details but don't return them.
   try {
     const supabase = createAdminClient();
     const { error } = await supabase.from('users').select('id').limit(1);
     if (error) {
       console.error('Health check DB error:', error.message);
-      checks.database = { status: 'fail', message: 'Database connection failed' };
       healthy = false;
-    } else {
-      checks.database = { status: 'ok' };
     }
   } catch (error) {
     console.error('Health check DB error:', error instanceof Error ? error.message : error);
-    checks.database = {
-      status: 'fail',
-      message: 'Database connection failed',
-    };
     healthy = false;
   }
 
@@ -52,7 +41,6 @@ export async function GET() {
     {
       status: healthy ? 'ok' : 'degraded',
       timestamp: new Date().toISOString(),
-      checks,
     },
     { status: healthy ? 200 : 503 }
   );

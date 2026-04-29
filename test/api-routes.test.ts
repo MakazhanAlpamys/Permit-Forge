@@ -95,9 +95,9 @@ describe('GET /api/health', () => {
 
     expect(response.status).toBe(200);
     expect(data.status).toBe('ok');
-    expect(data.checks.env.status).toBe('ok');
-    expect(data.checks.database.status).toBe('ok');
     expect(data.timestamp).toBeDefined();
+    // L1: response no longer leaks per-check breakdown to unauth callers.
+    expect(data.checks).toBeUndefined();
   });
 
   it('should return 503 when DB query fails', async () => {
@@ -108,8 +108,7 @@ describe('GET /api/health', () => {
 
     expect(response.status).toBe(503);
     expect(data.status).toBe('degraded');
-    expect(data.checks.database.status).toBe('fail');
-    expect(data.checks.database.message).toBe('Database connection failed');
+    expect(data.checks).toBeUndefined();
   });
 });
 

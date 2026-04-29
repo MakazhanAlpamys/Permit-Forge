@@ -71,14 +71,19 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
     }
   };
 
+  // P2-M9: ignore drop/click while an upload is already in flight, otherwise
+  // a fast second drop kicks off two concurrent uploads with non-deterministic
+  // ordering (and one will fail the file-count check after the first commits).
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
+    if (uploading || disabled) return;
     const file = e.dataTransfer.files[0];
     if (file) handleUpload(file);
-  }, [handleUpload]);
+  }, [handleUpload, uploading, disabled]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (uploading || disabled) return;
     const file = e.target.files?.[0];
     if (file) handleUpload(file);
     if (inputRef.current) inputRef.current.value = '';
@@ -103,10 +108,10 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
               ? 'border-primary bg-primary/5'
               : 'border-muted-foreground/25 hover:border-muted-foreground/50'
           }`}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragOver={(e) => { if (!uploading) { e.preventDefault(); setDragOver(true); } }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
-          onClick={() => inputRef.current?.click()}
+          onClick={() => { if (!uploading) inputRef.current?.click(); }}
         >
           <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
