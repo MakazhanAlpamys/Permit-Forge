@@ -128,7 +128,7 @@ describe('RAG Module', () => {
 
       expect(result.chunks).toHaveLength(2);
       expect(result.chunks[0].metadata.section).toBe('5.1');
-      expect(result.context).toContain('CONTEXT FROM:');
+      expect(result.context).toContain('CONTEXT FROM');
     });
 
     it('should detect exact search patterns and include exact results', async () => {

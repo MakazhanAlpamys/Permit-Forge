@@ -80,6 +80,8 @@ function createRequest(body: object, headers: Record<string, string> = {}): Next
     body: JSON.stringify(body),
     headers: {
       'Content-Type': 'application/json',
+      // L13: route now requires Origin on POST. Tests run as same-origin.
+      'Origin': 'http://localhost:3000',
       ...headers,
     },
   });

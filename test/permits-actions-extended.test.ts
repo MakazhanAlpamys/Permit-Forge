@@ -36,10 +36,20 @@ const mockFrom = vi.fn();
 function resetChainMocks() {
   mockSingle.mockResolvedValue({ data: null, error: null });
   mockOrder.mockReturnValue({ data: [], error: null });
-  mockEq.mockReturnValue({ eq: mockEq, single: mockSingle, select: mockSelect, order: mockOrder, delete: mockDelete });
-  mockDelete.mockReturnValue({ eq: mockEq, single: mockSingle, error: null });
-  mockUpdate.mockReturnValue({ eq: mockEq, single: mockSingle, error: null });
-  mockSelect.mockReturnValue({ eq: mockEq, single: mockSingle, order: mockOrder });
+  const terminal = {
+    eq: (..._args: unknown[]) => terminal,
+    in: (..._args: unknown[]) => terminal,
+    select: (..._args: unknown[]) => terminal,
+    single: mockSingle,
+    order: mockOrder,
+    delete: mockDelete,
+    then: (resolve: (v: { data: unknown; error: unknown }) => unknown) =>
+      resolve({ data: [{ id: 'test-id' }], error: null }),
+  };
+  mockEq.mockReturnValue(terminal);
+  mockDelete.mockReturnValue(terminal);
+  mockUpdate.mockReturnValue(terminal);
+  mockSelect.mockReturnValue(terminal);
   mockInsert.mockReturnValue({ select: mockSelect, single: mockSingle, error: null });
   mockFrom.mockReturnValue({
     select: mockSelect,
