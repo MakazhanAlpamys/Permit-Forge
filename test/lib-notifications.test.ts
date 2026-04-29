@@ -4,10 +4,12 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockInsert, mockSelect, mockEq, mockSingle, mockFrom, mockSendMail, mockGetTransporter } =
+const { mockInsert, mockSingle, mockFrom, mockSendMail, mockGetTransporter } =
   vi.hoisted(() => {
     const mockInsert = vi.fn().mockResolvedValue({ error: null });
     const mockSingle = vi.fn().mockResolvedValue({ data: null, error: null });
+    // eq/select are referenced indirectly via mockFrom factory below; declared
+    // here as locals (not exported) so eslint doesn't flag them.
     const mockEq = vi.fn(() => ({ single: mockSingle, eq: mockEq }));
     const mockSelect = vi.fn(() => ({ eq: mockEq }));
     const mockFrom = vi.fn(() => ({
@@ -16,7 +18,7 @@ const { mockInsert, mockSelect, mockEq, mockSingle, mockFrom, mockSendMail, mock
     }));
     const mockSendMail = vi.fn().mockResolvedValue({ messageId: 'ok' });
     const mockGetTransporter = vi.fn(() => ({ sendMail: mockSendMail }));
-    return { mockInsert, mockSelect, mockEq, mockSingle, mockFrom, mockSendMail, mockGetTransporter };
+    return { mockInsert, mockSingle, mockFrom, mockSendMail, mockGetTransporter };
   });
 
 vi.mock('@/lib/supabase-server', () => ({
