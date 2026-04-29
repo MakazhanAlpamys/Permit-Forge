@@ -10,6 +10,24 @@ import { requireAuth, requireCSRF } from '@/lib/security';
 import { uuidSchema, paginationSchema, citationsArraySchema } from '@/lib/validations';
 import type { ChatSession, ChatMessage, Citation } from '@/types';
 
+// L2: pagination cursors are base64url-encoded so the raw timestamp is opaque
+// to clients (no leak of session activity timing through the wire format) and
+// can carry future versioning prefix without breaking older clients.
+function encodeCursor(value: string): string {
+  return Buffer.from(value, 'utf8').toString('base64url');
+}
+function decodeCursor(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const decoded = Buffer.from(value, 'base64url').toString('utf8');
+    // Sanity check — must look like an ISO timestamp.
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(decoded)) return undefined;
+    return decoded;
+  } catch {
+    return undefined;
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Helper: Verify Session Ownership
 // -----------------------------------------------------------------------------
@@ -164,10 +182,11 @@ export async function getChatSessions(
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false })
       .limit(validLimit + 1); // Fetch one extra to check if there are more
-    
-    // Apply cursor if provided
-    if (cursor) {
-      query = query.lt('updated_at', cursor);
+
+    // L2: decode opaque cursor before applying.
+    const decodedCursor = decodeCursor(cursor);
+    if (decodedCursor) {
+      query = query.lt('updated_at', decodedCursor);
     }
 
     const { data, error } = await query;
@@ -178,20 +197,20 @@ export async function getChatSessions(
 
     const sessions = data || [];
     const hasMore = sessions.length > validLimit;
-    
+
     // Remove the extra item we fetched for pagination check
     if (hasMore) {
       sessions.pop();
     }
 
-    const nextCursor = hasMore && sessions.length > 0 
-      ? sessions[sessions.length - 1].updated_at 
+    const nextCursor = hasMore && sessions.length > 0
+      ? encodeCursor(sessions[sessions.length - 1].updated_at)
       : undefined;
 
-    return { 
-      sessions: sessions as ChatSession[], 
+    return {
+      sessions: sessions as ChatSession[],
       nextCursor,
-      hasMore 
+      hasMore
     };
   } catch {
     return {
@@ -246,9 +265,10 @@ export async function getSessionMessages(
       .order('created_at', { ascending: false })
       .limit(validLimit + 1);
 
-    // Cursor: fetch messages older than the cursor timestamp
-    if (cursor) {
-      query = query.lt('created_at', cursor);
+    // L2: decode opaque cursor before applying.
+    const decodedCursor = decodeCursor(cursor);
+    if (decodedCursor) {
+      query = query.lt('created_at', decodedCursor);
     }
 
     const { data, error } = await query;
@@ -265,7 +285,7 @@ export async function getSessionMessages(
     }
 
     const nextCursor = hasMore && rows.length > 0
-      ? rows[rows.length - 1].created_at
+      ? encodeCursor(rows[rows.length - 1].created_at)
       : undefined;
 
     // Reverse to chronological order (oldest first)
