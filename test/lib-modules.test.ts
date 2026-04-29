@@ -101,7 +101,7 @@ describe('lib/security', () => {
       expect(mockLogAuditEvent).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: 'user-1',
-          action: 'login_failed',
+          action: 'admin_escalation_attempt',
           metadata: expect.objectContaining({
             reason: 'unauthorized_admin_attempt',
           }),

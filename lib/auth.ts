@@ -242,6 +242,9 @@ export async function validateCSRFToken(token: string): Promise<boolean> {
 export type AuditAction =
   | 'login_success'
   | 'login_failed'
+  // L3: dedicated event for non-admin attempts at admin endpoints. Previously
+  // logged as `login_failed`, which polluted the brute-force-detection signal.
+  | 'admin_escalation_attempt'
   | 'logout'
   | 'user_created'
   | 'user_updated'

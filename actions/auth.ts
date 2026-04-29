@@ -15,6 +15,7 @@ import {
   logAuditEvent,
   getQuickSession
 } from '@/lib/auth';
+import { requireCSRF } from '@/lib/security';
 import {
   loginSchema,
   registerSchema,
@@ -199,7 +200,15 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
 // Logout Action
 // -----------------------------------------------------------------------------
 
-export async function logoutAction(): Promise<void> {
+export async function logoutAction(formData?: FormData): Promise<void> {
+  // M10: logout requires CSRF. The action is invoked via `<form action=...>`
+  // so the token arrives as a hidden field in FormData.
+  const csrfToken = formData?.get('csrf_token');
+  const csrf = await requireCSRF(typeof csrfToken === 'string' ? csrfToken : undefined);
+  if (!csrf.valid) {
+    redirect('/login');
+  }
+
   const user = await getQuickSession();
   const metadata = await getRequestMetadata();
 

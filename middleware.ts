@@ -4,8 +4,11 @@ import { jwtVerify } from 'jose';
 import { jwtPayloadSchema } from '@/lib/validations';
 import { SESSION_COOKIE_NAME, getJWTSecret } from '@/lib/constants';
 
-// Block status check interval (5 minutes in milliseconds)
-const BLOCK_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+// P2-H7: block status check interval shortened from 5 min to 30 s. The previous
+// 5-min window left a blocked user fully active for up to 5 minutes. A proper
+// fix requires Redis pub-sub for cross-instance invalidation (out of scope);
+// 30 s is a reasonable compromise — small extra DB load, much shorter exposure.
+const BLOCK_CHECK_INTERVAL_MS = 30 * 1000;
 
 // In-memory cache for blocked users (Edge Runtime compatible)
 // Key: userId, Value: { blocked: boolean, reason: string | undefined, checkedAt: number }

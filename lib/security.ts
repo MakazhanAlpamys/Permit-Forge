@@ -91,8 +91,8 @@ export async function requireAdmin(): Promise<SecurityCheckResult> {
       const metadata = await getRequestMetadata();
       await logAuditEvent({
         userId: authResult.user.id,
-        action: 'login_failed', // Using existing action type
-        metadata: { 
+        action: 'admin_escalation_attempt', // L3: dedicated, separate from login_failed
+        metadata: {
           reason: 'unauthorized_admin_attempt',
           attemptedRole: 'admin',
           actualRole: authResult.user.role,

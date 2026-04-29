@@ -66,6 +66,11 @@ export default function AdminPage() {
   const { theme } = useTheme();
   // Tab state
   const [activeTab, setActiveTab] = useState<Tab>('overview');
+  // M10: CSRF token for the logout form (required by logoutAction).
+  const [logoutCsrf, setLogoutCsrf] = useState<string>('');
+  useEffect(() => {
+    getCSRFTokenAction().then(t => { if (t) setLogoutCsrf(t); });
+  }, []);
   
   // Dashboard data
   const [auditLogs, setAuditLogsData] = useState<AuditLogEntry[]>([]);
@@ -233,6 +238,7 @@ export default function AdminPage() {
                 Profile
               </Button>
               <form action={logoutAction}>
+                <input type="hidden" name="csrf_token" value={logoutCsrf} />
                 <Button variant="ghost" size="sm" type="submit">
                   <LogOut className="h-4 w-4 mr-2" />
                   Logout
