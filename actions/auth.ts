@@ -88,6 +88,30 @@ async function checkLoginRateLimit(ip: string): Promise<boolean> {
   }
 }
 
+// H4: per-account lockout. The IP-based limiter doesn't stop credential stuffing
+// from a botnet hitting one account from many addresses. We piggyback on the
+// same RPC (text column) with `account:<username>` as the key — separate
+// counter from the IP one.
+const ACCOUNT_LOGIN_WINDOW_SECONDS = 15 * 60; // 15 min
+const ACCOUNT_LOGIN_MAX_FAILED = 10;
+async function checkAccountLoginRateLimit(username: string): Promise<boolean> {
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase.rpc('check_ip_rate_limit', {
+      p_ip: `account:${username.toLowerCase()}`,
+      p_window_seconds: ACCOUNT_LOGIN_WINDOW_SECONDS,
+      p_max_requests: ACCOUNT_LOGIN_MAX_FAILED,
+    });
+    if (error) {
+      console.error('Account rate limit check error:', error.message);
+      return true; // fail-open
+    }
+    return data?.[0]?.allowed ?? true;
+  } catch {
+    return true;
+  }
+}
+
 // -----------------------------------------------------------------------------
 // Login Action
 // -----------------------------------------------------------------------------
@@ -113,6 +137,16 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
         ...metadata,
       });
       return { error: validation.error.issues[0].message };
+    }
+
+    // H4: per-account lockout — credential stuffing across many IPs gets stopped here.
+    if (!await checkAccountLoginRateLimit(validation.data.username)) {
+      await logAuditEvent({
+        action: 'login_failed',
+        metadata: { reason: 'account_locked', username: validation.data.username },
+        ...metadata,
+      });
+      return { error: 'Too many failed attempts on this account. Please try again in 15 minutes.' };
     }
 
     // Use admin client for login - anon key doesn't have access to users table
