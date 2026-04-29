@@ -40,3 +40,10 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# audit working docs (kept locally, not committed)
+/fix-plan.md
+/phase1-report.md
+/phase2-clickpath.md
+/phase2-coverage.md
+/phase2-simplify.md
+
