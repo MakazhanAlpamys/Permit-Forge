@@ -33,7 +33,7 @@ import type { PDFPageContent } from '@/types';
 describe('lib/keyword-extractor', () => {
   it('returns empty arrays for empty input', () => {
     expect(extractKeywords([])).toEqual({ keywords: [], categories: [] });
-    expect(extractKeywords([{ pageNumber: 1, text: '' }] as PDFPageContent[])).toEqual({
+    expect(extractKeywords([{ pageNumber: 1, textItems: [], text: '' }] as PDFPageContent[])).toEqual({
       keywords: [],
       categories: [],
     });
@@ -41,7 +41,7 @@ describe('lib/keyword-extractor', () => {
 
   it('drops words appearing fewer than 3 times', () => {
     const pages: PDFPageContent[] = [
-      { pageNumber: 1, text: 'rare appears once. medium medium medium common common common common' },
+      { pageNumber: 1, textItems: [], text: 'rare appears once. medium medium medium common common common common' },
     ];
     const { keywords } = extractKeywords(pages);
     // `medium` and `common` appear ≥ 3 times; `rare` appears once and must be dropped.
@@ -54,6 +54,7 @@ describe('lib/keyword-extractor', () => {
     const pages: PDFPageContent[] = [
       {
         pageNumber: 1,
+        textItems: [],
         text: 'the the the and and and 123 123 123 specific specific specific'.repeat(2),
       },
     ];
@@ -70,6 +71,7 @@ describe('lib/keyword-extractor', () => {
     const pages: PDFPageContent[] = [
       {
         pageNumber: 1,
+        textItems: [],
         text:
           ('foundation foundation foundation concrete concrete concrete steel steel steel ' +
             'beam beam beam column column column seismic seismic seismic load load load ').repeat(2),
@@ -82,7 +84,7 @@ describe('lib/keyword-extractor', () => {
   it('respects maxKeywords parameter', () => {
     const big = Array.from({ length: 80 }, (_, i) => `word${i}`.padEnd(8, 'x'));
     const repeated = big.flatMap(w => [w, w, w, w]).join(' ');
-    const pages: PDFPageContent[] = [{ pageNumber: 1, text: repeated }];
+    const pages: PDFPageContent[] = [{ pageNumber: 1, textItems: [], text: repeated }];
     const { keywords } = extractKeywords(pages, 10);
     expect(keywords.length).toBeLessThanOrEqual(10);
   });
