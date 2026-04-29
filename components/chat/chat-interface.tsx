@@ -68,6 +68,17 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
         isInternalSessionCreateRef.current = false;
         setCurrentSessionId(sessionId);
       } else {
+        // P2-C4: abort any in-flight stream from the previous session before switching.
+        // Without this, the prior fetch keeps writing assistant content into the new
+        // session (and saveMessageToSession persists it under the wrong session id).
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          abortControllerRef.current = null;
+        }
+        isCancelledRef.current = true;
+        setIsLoading(false);
+        setIsStreaming(false);
+        setStreamingContent('');
         loadSessionMessages(sessionId);
         setCurrentSessionId(sessionId);
       }

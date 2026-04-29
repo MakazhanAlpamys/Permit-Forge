@@ -48,10 +48,12 @@ export async function POST(request: NextRequest) {
   let documentId: string;
   let pdfBuffer: Uint8Array | undefined;
   let pdfPath: string | undefined;
+  let clearFirst = false;
 
   try {
     const body = await request.json();
     documentId = body.documentId;
+    clearFirst = body.clearFirst === true;
 
     if (!documentId) {
       return new Response(JSON.stringify({ error: 'Missing documentId' }), {
@@ -118,6 +120,10 @@ export async function POST(request: NextRequest) {
     await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
   };
 
+  // P2-C2: react to client disconnect — abort flag is read by the pipeline.
+  let aborted = false;
+  request.signal.addEventListener('abort', () => { aborted = true; });
+
   // Start processing in background
   (async () => {
     try {
@@ -129,11 +135,29 @@ export async function POST(request: NextRequest) {
         message: `Reading PDF for ${documentId}...`,
       });
 
+      // P2-C3: re-ingest path clears prior chunks atomically before re-running. Without
+      // this, a re-ingest after a PDF replace leaves stale chunks with stale page numbers
+      // alongside new chunks, silently corrupting citations.
+      if (clearFirst) {
+        const supabase = createAdminClient();
+        await supabase.from('dubai_code_chunks').delete().eq('document_name', documentId);
+        await supabase.from('parent_chunks').delete().eq('document_name', documentId);
+        await supabase.from('document_trees').delete().eq('document_name', documentId);
+      }
+
+      if (aborted) {
+        await sendProgress({ stage: 'error', progress: 0, total: 100, message: 'Aborted by client', done: true, error: 'aborted' });
+        return;
+      }
+
       // Run the centralized ingestion pipeline with document info
       await runIngestionPipeline({
         documentId,
         ...(pdfBuffer ? { pdfBuffer } : { pdfPath }),
-        onProgress: sendProgress,
+        onProgress: async (p) => {
+          if (aborted) throw new Error('aborted');
+          await sendProgress(p);
+        },
       });
     } catch (error) {
       console.error('Ingestion error:', error);
