@@ -142,9 +142,14 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
   // sends their next message.
   useEffect(() => {
     const refresh = () => {
-      getCSRFTokenAction().then(token => {
-        if (token) csrfTokenRef.current = token;
-      });
+      getCSRFTokenAction()
+        .then(token => {
+          if (token) csrfTokenRef.current = token;
+        })
+        // Swallow rejection — a transient failure shouldn't surface as an
+        // unhandled rejection; the next interval tick (or the next user
+        // action) will surface "Invalid CSRF" if it actually matters.
+        .catch(() => { /* keep stale token; next tick will retry */ });
     };
     refresh();
     const interval = setInterval(refresh, 4 * 60 * 1000);

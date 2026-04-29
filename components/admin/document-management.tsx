@@ -170,7 +170,9 @@ export function DocumentManagement() {
   useEffect(() => {
     loadDocuments();
     runDiagnostics();
-    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+    getCSRFTokenAction()
+      .then(token => { csrfTokenRef.current = token; })
+      .catch(() => { /* swallow — Invalid CSRF will surface on next action */ });
   }, [loadDocuments, runDiagnostics]);
 
   // Form handlers

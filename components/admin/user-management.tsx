@@ -81,7 +81,9 @@ export function UserManagement({
   
   // Fetch CSRF token on mount
   useEffect(() => {
-    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+    getCSRFTokenAction()
+      .then(token => { csrfTokenRef.current = token; })
+      .catch(() => { /* swallow — Invalid CSRF will surface on next action */ });
   }, []);
   
   // Form states for modals

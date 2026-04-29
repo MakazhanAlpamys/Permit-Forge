@@ -69,7 +69,9 @@ export default function AdminPage() {
   // M10: CSRF token for the logout form (required by logoutAction).
   const [logoutCsrf, setLogoutCsrf] = useState<string>('');
   useEffect(() => {
-    getCSRFTokenAction().then(t => { if (t) setLogoutCsrf(t); });
+    getCSRFTokenAction()
+      .then(t => { if (t) setLogoutCsrf(t); })
+      .catch(() => { /* logout button will show stale token; hook will reject and redirect to /login */ });
   }, []);
   
   // Dashboard data

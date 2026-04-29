@@ -55,7 +55,9 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
 
   const csrfTokenRef = useRef<string | null>(null);
   useEffect(() => {
-    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+    getCSRFTokenAction()
+      .then(token => { csrfTokenRef.current = token; })
+      .catch(() => { /* swallow — Invalid CSRF will surface on next action */ });
   }, []);
 
   const handleFilter = (status: string) => {

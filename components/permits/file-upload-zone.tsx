@@ -31,7 +31,9 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+    getCSRFTokenAction()
+      .then(token => { csrfTokenRef.current = token; })
+      .catch(() => { /* swallow — Invalid CSRF will surface on next action */ });
   }, []);
 
   const handleUpload = useCallback(async (file: File) => {

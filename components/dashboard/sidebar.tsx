@@ -87,7 +87,9 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
   // (including when it becomes null after "New Chat" click)
   useEffect(() => {
     loadSessions();
-    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+    getCSRFTokenAction()
+      .then(token => { csrfTokenRef.current = token; })
+      .catch(() => { /* swallow — Invalid CSRF will surface on next action */ });
   }, [currentSessionId]);
 
   // Clear pending debounce timeout on unmount to prevent state updates on unmounted component

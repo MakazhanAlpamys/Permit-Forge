@@ -54,7 +54,7 @@ export default function NewPermitPage() {
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
 
   useEffect(() => {
-    getCSRFTokenAction().then(setCsrfToken);
+    getCSRFTokenAction().then(setCsrfToken).catch(() => { /* swallow — stale token will be refreshed on next mount or surface as Invalid CSRF on next action */ });
   }, []);
 
   // Form data

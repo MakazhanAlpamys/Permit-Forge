@@ -37,7 +37,9 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
 
   useEffect(() => {
     if (isOpen) {
-      getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+      getCSRFTokenAction()
+      .then(token => { csrfTokenRef.current = token; })
+      .catch(() => { /* swallow — Invalid CSRF will surface on next action */ });
     }
   }, [isOpen]);
 

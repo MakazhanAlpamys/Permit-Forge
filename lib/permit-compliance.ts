@@ -21,6 +21,9 @@ const complianceStatusSchema = z.enum(['compliant', 'non_compliant', 'requires_r
   .catch('requires_review');
 // LLMs sometimes emit `codeReferences` as a list of strings instead of structured
 // objects. Accept either; coerce strings into the canonical reference shape.
+// (Note: the inner `.catch()`s on the object branch handle field-level malformed
+// values; the string branch already accepts any 2k-char string. So no outer
+// `.catch()` is needed — it would be unreachable.)
 const complianceCheckReferenceSchema = z.union([
   z.object({
     page: z.coerce.number().int().min(0).max(100_000).catch(0),
@@ -28,7 +31,7 @@ const complianceCheckReferenceSchema = z.union([
     excerpt: z.string().max(2_000).catch(''),
   }),
   z.string().max(2_000).transform(s => ({ page: 0, section: '', excerpt: s })),
-]).catch({ page: 0, section: '', excerpt: '' });
+]);
 const complianceCheckItemSchema = z.object({
   category: z.string().min(1).max(200),
   status: complianceStatusSchema,

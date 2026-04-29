@@ -57,7 +57,9 @@ export function NotificationBell() {
 
   useEffect(() => {
     fetchNotifications();
-    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+    getCSRFTokenAction()
+      .then(token => { csrfTokenRef.current = token; })
+      .catch(() => { /* swallow — Invalid CSRF will surface on next action */ });
     // P2-L4: random jitter prevents all open tabs from polling on the exact
     // same 30-s boundary (synchronised request waves at the API).
     const jitter = Math.floor(Math.random() * 5_000);

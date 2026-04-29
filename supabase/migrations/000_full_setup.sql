@@ -1424,10 +1424,13 @@ GRANT ALL ON rate_limits TO authenticated, service_role;
 GRANT USAGE, SELECT ON SEQUENCE rate_limits_id_seq TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION check_rate_limit TO authenticated, service_role;
 
--- Audit logs
-GRANT INSERT ON audit_logs TO authenticated;
+-- Audit logs (writes via service_role only — never directly from a client JWT,
+-- otherwise an authenticated user could pollute the audit trail with forged
+-- login_success/permit_reviewed rows via PostgREST).
+REVOKE ALL ON audit_logs FROM anon, authenticated;
 GRANT ALL ON audit_logs TO service_role;
-GRANT USAGE, SELECT ON SEQUENCE audit_logs_id_seq TO authenticated, service_role;
+REVOKE ALL ON SEQUENCE audit_logs_id_seq FROM anon, authenticated;
+GRANT USAGE, SELECT ON SEQUENCE audit_logs_id_seq TO service_role;
 
 -- Permits
 GRANT ALL ON permit_applications TO authenticated, service_role;

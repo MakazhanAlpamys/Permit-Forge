@@ -32,7 +32,7 @@ export default function PermitsPage() {
 
   useEffect(() => {
     loadPermits();
-    getCSRFTokenAction().then(setCsrfToken);
+    getCSRFTokenAction().then(setCsrfToken).catch(() => { /* swallow — stale token will be refreshed on next mount or surface as Invalid CSRF on next action */ });
     // P2-M10: poll every 30 s so a status flip from the admin (under_review →
     // approved/rejected) is visible without a manual refresh. The
     // notification bell already polls at the same interval — keep them

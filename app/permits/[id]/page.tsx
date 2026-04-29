@@ -57,7 +57,7 @@ export default function PermitDetailPage() {
 
   useEffect(() => {
     loadPermit();
-    getCSRFTokenAction().then(setCsrfToken);
+    getCSRFTokenAction().then(setCsrfToken).catch(() => { /* swallow — stale token will be refreshed on next mount or surface as Invalid CSRF on next action */ });
   }, [loadPermit]);
 
   const handleRunCheck = async () => {

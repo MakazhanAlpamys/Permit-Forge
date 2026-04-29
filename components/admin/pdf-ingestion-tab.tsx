@@ -203,7 +203,9 @@ export function PdfIngestionTab() {
   useEffect(() => {
     getAllRegisteredDocuments().then(r => setDocuments((r.data || []).filter(d => d.isActive)));
     runDiagnostics();
-    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+    getCSRFTokenAction()
+      .then(token => { csrfTokenRef.current = token; })
+      .catch(() => { /* swallow — Invalid CSRF will surface on next action */ });
   }, []);
 
   const getDocChunkCount = (docId: string) => {

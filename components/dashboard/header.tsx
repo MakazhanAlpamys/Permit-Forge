@@ -26,7 +26,9 @@ export function Header({ onMenuClick }: HeaderProps) {
   // M10: fetch CSRF token so the logout form can submit it as a hidden field.
   const [csrfToken, setCsrfToken] = useState<string>('');
   useEffect(() => {
-    getCSRFTokenAction().then(t => { if (t) setCsrfToken(t); });
+    getCSRFTokenAction()
+      .then(t => { if (t) setCsrfToken(t); })
+      .catch(() => { /* swallow — stale token will be refreshed on next mount or surface as Invalid CSRF on next action */ });
   }, []);
 
   return (
