@@ -11,6 +11,7 @@ import { clearDocumentTreeCache } from '@/lib/tree-cache';
 import { invalidateRegistryCache } from '@/lib/document-registry';
 import { invalidateProfileCache } from '@/lib/document-selector';
 import { DOCUMENT_PDF_LIMITS } from '@/lib/constants';
+import { validateFileMagicBytes } from '@/lib/file-upload';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -358,6 +359,13 @@ export async function uploadDocumentPDF(
   // Validate file size
   if (file.size > DOCUMENT_PDF_LIMITS.maxSizeBytes) {
     return { success: false, error: `File too large. Maximum size is ${DOCUMENT_PDF_LIMITS.maxSizeMB}MB` };
+  }
+
+  // H10: server-side magic-byte sniffing — verify the contents really are a PDF
+  // (declared MIME is client-supplied and trivially spoofable).
+  const magicCheck = await validateFileMagicBytes(file);
+  if (!magicCheck.valid) {
+    return { success: false, error: magicCheck.error };
   }
 
   try {

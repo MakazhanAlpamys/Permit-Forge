@@ -70,6 +70,52 @@ export function generateStoragePath(permitId: string, fileName: string): string 
   return `permits/${permitId}/${timestamp}-${sanitized}`;
 }
 
+// H10: server-side magic-byte sniffing. The browser-supplied `file.type` cannot
+// be trusted — a malicious user can rename `evil.html` to `evil.pdf` and the MIME
+// will look right. Verify the first bytes match the declared extension. DWG/DXF
+// are skipped: DWG has many version-specific signatures and DXF is plain ASCII,
+// both produce too many false positives to block uploads on.
+const PDF_SIGNATURE = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const JPG_SIGNATURE = [0xff, 0xd8, 0xff];
+
+function bytesMatch(actual: Uint8Array, expected: number[]): boolean {
+  if (actual.length < expected.length) return false;
+  for (let i = 0; i < expected.length; i++) {
+    if (actual[i] !== expected[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * Verify the file's actual content matches its declared extension. Run this
+ * AFTER `validateFile` on the server. Returns `{ valid: true }` for extensions
+ * we don't sniff (DWG/DXF) so it never wrongly blocks valid uploads.
+ */
+export async function validateFileMagicBytes(
+  file: File
+): Promise<{ valid: boolean; error?: string }> {
+  const fileName = file.name.toLowerCase();
+  const ext = '.' + (fileName.split('.').pop() ?? '');
+  const head = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+
+  if (ext === '.pdf') {
+    if (!bytesMatch(head, PDF_SIGNATURE)) {
+      return { valid: false, error: 'File contents do not match PDF format' };
+    }
+  } else if (ext === '.png') {
+    if (!bytesMatch(head, PNG_SIGNATURE)) {
+      return { valid: false, error: 'File contents do not match PNG format' };
+    }
+  } else if (ext === '.jpg' || ext === '.jpeg') {
+    if (!bytesMatch(head, JPG_SIGNATURE)) {
+      return { valid: false, error: 'File contents do not match JPEG format' };
+    }
+  }
+  // .dwg / .dxf / unknown: skip — too many legitimate variants.
+  return { valid: true };
+}
+
 /**
  * Format file size for display
  */

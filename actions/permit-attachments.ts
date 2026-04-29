@@ -8,7 +8,7 @@ import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { requireAuth, requireCSRF } from '@/lib/security';
 import { uuidSchema } from '@/lib/validations';
-import { validateFile, generateStoragePath } from '@/lib/file-upload';
+import { validateFile, validateFileMagicBytes, generateStoragePath } from '@/lib/file-upload';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
 import type { PermitAttachment } from '@/types';
 
@@ -77,13 +77,21 @@ export async function uploadPermitAttachment(
       return { success: false, error: 'No file provided' };
     }
 
-    // Validate file
+    // Validate file (size, extension, MIME)
     const validation = validateFile(file);
     if (!validation.valid) {
       return { success: false, error: validation.error };
     }
 
-    // Check attachment count
+    // H10: server-side magic-byte sniffing — declared MIME can be spoofed.
+    const magicCheck = await validateFileMagicBytes(file);
+    if (!magicCheck.valid) {
+      return { success: false, error: magicCheck.error };
+    }
+
+    // H9: TOCTOU upload cap. The plain count-then-insert is racy under concurrent
+    // uploads — 11 parallel requests all observe count=10 and all insert. Use a
+    // post-insert verification so at least one request loses and is rolled back.
     const { count } = await supabase
       .from('permit_attachments')
       .select('id', { count: 'exact', head: true })
@@ -132,6 +140,23 @@ export async function uploadPermitAttachment(
         console.error('Failed to cleanup orphaned file:', cleanupErr);
       }
       throw insertError;
+    }
+
+    // H9: TOCTOU verification — re-count after insert. If concurrent uploads
+    // pushed us past the cap, our row was the loser; remove it + the file.
+    const { count: postCount } = await supabase
+      .from('permit_attachments')
+      .select('id', { count: 'exact', head: true })
+      .eq('permit_id', permitId);
+    if ((postCount ?? 0) > FILE_UPLOAD_LIMITS.maxFilesPerPermit) {
+      await supabase.from('permit_attachments').delete().eq('id', attachment.id);
+      try {
+        await adminClient.storage.from(FILE_UPLOAD_LIMITS.storageBucket).remove([storagePath]);
+      } catch { /* swallow */ }
+      return {
+        success: false,
+        error: `Maximum ${FILE_UPLOAD_LIMITS.maxFilesPerPermit} files allowed per permit`,
+      };
     }
 
     const metadata = await getRequestMetadata();
