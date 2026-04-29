@@ -64,11 +64,19 @@ export function NotificationBell() {
 
   const handleMarkRead = async (notification: Notification) => {
     if (!notification.read) {
-      await markNotificationRead(notification.id, csrfTokenRef.current || '');
+      // P2-H4: optimistic update with rollback on server rejection so the bell
+      // count stays in sync with the DB even when CSRF expires or auth drops.
       setNotifications(prev =>
         prev.map(n => n.id === notification.id ? { ...n, read: true } : n)
       );
       setUnreadCount(prev => Math.max(0, prev - 1));
+      const result = await markNotificationRead(notification.id, csrfTokenRef.current || '');
+      if (!result.success) {
+        setNotifications(prev =>
+          prev.map(n => n.id === notification.id ? { ...n, read: false } : n)
+        );
+        setUnreadCount(prev => prev + 1);
+      }
     }
 
     // Navigate to permit
@@ -81,9 +89,16 @@ export function NotificationBell() {
 
   const handleMarkAllRead = async () => {
     setLoading(true);
-    await markAllNotificationsRead(csrfTokenRef.current || '');
+    // P2-H4: snapshot prior state for rollback if the server rejects.
+    const prevNotifications = notifications;
+    const prevUnread = unreadCount;
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     setUnreadCount(0);
+    const result = await markAllNotificationsRead(csrfTokenRef.current || '');
+    if (!result.success) {
+      setNotifications(prevNotifications);
+      setUnreadCount(prevUnread);
+    }
     setLoading(false);
   };
 

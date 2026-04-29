@@ -150,9 +150,15 @@ export async function updatePermitBuildingDetails(
       return { success: false, error: 'Can only edit draft permits' };
     }
 
+    // P2-A3: clear stale compliance result when the underlying inputs change.
+    // Without this, a "Compliant" badge survives the user editing height 50→200
+    // and silently misleads the submit step.
     const { error } = await supabase
       .from('permit_applications')
-      .update({ building_details: validation.data.buildingDetails })
+      .update({
+        building_details: validation.data.buildingDetails,
+        compliance_check_result: null,
+      })
       .eq('id', validation.data.permitId)
       .eq('user_id', authCheck.user.id);
 
@@ -206,9 +212,13 @@ export async function updatePermitComplianceRequirements(
       return { success: false, error: 'Can only edit draft permits' };
     }
 
+    // P2-A3: clear stale compliance result when toggles change.
     const { error } = await supabase
       .from('permit_applications')
-      .update({ compliance_requirements: validation.data.complianceRequirements })
+      .update({
+        compliance_requirements: validation.data.complianceRequirements,
+        compliance_check_result: null,
+      })
       .eq('id', validation.data.permitId)
       .eq('user_id', authCheck.user.id);
 
