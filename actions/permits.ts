@@ -354,9 +354,15 @@ export async function getMyPermits(): Promise<{ data: PermitApplication[]; error
     }
 
     const supabase = createAdminClient();
+    // L11: explicit columns instead of `*`. Heavy JSONB
+    // (compliance_check_result, building_details) is needed by transformPermit
+    // for the list cards, but the column-list keeps the wire format stable
+    // against future schema additions.
     const { data, error } = await supabase
       .from('permit_applications')
-      .select('*')
+      .select(
+        'id, user_id, status, project_name, project_type, project_address, plot_number, project_description, building_details, compliance_requirements, compliance_check_result, reviewed_by, reviewed_at, review_comments, revision_count, revision_notes, submitted_at, created_at, updated_at'
+      )
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false });
 
