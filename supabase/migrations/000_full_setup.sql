@@ -1385,10 +1385,14 @@ $$;
 -- ============================================================================
 
 -- RAG system
--- C5: anon gets SELECT-only; writes restricted to service_role.
-GRANT SELECT ON dubai_code_chunks TO anon;
-GRANT SELECT ON dubai_code_chunks TO authenticated;
+-- C5: anon/authenticated get SELECT-only; writes restricted to service_role.
+-- Supabase's default privileges grant ALL on public-schema tables to
+-- anon+authenticated, so a plain GRANT SELECT is a no-op. We REVOKE the
+-- write privileges first, then GRANT only what we want.
+REVOKE ALL ON dubai_code_chunks FROM anon, authenticated;
+GRANT SELECT ON dubai_code_chunks TO anon, authenticated;
 GRANT ALL ON dubai_code_chunks TO service_role;
+REVOKE ALL ON SEQUENCE dubai_code_chunks_id_seq FROM anon, authenticated;
 GRANT USAGE, SELECT ON SEQUENCE dubai_code_chunks_id_seq TO service_role;
 
 -- RAG search functions

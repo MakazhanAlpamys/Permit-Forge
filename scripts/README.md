@@ -44,5 +44,10 @@ npx tsx scripts/create-admin.ts \
 
 ### Alternatives
 If you don't want to run a Node script, use the SQL template at
-`supabase/migrations/001_create_admin.sql` — fill placeholders, run via
-Supabase SQL Editor or `supabase db push`.
+`scripts/sql/create-admin.template.sql` — fill the placeholders and run
+the result via Supabase SQL Editor.
+
+**Do NOT copy the template into `supabase/migrations/`** — files there
+are auto-applied by `supabase db push` and `supabase db reset`, which
+would attempt to insert literal `<ADMIN_USERNAME>` / `<ADMIN_EMAIL>`
+strings into your `users` table.
