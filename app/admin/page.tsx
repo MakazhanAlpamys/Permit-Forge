@@ -100,6 +100,8 @@ export default function AdminPage() {
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileError, setProfileError] = useState('');
   const [profileSuccess, setProfileSuccess] = useState(false);
+  // P2-M7: track the auto-close timeout so a manual close cancels it.
+  const profileCloseTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load dashboard data
   const loadDashboardData = useCallback(async () => {
@@ -190,13 +192,25 @@ export default function AdminPage() {
       setProfileSuccess(true);
       setCurrentPassword('');
       setNewPassword('');
-      setTimeout(() => {
+      // P2-M7: stash the timeout in a ref so a user closing the dialog manually
+      // before 1.5 s elapses cancels it (otherwise the auto-close would fire
+      // later and reset success state on a possibly-already-reopened dialog).
+      profileCloseTimeoutRef.current = setTimeout(() => {
         setProfileOpen(false);
         setProfileSuccess(false);
+        profileCloseTimeoutRef.current = null;
       }, 1500);
     }
     setProfileLoading(false);
   };
+
+  // P2-M7: cancel pending auto-close when the dialog is closed by any means.
+  useEffect(() => {
+    if (!profileOpen && profileCloseTimeoutRef.current) {
+      clearTimeout(profileCloseTimeoutRef.current);
+      profileCloseTimeoutRef.current = null;
+    }
+  }, [profileOpen]);
 
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: LayoutDashboard },
