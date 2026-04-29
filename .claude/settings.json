@@ -1,0 +1,76 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run dev)",
+      "Bash(npm run dev:*)",
+      "Bash(npm run build)",
+      "Bash(npm run start)",
+      "Bash(npm run lint)",
+      "Bash(npm run lint:*)",
+      "Bash(npm test)",
+      "Bash(npm run test:*)",
+      "Bash(npx vitest run)",
+      "Bash(npx vitest run *)",
+      "Bash(npx vitest run -t *)",
+      "Bash(npx vitest --version)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npx tsc --noEmit *)",
+      "Bash(npx tsc --version)",
+      "Bash(npx eslint)",
+      "Bash(npx eslint .)",
+      "Bash(npx eslint --fix *)",
+      "Bash(npx next lint)",
+      "Bash(npx next build)",
+      "Bash(npm ls *)",
+      "Bash(npm view *)",
+      "Bash(npm outdated)",
+      "Bash(node --version)",
+      "Bash(node -v)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git branch)",
+      "Bash(git branch *)",
+      "Bash(git remote -v)",
+      "Bash(git stash list)",
+      "Bash(git rev-parse *)",
+      "Bash(git ls-files *)",
+      "Bash(git config --get *)"
+    ],
+    "ask": [
+      "Bash(npm install *)",
+      "Bash(npm i *)",
+      "Bash(npm uninstall *)",
+      "Bash(npm update *)",
+      "Bash(git push *)",
+      "Bash(git push --force *)",
+      "Bash(git clean *)"
+    ],
+    "deny": [
+      "Bash(git push --force origin main)",
+      "Bash(git push --force origin master)",
+      "Bash(rm -rf /)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf *)",
+      "Bash(git reset --hard *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/lint-on-edit.mjs",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
