@@ -24,6 +24,8 @@ vi.mock('@/lib/auth', () => ({
   getRequestMetadata: (...args: unknown[]) => mockGetRequestMetadata(...args),
   getQuickSession: (...args: unknown[]) => mockGetQuickSession(...args),
   getCSRFToken: (...args: unknown[]) => mockGetCSRFToken(...args),
+  // S2: safeEqual lives in @/lib/auth now (was duplicated locally).
+  safeEqual: (a: string, b: string) => a === b,
 }));
 
 // Mock email

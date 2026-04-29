@@ -4,7 +4,6 @@
 // Authentication Server Actions (with JWT, CSRF, and Audit Logging)
 // ============================================================================
 
-import crypto from 'crypto';
 import { createAdminClient } from '@/lib/supabase-server';
 import {
   verifyPassword,
@@ -13,7 +12,8 @@ import {
   destroySession,
   generateCSRFToken,
   logAuditEvent,
-  getQuickSession
+  getQuickSession,
+  safeEqual,
 } from '@/lib/auth';
 import { requireCSRF } from '@/lib/security';
 import {
@@ -29,17 +29,6 @@ import { generateSixDigitCode, sendVerificationEmail, sendPasswordResetEmail } f
 
 const LOGIN_WINDOW_SECONDS = 60;
 const LOGIN_MAX_ATTEMPTS = 10;
-
-/** Constant-time string comparison to prevent timing side-channel attacks on short codes */
-function safeEqual(a: string, b: string): boolean {
-  // Pad both to equal length before comparing (prevents length oracle)
-  const maxLen = Math.max(a.length, b.length);
-  const bufA = Buffer.alloc(maxLen);
-  const bufB = Buffer.alloc(maxLen);
-  bufA.write(a);
-  bufB.write(b);
-  return crypto.timingSafeEqual(bufA, bufB);
-}
 
 // M4: code-attempt tracker is DB-backed (via check_ip_rate_limit) so the limit
 // holds across serverless instances and survives restarts. The in-memory Map

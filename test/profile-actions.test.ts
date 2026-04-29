@@ -28,6 +28,8 @@ vi.mock('@/lib/auth', () => ({
   getRequestMetadata: (...args: unknown[]) => mockGetRequestMetadata(...args),
   createSession: (...args: unknown[]) => mockCreateSession(...args),
   getQuickSession: (...args: unknown[]) => mockGetQuickSession(...args),
+  // S2: safeEqual lives in @/lib/auth now.
+  safeEqual: (a: string, b: string) => a === b,
 }));
 
 // Mock email

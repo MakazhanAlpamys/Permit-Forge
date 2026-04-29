@@ -187,6 +187,22 @@ export async function getQuickSession(): Promise<{ id: string; username: string;
 }
 
 // -----------------------------------------------------------------------------
+// Timing-safe string comparison (S2: previously duplicated in actions/auth.ts
+// and actions/profile.ts). Pad both inputs to equal length before comparing so
+// the length itself can't leak through timing.
+// -----------------------------------------------------------------------------
+
+export function safeEqual(a: string, b: string): boolean {
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return a === b;
+  const bufA = Buffer.alloc(maxLen);
+  const bufB = Buffer.alloc(maxLen);
+  bufA.write(a);
+  bufB.write(b);
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// -----------------------------------------------------------------------------
 // CSRF Protection
 // -----------------------------------------------------------------------------
 
