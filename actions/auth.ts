@@ -41,30 +41,42 @@ function safeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-// In-memory code attempt tracker (keyed by "verify:<email>" or "reset:<email>")
-// Prevents brute-force of 6-digit codes (1,000,000 possibilities / 5 tries = lockout)
-const codeAttempts = new Map<string, { count: number; firstAttempt: number }>();
-const CODE_ATTEMPT_WINDOW_MS = 15 * 60 * 1000; // 15 min (matches code TTL)
+// M4: code-attempt tracker is DB-backed (via check_ip_rate_limit) so the limit
+// holds across serverless instances and survives restarts. The in-memory Map
+// from before only protected the warm Lambda instance; rotating keys would
+// reset it. We piggyback on the same RPC used for IP/account limits, with
+// `code:verify:<email>` / `code:reset:<email>` namespacing so the buckets
+// don't collide with each other or with the IP/account ones.
+const CODE_ATTEMPT_WINDOW_SECONDS = 15 * 60; // 15 min (matches code TTL)
 const CODE_MAX_ATTEMPTS = 5;
 
-function checkCodeAttempts(key: string): boolean {
-  const now = Date.now();
-  if (codeAttempts.size > 500) {
-    for (const [k, v] of codeAttempts) {
-      if (now - v.firstAttempt > CODE_ATTEMPT_WINDOW_MS) codeAttempts.delete(k);
+async function checkCodeAttempts(key: string): Promise<boolean> {
+  try {
+    const supabase = createAdminClient();
+    const { data, error } = await supabase.rpc('check_ip_rate_limit', {
+      p_ip: `code:${key}`,
+      p_window_seconds: CODE_ATTEMPT_WINDOW_SECONDS,
+      p_max_requests: CODE_MAX_ATTEMPTS,
+    });
+    if (error) {
+      console.error('Code attempt check error:', error.message);
+      return true; // fail-open
     }
-  }
-  const entry = codeAttempts.get(key);
-  if (!entry || now - entry.firstAttempt > CODE_ATTEMPT_WINDOW_MS) {
-    codeAttempts.set(key, { count: 1, firstAttempt: now });
+    return data?.[0]?.allowed ?? true;
+  } catch {
     return true;
   }
-  entry.count++;
-  return entry.count <= CODE_MAX_ATTEMPTS;
 }
 
-function resetCodeAttempts(key: string): void {
-  codeAttempts.delete(key);
+async function resetCodeAttempts(key: string): Promise<void> {
+  // Best-effort cleanup — clear rate-limit rows for this key so a successful
+  // verification doesn't carry forward residual attempts to the next code.
+  try {
+    const supabase = createAdminClient();
+    await supabase.from('ip_rate_limits').delete().eq('ip_address', `code:${key}`);
+  } catch {
+    // best-effort
+  }
 }
 
 // DB-backed IP rate limiter (works in serverless/multi-instance environments)
@@ -394,7 +406,7 @@ export async function verifyEmailAction(
 
     // Brute-force protection: max 5 attempts per email within the code TTL window
     const attemptKey = `verify:${validation.data.email}`;
-    if (!checkCodeAttempts(attemptKey)) {
+    if (!(await checkCodeAttempts(attemptKey))) {
       // Invalidate the code so attacker must trigger a new one
       await supabase
         .from('users')
@@ -420,7 +432,7 @@ export async function verifyEmailAction(
       return { error: 'Verification failed. Please try again.' };
     }
 
-    resetCodeAttempts(attemptKey);
+    await resetCodeAttempts(attemptKey);
     return { success: true };
   } catch (error) {
     console.error('Email verification error:', error);
@@ -517,7 +529,7 @@ export async function resetPasswordAction(
 
     // Brute-force protection: max 5 attempts per email within the code TTL window
     const resetAttemptKey = `reset:${validation.data.email}`;
-    if (!checkCodeAttempts(resetAttemptKey)) {
+    if (!(await checkCodeAttempts(resetAttemptKey))) {
       // Invalidate the reset code so attacker must request a new one
       await supabase
         .from('users')
@@ -545,7 +557,7 @@ export async function resetPasswordAction(
       return { error: 'Password reset failed. Please try again.' };
     }
 
-    resetCodeAttempts(resetAttemptKey);
+    await resetCodeAttempts(resetAttemptKey);
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({
