@@ -136,9 +136,19 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     }
   };
 
-  // Fetch CSRF token on mount
+  // P2-H6: fetch CSRF token on mount + refresh every 4 minutes. The cookie has
+  // a 7-day TTL but tab can outlive a server-side rotation; periodic refresh
+  // means an idle tab doesn't bottom out on "Invalid CSRF" the moment the user
+  // sends their next message.
   useEffect(() => {
-    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+    const refresh = () => {
+      getCSRFTokenAction().then(token => {
+        if (token) csrfTokenRef.current = token;
+      });
+    };
+    refresh();
+    const interval = setInterval(refresh, 4 * 60 * 1000);
+    return () => clearInterval(interval);
   }, []);
 
   // Cleanup on unmount - properly abort any pending requests

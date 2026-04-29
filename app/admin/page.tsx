@@ -4,7 +4,7 @@
 // Admin Dashboard - Complete Admin Panel
 // ============================================================================
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getAuditLogs,
   getAllUsers,
@@ -131,10 +131,15 @@ export default function AdminPage() {
     setDataLoading(false);
   }, []);
 
-  // Load users
+  // Load users — P2-M5: token-guarded against stale concurrent fetches. Rapid
+  // block/role/delete clicks issue overlapping loadUsers calls; without the
+  // token a slow earlier response would overwrite the latest user list.
+  const loadUsersToken = useRef(0);
   const loadUsers = useCallback(async (search?: string) => {
+    const myToken = ++loadUsersToken.current;
     setUsersLoading(true);
     const result = await getAllUsers(50, 0, search);
+    if (myToken !== loadUsersToken.current) return; // a newer call is in flight
     setUsers(result.data);
     setUsersLoading(false);
   }, []);
