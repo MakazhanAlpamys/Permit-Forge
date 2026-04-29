@@ -7,6 +7,15 @@ import { getQuickSession } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase-server';
 import { uuidSchema } from '@/lib/validations';
 
+// M9: escape HTML so exported content cannot inject scripts when rendered by
+// an HTML viewer. Plain markdown formatting is preserved.
+function escapeHtmlForMarkdown(s: string): string {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 export async function GET(request: NextRequest) {
   try {
     const user = await getQuickSession();
@@ -44,7 +53,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Build markdown
-    const title = session.title || 'Chat Export';
+    const title = escapeHtmlForMarkdown(session.title || 'Chat Export');
     const exportDate = new Date().toLocaleDateString('en-US', {
       year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit',
     });
@@ -60,15 +69,15 @@ export async function GET(request: NextRequest) {
     for (const msg of messages || []) {
       const role = msg.role === 'user' ? 'You' : 'PermitForge';
       markdown += `### ${role}\n\n`;
-      markdown += `${msg.content}\n\n`;
+      markdown += `${escapeHtmlForMarkdown(msg.content)}\n\n`;
 
       // Add citations if present
       if (msg.citations && Array.isArray(msg.citations) && msg.citations.length > 0) {
         markdown += `<details>\n<summary>Sources (${msg.citations.length})</summary>\n\n`;
         for (const citation of msg.citations) {
           const page = citation.page || citation.startPage || '?';
-          const section = citation.section || '';
-          const doc = citation.documentName || '';
+          const section = escapeHtmlForMarkdown(citation.section || '');
+          const doc = escapeHtmlForMarkdown(citation.documentName || '');
           markdown += `- ${doc ? `[${doc}] ` : ''}Page ${page}${section ? `, Section ${section}` : ''}\n`;
         }
         markdown += `\n</details>\n\n`;
@@ -80,7 +89,7 @@ export async function GET(request: NextRequest) {
     markdown += `\n*Exported from PermitForge — Building Code Compliance Assistant*\n`;
 
     // Sanitize title for filename
-    const safeTitle = title.replace(/[^a-zA-Z0-9-_ ]/g, '').slice(0, 50).trim() || 'chat-export';
+    const safeTitle = (session.title || '').replace(/[^a-zA-Z0-9-_ ]/g, '').slice(0, 50).trim() || 'chat-export';
 
     return new Response(markdown, {
       headers: {

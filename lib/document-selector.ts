@@ -45,7 +45,7 @@ async function doLoadSearchProfiles(): Promise<void> {
       .eq('is_active', true);
 
     if (error || !data) {
-      profileCacheTs = Date.now(); // Mark as loaded (empty)
+      // C7: don't poison cache — leave previous (possibly empty) state so next call retries.
       return;
     }
 
@@ -60,7 +60,7 @@ async function doLoadSearchProfiles(): Promise<void> {
     profileCache = profiles;
     profileCacheTs = Date.now();
   } catch {
-    profileCacheTs = Date.now(); // Mark as loaded (empty)
+    // C7: swallow — next call retries.
   }
 }
 

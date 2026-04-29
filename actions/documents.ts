@@ -199,8 +199,9 @@ export async function deleteDocument(
   const csrf = await requireCSRF(csrfToken);
   if (!csrf.valid) return { success: false, error: csrf.error };
 
-  if (!documentId) {
-    return { success: false, error: 'Missing documentId' };
+  // M11: validate format before passing to RPC. document_registry.id is a slug (alnum + hyphen).
+  if (!documentId || typeof documentId !== 'string' || !/^[a-z0-9][a-z0-9-]{0,118}[a-z0-9]$/i.test(documentId)) {
+    return { success: false, error: 'Invalid documentId' };
   }
 
   try {

@@ -6,6 +6,7 @@
 import { hybridSearch } from '@/lib/rag';
 import { chatModel } from '@/lib/gemini';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { z } from 'zod';
 import type {
   BuildingDetails,
   ComplianceRequirements,
@@ -13,6 +14,32 @@ import type {
   ComplianceCheckItem,
   ProjectType,
 } from '@/types';
+
+// M22: schema-validate LLM JSON before trusting it. Unknown statuses/values are
+// coerced to `requires_review` rather than thrown so the AI never hard-fails the action.
+const complianceStatusSchema = z.enum(['compliant', 'non_compliant', 'requires_review'])
+  .catch('requires_review');
+// LLMs sometimes emit `codeReferences` as a list of strings instead of structured
+// objects. Accept either; coerce strings into the canonical reference shape.
+const complianceCheckReferenceSchema = z.union([
+  z.object({
+    page: z.coerce.number().int().min(0).max(100_000).catch(0),
+    section: z.string().max(200).catch(''),
+    excerpt: z.string().max(2_000).catch(''),
+  }),
+  z.string().max(2_000).transform(s => ({ page: 0, section: '', excerpt: s })),
+]).catch({ page: 0, section: '', excerpt: '' });
+const complianceCheckItemSchema = z.object({
+  category: z.string().min(1).max(200),
+  status: complianceStatusSchema,
+  details: z.string().min(0).max(8_000),
+  codeReferences: z.array(complianceCheckReferenceSchema).max(50).optional().default([]),
+});
+const complianceLLMResponseSchema = z.object({
+  overallStatus: complianceStatusSchema,
+  checks: z.array(complianceCheckItemSchema).max(50),
+  summary: z.string().min(0).max(8_000).default(''),
+});
 
 // -----------------------------------------------------------------------------
 // Query Generation
@@ -207,37 +234,30 @@ ${context || 'No relevant code sections found. Mark all areas as requires_review
         ? raw.map(c => (typeof c === 'string' ? c : 'text' in c ? c.text : '')).join('')
         : String(raw);
 
-    // Extract JSON from response (handle potential markdown wrapping)
+    // M22: cap LLM response size + Zod-validate before trusting structure.
+    if (responseText.length > 64_000) {
+      throw new Error('Compliance LLM response exceeds size cap');
+    }
+
     let jsonStr = responseText.trim();
     const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
     if (jsonMatch) {
       jsonStr = jsonMatch[1];
     }
 
-    const parsed = JSON.parse(jsonStr) as ComplianceCheckResult;
-
-    // Validate structure
-    if (!parsed.overallStatus || !Array.isArray(parsed.checks)) {
-      throw new Error('Invalid response structure');
+    const rawParsed: unknown = JSON.parse(jsonStr);
+    const validated = complianceLLMResponseSchema.safeParse(rawParsed);
+    if (!validated.success) {
+      throw new Error(`Compliance LLM response failed schema validation: ${validated.error.issues[0]?.message}`);
     }
-
-    // Ensure valid status values
-    const validStatuses = ['compliant', 'non_compliant', 'requires_review'];
-    if (!validStatuses.includes(parsed.overallStatus)) {
-      parsed.overallStatus = 'requires_review';
-    }
-
-    for (const check of parsed.checks) {
-      if (!validStatuses.includes(check.status)) {
-        check.status = 'requires_review';
-      }
-      if (!Array.isArray(check.codeReferences)) {
-        check.codeReferences = [];
-      }
-    }
+    const parsed = validated.data;
 
     return {
       ...parsed,
+      checks: parsed.checks.map(c => ({
+        ...c,
+        codeReferences: c.codeReferences ?? [],
+      })),
       checkedAt: new Date().toISOString(),
     };
   } catch (error) {

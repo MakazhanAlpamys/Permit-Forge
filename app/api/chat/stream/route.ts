@@ -30,23 +30,29 @@ export async function POST(request: NextRequest) {
     // =========================================================================
     // SECURITY: Origin validation + CSRF (mandatory)
     // =========================================================================
+    // L13: Origin header is mandatory on POST. Browsers always send it for cross-origin
+    // POSTs; missing means a non-browser client (or stripped header) — deny by default.
     const origin = request.headers.get('origin');
-    if (origin) {
-      const allowedHost = request.nextUrl.host;
-      try {
-        const originHost = new URL(origin).host;
-        if (originHost !== allowedHost) {
-          return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
-            status: 403,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-      } catch {
-        return new Response(JSON.stringify({ error: 'Invalid origin' }), {
+    if (!origin) {
+      return new Response(JSON.stringify({ error: 'Origin header required' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    const allowedHost = request.nextUrl.host;
+    try {
+      const originHost = new URL(origin).host;
+      if (originHost !== allowedHost) {
+        return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
           status: 403,
           headers: { 'Content-Type': 'application/json' }
         });
       }
+    } catch {
+      return new Response(JSON.stringify({ error: 'Invalid origin' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
     const csrfToken = request.headers.get('x-csrf-token');

@@ -274,7 +274,9 @@ export async function submitPermit(
 
     const isResubmission = permit.status === 'revision_requested';
 
-    const { error } = await supabase
+    // M5: TOCTOU — include the expected status in the WHERE so a concurrent submit
+    // (or admin status change) cannot race past our earlier check.
+    const { data: updatedRows, error } = await supabase
       .from('permit_applications')
       .update({
         status: 'submitted',
@@ -283,9 +285,14 @@ export async function submitPermit(
         revision_notes: isResubmission ? null : undefined,
       })
       .eq('id', permitId)
-      .eq('user_id', authCheck.user.id);
+      .eq('user_id', authCheck.user.id)
+      .in('status', ['draft', 'revision_requested'])
+      .select('id');
 
     if (error) throw error;
+    if (!updatedRows || updatedRows.length === 0) {
+      return { success: false, error: 'Permit status changed; please refresh and try again' };
+    }
 
     await supabase.from('permit_status_history').insert({
       permit_id: permitId,
@@ -657,16 +664,22 @@ export async function revisePermit(
       return { success: false, error: 'Can only revise permits with revision requested' };
     }
 
-    const { error } = await supabase
+    // M5: include status in WHERE to prevent concurrent transitions racing past the check.
+    const { data: updatedRows, error } = await supabase
       .from('permit_applications')
       .update({
         status: 'draft',
         compliance_check_result: null,
       })
       .eq('id', permitId)
-      .eq('user_id', authCheck.user.id);
+      .eq('user_id', authCheck.user.id)
+      .eq('status', 'revision_requested')
+      .select('id');
 
     if (error) throw error;
+    if (!updatedRows || updatedRows.length === 0) {
+      return { success: false, error: 'Permit status changed; please refresh and try again' };
+    }
 
     await supabase.from('permit_status_history').insert({
       permit_id: permitId,

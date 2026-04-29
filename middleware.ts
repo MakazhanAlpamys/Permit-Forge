@@ -22,6 +22,9 @@ function clearSessionAndRedirect(request: NextRequest, reason?: string): NextRes
     const safeReason = reason.replace(/[<>"'&]/g, '').slice(0, 100);
     response.cookies.set('ef_blocked_reason', safeReason, {
       httpOnly: false,
+      // M2: harden cookie attributes — secure in prod, lax sameSite, scoped path.
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
       maxAge: 60, // 1 minute to display message
       path: '/',
     });
@@ -197,7 +200,17 @@ export async function middleware(request: NextRequest) {
   response.headers.set('X-XSS-Protection', '1; mode=block');
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  response.headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co; frame-ancestors 'none'");
+  // H8: HSTS — force HTTPS for 1y including subdomains. Production only (don't break local http).
+  if (process.env.NODE_ENV === 'production') {
+    response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  }
+  // H1: tighten CSP. Production drops 'unsafe-eval' (dev needs it for HMR/source maps).
+  // 'unsafe-inline' on script-src remains because Next.js inlines small bootstrap scripts;
+  // a full nonce-based migration is tracked in fix-plan as a follow-up.
+  const scriptSrc = process.env.NODE_ENV === 'production'
+    ? "script-src 'self' 'unsafe-inline'"
+    : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+  response.headers.set('Content-Security-Policy', `default-src 'self'; ${scriptSrc}; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'`);
   
   return response;
 }

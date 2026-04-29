@@ -64,7 +64,12 @@ async function doRefreshCache(): Promise<RegistryCache> {
       .eq('is_active', true)
       .order('created_at');
 
-    if (error || !data || data.length === 0) {
+    if (error) {
+      // C7: don't poison cache on DB error — let next request retry.
+      return { docs: [], byId: new Map(), ts: 0 };
+    }
+    if (!data || data.length === 0) {
+      // Genuinely empty registry: cache the empty result so we don't hammer DB.
       const empty: RegistryCache = { docs: [], byId: new Map(), ts: Date.now() };
       cache = empty;
       return empty;
@@ -76,9 +81,8 @@ async function doRefreshCache(): Promise<RegistryCache> {
     cache = result;
     return result;
   } catch {
-    const empty: RegistryCache = { docs: [], byId: new Map(), ts: Date.now() };
-    cache = empty;
-    return empty;
+    // C7: don't poison cache on exception — let next request retry.
+    return { docs: [], byId: new Map(), ts: 0 };
   }
 }
 

@@ -303,12 +303,45 @@ export async function logAuditEvent(entry: AuditLogEntry): Promise<void> {
 // Request Metadata Helper
 // -----------------------------------------------------------------------------
 
+// H3: Only trust X-Forwarded-For when we're behind a known proxy hop count. The
+// platform (Vercel) sets `x-vercel-forwarded-for`; a single trusted hop is the
+// rightmost entry of XFF when TRUSTED_PROXY_HOPS is set, otherwise we fall back
+// to `x-real-ip`. This prevents an attacker from spoofing client IP by pre-pending
+// fake IPs to XFF.
+const TRUSTED_PROXY_HOPS = Number(process.env.TRUSTED_PROXY_HOPS || '0');
+const IP_REGEX = /^(?:\d{1,3}(?:\.\d{1,3}){3}|[0-9a-fA-F:]+)$/;
+function safeIp(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  return IP_REGEX.test(trimmed) ? trimmed : undefined;
+}
+
+export function getClientIp(headersList: { get: (name: string) => string | null }): string {
+  // Vercel's purpose-built header is the most trustworthy when present.
+  const vercelIp = safeIp(headersList.get('x-vercel-forwarded-for'));
+  if (vercelIp) return vercelIp;
+
+  const realIp = safeIp(headersList.get('x-real-ip'));
+  if (realIp) return realIp;
+
+  if (TRUSTED_PROXY_HOPS > 0) {
+    const xff = headersList.get('x-forwarded-for');
+    if (xff) {
+      const parts = xff.split(',').map(s => s.trim()).filter(Boolean);
+      // Trusted hop count: the client IP is `TRUSTED_PROXY_HOPS` from the right.
+      const idx = parts.length - TRUSTED_PROXY_HOPS;
+      const candidate = safeIp(parts[idx >= 0 ? idx : 0]);
+      if (candidate) return candidate;
+    }
+  }
+
+  return 'unknown';
+}
+
 export async function getRequestMetadata() {
   const headersList = await headers();
   return {
-    // Take only the first IP in x-forwarded-for (leftmost = client IP) to prevent
-    // header spoofing where an attacker injects extra IPs into the header.
-    ipAddress: (headersList.get('x-forwarded-for')?.split(',')[0]?.trim()) || headersList.get('x-real-ip') || 'unknown',
-    userAgent: headersList.get('user-agent') || 'unknown',
+    ipAddress: getClientIp(headersList),
+    userAgent: (headersList.get('user-agent') || 'unknown').slice(0, 512),
   };
 }

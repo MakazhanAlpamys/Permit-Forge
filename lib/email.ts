@@ -9,6 +9,16 @@ function getFromEmail(): string {
   return `PermitForge <${process.env.SMTP_USER || 'noreply@permitforge.app'}>`;
 }
 
+// H20: mask local-part of email addresses in logs to limit PII leakage.
+function maskEmail(email: string): string {
+  const at = email.indexOf('@');
+  if (at <= 0) return '***';
+  const local = email.slice(0, at);
+  const domain = email.slice(at);
+  if (local.length <= 2) return `${local[0] || '*'}***${domain}`;
+  return `${local[0]}***${local.slice(-1)}${domain}`;
+}
+
 // Lazy transporter — created on first use so env vars are always read at call time,
 // not at module load time (fixes broken state when SMTP_* vars arrive after startup)
 let _transporter: nodemailer.Transporter | null = null;
@@ -81,7 +91,7 @@ export async function sendVerificationEmail(email: string, code: string): Promis
 
   try {
     const fromEmail = getFromEmail();
-    console.log('[Email] Sending verification email to:', email, 'from:', fromEmail);
+    console.log('[Email] Sending verification email to:', maskEmail(email), 'from:', fromEmail);
 
     await getTransporter().sendMail({
       from: fromEmail,
@@ -110,7 +120,7 @@ export async function sendPasswordResetEmail(email: string, code: string): Promi
 
   try {
     const fromEmail = getFromEmail();
-    console.log('[Email] Sending password reset email to:', email, 'from:', fromEmail);
+    console.log('[Email] Sending password reset email to:', maskEmail(email), 'from:', fromEmail);
 
     await getTransporter().sendMail({
       from: fromEmail,
@@ -139,7 +149,7 @@ export async function sendPasswordChangeCodeEmail(email: string, code: string): 
 
   try {
     const fromEmail = getFromEmail();
-    console.log('[Email] Sending password change email to:', email, 'from:', fromEmail);
+    console.log('[Email] Sending password change email to:', maskEmail(email), 'from:', fromEmail);
 
     await getTransporter().sendMail({
       from: fromEmail,

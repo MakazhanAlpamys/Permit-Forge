@@ -374,8 +374,17 @@ export async function updateSessionTitle(sessionId: string, title: string, csrfT
       return { success: false, error: 'Access denied' };
     }
     
-    // Sanitize title
-    const sanitizedTitle = title.slice(0, 100).trim();
+    // M8: strip control chars + HTML tags. Title is rendered in the sidebar — leaving
+    // raw HTML could let a stored XSS surface in the dashboard.
+    const sanitizedTitle = Array.from(title)
+      .filter(ch => { const c = ch.charCodeAt(0); return c >= 32 && c !== 127; })
+      .join('')
+      .replace(/<[^>]*>/g, '')
+      .slice(0, 100)
+      .trim();
+    if (!sanitizedTitle) {
+      return { success: false, error: 'Title cannot be empty' };
+    }
     
     const supabase = createAdminClient();
     const { error } = await supabase

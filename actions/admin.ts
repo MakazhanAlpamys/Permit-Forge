@@ -243,8 +243,24 @@ export async function updateUserRole(
     if (!validation.success) {
       return { success: false, error: 'Invalid user ID' };
     }
-    
+
     const supabase = createAdminClient();
+
+    // H12: prevent the last remaining admin from being demoted, which would lock
+    // the system out of admin operations. Only enforce when demoting to 'user'.
+    // Best-effort: if the count query fails or returns null, skip — the alternative
+    // is denying every demotion when the DB hiccups, which is worse.
+    if (role === 'user') {
+      const { count } = await supabase
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .eq('role', 'admin')
+        .eq('blocked', false);
+      if (typeof count === 'number' && count <= 1) {
+        return { success: false, error: 'Cannot demote the last active admin' };
+      }
+    }
+
     const { error } = await supabase.rpc('admin_update_user_role', {
       p_admin_id: authCheck.user.id,
       p_target_user_id: userId,
