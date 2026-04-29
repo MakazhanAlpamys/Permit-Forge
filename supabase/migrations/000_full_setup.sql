@@ -81,8 +81,9 @@ CREATE TABLE users (
   full_name TEXT,
   email TEXT UNIQUE,
   email_verified BOOLEAN DEFAULT FALSE,
-  verification_code TEXT,
-  reset_code TEXT,
+  -- M17: codes are exactly 6 digits.
+  verification_code CHAR(6),
+  reset_code CHAR(6),
   code_expires_at TIMESTAMPTZ,
   reset_code_expires_at TIMESTAMPTZ,
   role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
@@ -97,7 +98,7 @@ CREATE TABLE users (
 ALTER TABLE users ADD CONSTRAINT users_blocked_by_fkey
   FOREIGN KEY (blocked_by) REFERENCES users(id) ON DELETE SET NULL;
 
-CREATE INDEX users_username_idx ON users(username);
+-- L7: users_username_idx removed; the UNIQUE constraint on `username` already creates one.
 CREATE INDEX users_blocked_idx ON users(blocked) WHERE blocked = TRUE;
 CREATE INDEX users_email_idx ON users(email) WHERE email IS NOT NULL;
 
@@ -120,6 +121,9 @@ CREATE INDEX dubai_code_chunks_embedding_idx
   ON dubai_code_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 CREATE INDEX dubai_code_chunks_fts_idx
   ON dubai_code_chunks USING gin(fts);
+-- H17: trigram index on lower(content) for `LIKE '%pattern%'` lookups in search_dubai_code_exact.
+CREATE INDEX dubai_code_chunks_content_trgm_idx
+  ON dubai_code_chunks USING gin (lower(content) gin_trgm_ops);
 CREATE INDEX dubai_code_chunks_metadata_idx
   ON dubai_code_chunks USING gin(metadata jsonb_path_ops);
 CREATE INDEX idx_chunks_start_page  ON dubai_code_chunks ((metadata->>'startPage'));
@@ -181,8 +185,9 @@ CREATE TABLE audit_logs (
   action TEXT NOT NULL,
   target_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   metadata JSONB DEFAULT '{}',
-  ip_address TEXT,
-  user_agent TEXT,
+  -- M18: cap user_agent and use INET-friendly varchar (TEXT works for IPv4/IPv6 strings).
+  ip_address VARCHAR(45),
+  user_agent VARCHAR(512),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -245,8 +250,10 @@ CREATE INDEX permit_apps_project_type_idx ON permit_applications(project_type);
 CREATE TABLE permit_status_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   permit_id UUID NOT NULL REFERENCES permit_applications(id) ON DELETE CASCADE,
-  from_status TEXT,
-  to_status TEXT NOT NULL,
+  from_status TEXT
+    CHECK (from_status IS NULL OR from_status IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'revision_requested')),
+  to_status TEXT NOT NULL
+    CHECK (to_status IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'revision_requested')),
   changed_by UUID REFERENCES users(id) ON DELETE SET NULL,
   comment TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -254,6 +261,7 @@ CREATE TABLE permit_status_history (
 
 CREATE INDEX permit_history_permit_id_idx  ON permit_status_history(permit_id);
 CREATE INDEX permit_history_created_at_idx ON permit_status_history(created_at DESC);
+CREATE INDEX permit_history_changed_by_idx ON permit_status_history(changed_by);  -- M13
 
 -- ---------------------------------------------------------------------------
 -- 2.9 PERMIT ATTACHMENTS
@@ -312,7 +320,7 @@ CREATE TABLE permit_certificates (
 );
 
 CREATE INDEX permit_certificates_permit_id_idx ON permit_certificates(permit_id);
-CREATE UNIQUE INDEX permit_certificates_number_idx ON permit_certificates(certificate_number);
+-- L8: certificate_number is already UNIQUE on the column; no extra unique index needed.
 
 -- ---------------------------------------------------------------------------
 -- 2.12 PARENT CHUNKS (v2 Pipeline - Parent-Child Chunking)
@@ -331,6 +339,9 @@ CREATE INDEX parent_chunks_document_name_idx ON parent_chunks(document_name);
 -- Add foreign key from dubai_code_chunks.parent_id to parent_chunks.id
 ALTER TABLE dubai_code_chunks ADD CONSTRAINT dubai_code_chunks_parent_id_fkey
   FOREIGN KEY (parent_id) REFERENCES parent_chunks(id) ON DELETE SET NULL;
+
+-- M14: index parent_id so parent expansion (RAG hot path) doesn't seq-scan.
+CREATE INDEX dubai_code_chunks_parent_id_idx ON dubai_code_chunks(parent_id) WHERE parent_id IS NOT NULL;
 
 -- ---------------------------------------------------------------------------
 -- 2.13 SEMANTIC CACHE (v2 Pipeline - Query Response Caching)
@@ -355,15 +366,16 @@ CREATE INDEX semantic_cache_created_at_idx ON semantic_cache(created_at DESC);
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE document_registry (
-  id TEXT PRIMARY KEY,                          -- e.g. 'building-code-2021'
-  display_name TEXT NOT NULL,
-  short_name TEXT NOT NULL,
-  file_name TEXT NOT NULL,                      -- PDF filename (original name)
-  storage_path TEXT DEFAULT NULL,               -- Supabase Storage path (e.g. 'documents/doc-id/file.pdf')
-  source_url TEXT DEFAULT '',
-  authority TEXT DEFAULT '',
+  -- M19: cap string fields to prevent unbounded growth.
+  id VARCHAR(120) PRIMARY KEY,                  -- e.g. 'building-code-2021'
+  display_name VARCHAR(200) NOT NULL,
+  short_name VARCHAR(40) NOT NULL,
+  file_name VARCHAR(255) NOT NULL,              -- PDF filename (original name)
+  storage_path VARCHAR(512) DEFAULT NULL,       -- Supabase Storage path (e.g. 'documents/doc-id/file.pdf')
+  source_url VARCHAR(512) DEFAULT '',
+  authority VARCHAR(200) DEFAULT '',
   description TEXT DEFAULT '',
-  badge_color TEXT DEFAULT 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  badge_color VARCHAR(120) DEFAULT 'bg-gray-500/20 text-gray-400 border-gray-500/30',
   keywords TEXT[] DEFAULT '{}',                 -- For document selector scoring
   categories TEXT[] DEFAULT '{}',               -- Category tags
   is_active BOOLEAN DEFAULT TRUE,               -- Soft delete / disable
@@ -422,8 +434,8 @@ SELECT
   COUNT(*) FILTER (WHERE cm.role = 'assistant') AS assistant_messages
 FROM chat_messages cm
 JOIN chat_sessions cs ON cm.session_id = cs.id
-GROUP BY DATE(cm.created_at)
-ORDER BY date DESC;
+GROUP BY DATE(cm.created_at);
+-- L9: ORDER BY in materialized view definition is meaningless; consumers ORDER BY at query time.
 
 CREATE UNIQUE INDEX analytics_daily_date_idx ON analytics_daily(date);
 
@@ -1022,7 +1034,7 @@ RETURNS void AS $$
 BEGIN
   REFRESH MATERIALIZED VIEW CONCURRENTLY analytics_daily;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;  -- M16
 
 -- ---------------------------------------------------------------------------
 -- 7.1 Admin Dashboard Stats (legacy)
@@ -1135,6 +1147,7 @@ RETURNS TABLE (
 )
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public  -- M16
 AS $$
   SELECT
     (SELECT count(*) FROM users),
@@ -1171,6 +1184,7 @@ RETURNS TABLE (
 )
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public  -- M16
 AS $$
   WITH date_series AS (
     SELECT generate_series(
@@ -1219,6 +1233,7 @@ RETURNS TABLE (
 )
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public  -- M16
 AS $$
   SELECT
     u.id, u.username, u.full_name,
@@ -1370,8 +1385,11 @@ $$;
 -- ============================================================================
 
 -- RAG system
-GRANT SELECT, INSERT, DELETE, UPDATE ON dubai_code_chunks TO anon, authenticated, service_role;
-GRANT USAGE, SELECT ON SEQUENCE dubai_code_chunks_id_seq TO anon, authenticated, service_role;
+-- C5: anon gets SELECT-only; writes restricted to service_role.
+GRANT SELECT ON dubai_code_chunks TO anon;
+GRANT SELECT ON dubai_code_chunks TO authenticated;
+GRANT ALL ON dubai_code_chunks TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE dubai_code_chunks_id_seq TO service_role;
 
 -- RAG search functions
 GRANT EXECUTE ON FUNCTION match_dubai_code TO anon, authenticated, service_role;
@@ -1476,13 +1494,21 @@ CREATE POLICY "Allow read document trees" ON document_trees
 CREATE POLICY "Service role full access to document trees" ON document_trees
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- chat_sessions: authenticated + service_role only (auth in app layer)
-CREATE POLICY "Allow all sessions operations" ON chat_sessions
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- chat_sessions: ownership-bound for authenticated; service_role retains full access.
+-- C3: replace USING(true) with user_id = auth.uid() so direct PostgREST calls cannot leak data.
+CREATE POLICY "Authenticated owns own sessions" ON chat_sessions
+  FOR ALL TO authenticated
+  USING (user_id = (SELECT auth.uid())) WITH CHECK (user_id = (SELECT auth.uid()));
+CREATE POLICY "Service role full access to sessions" ON chat_sessions
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- chat_messages: authenticated + service_role only (auth in app layer)
-CREATE POLICY "Allow all messages operations" ON chat_messages
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- chat_messages: ownership via parent session.
+CREATE POLICY "Authenticated owns own messages" ON chat_messages
+  FOR ALL TO authenticated
+  USING (session_id IN (SELECT id FROM chat_sessions WHERE user_id = (SELECT auth.uid())))
+  WITH CHECK (session_id IN (SELECT id FROM chat_sessions WHERE user_id = (SELECT auth.uid())));
+CREATE POLICY "Service role full access to messages" ON chat_messages
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- audit_logs: service_role only (written by server actions)
 CREATE POLICY "Service role full access to audit_logs" ON audit_logs
@@ -1492,25 +1518,41 @@ CREATE POLICY "Service role full access to audit_logs" ON audit_logs
 CREATE POLICY "Service role full access to rate_limits" ON rate_limits
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- permit_applications: authenticated + service_role (auth in app layer)
-CREATE POLICY "Allow all permit_applications operations" ON permit_applications
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- C3: ownership-bound RLS for permit_applications.
+CREATE POLICY "Authenticated owns own permits" ON permit_applications
+  FOR ALL TO authenticated
+  USING (user_id = (SELECT auth.uid())) WITH CHECK (user_id = (SELECT auth.uid()));
+CREATE POLICY "Service role full access to permit_applications" ON permit_applications
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- permit_status_history: authenticated + service_role
-CREATE POLICY "Allow all permit_status_history operations" ON permit_status_history
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- permit_status_history: ownership via parent permit (read-only for owner).
+CREATE POLICY "Authenticated reads own permit history" ON permit_status_history
+  FOR SELECT TO authenticated
+  USING (permit_id IN (SELECT id FROM permit_applications WHERE user_id = (SELECT auth.uid())));
+CREATE POLICY "Service role full access to permit_status_history" ON permit_status_history
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- permit_attachments: authenticated + service_role
-CREATE POLICY "Allow all permit_attachments operations" ON permit_attachments
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- permit_attachments: ownership via parent permit.
+CREATE POLICY "Authenticated owns own permit attachments" ON permit_attachments
+  FOR ALL TO authenticated
+  USING (permit_id IN (SELECT id FROM permit_applications WHERE user_id = (SELECT auth.uid())))
+  WITH CHECK (permit_id IN (SELECT id FROM permit_applications WHERE user_id = (SELECT auth.uid())));
+CREATE POLICY "Service role full access to permit_attachments" ON permit_attachments
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- notifications: authenticated + service_role
-CREATE POLICY "Allow all notifications operations" ON notifications
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- notifications: per-user.
+CREATE POLICY "Authenticated owns own notifications" ON notifications
+  FOR ALL TO authenticated
+  USING (user_id = (SELECT auth.uid())) WITH CHECK (user_id = (SELECT auth.uid()));
+CREATE POLICY "Service role full access to notifications" ON notifications
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- permit_certificates: authenticated + service_role
-CREATE POLICY "Allow all permit_certificates operations" ON permit_certificates
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- permit_certificates: ownership via parent permit (read-only).
+CREATE POLICY "Authenticated reads own permit certificates" ON permit_certificates
+  FOR SELECT TO authenticated
+  USING (permit_id IN (SELECT id FROM permit_applications WHERE user_id = (SELECT auth.uid())));
+CREATE POLICY "Service role full access to permit_certificates" ON permit_certificates
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- parent_chunks: read for authenticated, full for service_role
 CREATE POLICY "Allow read parent_chunks" ON parent_chunks
@@ -1748,14 +1790,15 @@ GRANT EXECUTE ON FUNCTION delete_document TO service_role;
 REVOKE EXECUTE ON FUNCTION upsert_document FROM anon, authenticated;
 REVOKE EXECUTE ON FUNCTION delete_document FROM anon, authenticated;
 
-REVOKE ALL ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) FROM public, anon;
-GRANT EXECUTE ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) TO authenticated;
-REVOKE ALL ON FUNCTION insert_semantic_cache(TEXT, VECTOR(768), TEXT, JSONB, INT) FROM public, anon;
-GRANT EXECUTE ON FUNCTION insert_semantic_cache(TEXT, VECTOR(768), TEXT, JSONB, INT) TO authenticated;
-REVOKE ALL ON FUNCTION cleanup_semantic_cache() FROM public, anon;
-GRANT EXECUTE ON FUNCTION cleanup_semantic_cache() TO authenticated;
-REVOKE ALL ON FUNCTION get_parent_chunks(BIGINT[]) FROM public, anon;
-GRANT EXECUTE ON FUNCTION get_parent_chunks(BIGINT[]) TO authenticated;
+-- H19: cache writes are server-side only. authenticated cannot poison cache or wipe it.
+REVOKE ALL ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) TO service_role;
+REVOKE ALL ON FUNCTION insert_semantic_cache(TEXT, VECTOR(768), TEXT, JSONB, INT) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION insert_semantic_cache(TEXT, VECTOR(768), TEXT, JSONB, INT) TO service_role;
+REVOKE ALL ON FUNCTION cleanup_semantic_cache() FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION cleanup_semantic_cache() TO service_role;
+REVOKE ALL ON FUNCTION get_parent_chunks(BIGINT[]) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION get_parent_chunks(BIGINT[]) TO service_role;
 
 -- ============================================================================
 -- 12. DATA CLEANUP FUNCTIONS (from 006_cleanup_functions)
@@ -1850,14 +1893,10 @@ GRANT EXECUTE ON FUNCTION run_all_cleanup(INT, INT) TO service_role;
 -- ============================================================================
 -- 13. DEFAULT ADMIN USER
 -- ============================================================================
-
-INSERT INTO users (username, password_hash, full_name, role)
-VALUES (
-  'admin',
-  crypt('Admin123!', gen_salt('bf', 12)),
-  'System Administrator',
-  'admin'
-) ON CONFLICT (username) DO NOTHING;
+-- C2: removed hardcoded `Admin123!` default admin INSERT.
+-- Provision the first admin out-of-band using a one-time setup script that reads
+-- INITIAL_ADMIN_USERNAME / INITIAL_ADMIN_PASSWORD env vars. Do NOT ship a known
+-- credential in version control.
 
 -- ============================================================================
 -- 14. STORAGE BUCKET FOR DOCUMENT PDFs
