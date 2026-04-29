@@ -58,7 +58,10 @@ export function NotificationBell() {
   useEffect(() => {
     fetchNotifications();
     getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
-    const interval = setInterval(fetchNotifications, 30000);
+    // P2-L4: random jitter prevents all open tabs from polling on the exact
+    // same 30-s boundary (synchronised request waves at the API).
+    const jitter = Math.floor(Math.random() * 5_000);
+    const interval = setInterval(fetchNotifications, 30_000 + jitter);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 

@@ -33,6 +33,14 @@ export default function PermitsPage() {
   useEffect(() => {
     loadPermits();
     getCSRFTokenAction().then(setCsrfToken);
+    // P2-M10: poll every 30 s so a status flip from the admin (under_review →
+    // approved/rejected) is visible without a manual refresh. The
+    // notification bell already polls at the same interval — keep them
+    // aligned but offset by a small jitter to avoid synchronised waves
+    // of requests across many tabs (P2-L4).
+    const jitter = Math.floor(Math.random() * 5_000);
+    const interval = setInterval(loadPermits, 30_000 + jitter);
+    return () => clearInterval(interval);
   }, [loadPermits]);
 
   const handleView = (id: string) => {
