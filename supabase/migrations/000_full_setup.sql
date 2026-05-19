@@ -1752,10 +1752,11 @@ REVOKE EXECUTE ON FUNCTION delete_document FROM anon, authenticated;
 
 REVOKE ALL ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) FROM public, anon;
 GRANT EXECUTE ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) TO authenticated;
-REVOKE ALL ON FUNCTION insert_semantic_cache(TEXT, VECTOR(768), TEXT, JSONB, INT) FROM public, anon;
-GRANT EXECUTE ON FUNCTION insert_semantic_cache(TEXT, VECTOR(768), TEXT, JSONB, INT) TO authenticated;
-REVOKE ALL ON FUNCTION cleanup_semantic_cache() FROM public, anon;
-GRANT EXECUTE ON FUNCTION cleanup_semantic_cache() TO authenticated;
+-- A4/H19: insert/cleanup mutate the cache; app calls them via service_role only.
+REVOKE ALL ON FUNCTION insert_semantic_cache(TEXT, VECTOR(768), TEXT, JSONB, INT) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION insert_semantic_cache(TEXT, VECTOR(768), TEXT, JSONB, INT) TO service_role;
+REVOKE ALL ON FUNCTION cleanup_semantic_cache() FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION cleanup_semantic_cache() TO service_role;
 REVOKE ALL ON FUNCTION get_parent_chunks(BIGINT[]) FROM public, anon;
 GRANT EXECUTE ON FUNCTION get_parent_chunks(BIGINT[]) TO authenticated;
 

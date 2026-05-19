@@ -56,3 +56,44 @@ describe('migration grants — dubai_code_chunks (A3 / C5)', () => {
     expect(sql).toMatch(serviceSeq);
   });
 });
+
+describe('migration grants — semantic cache RPCs (A4 / H19)', () => {
+  it('does NOT grant EXECUTE on insert_semantic_cache to authenticated', () => {
+    // H19: insert_semantic_cache lets the caller poison the RAG response cache.
+    // App code calls it via service_role (createAdminClient in lib/semantic-cache.ts).
+    const offending =
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+insert_semantic_cache[^;]*?\bauthenticated\b[^;]*?;/i;
+    expect(sql).not.toMatch(offending);
+  });
+
+  it('does NOT grant EXECUTE on cleanup_semantic_cache to authenticated', () => {
+    // H19: cleanup_semantic_cache wipes the cache table. Maintenance-only.
+    const offending =
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+cleanup_semantic_cache[^;]*?\bauthenticated\b[^;]*?;/i;
+    expect(sql).not.toMatch(offending);
+  });
+
+  it('grants EXECUTE on insert_semantic_cache to service_role', () => {
+    const allowed =
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+insert_semantic_cache[^;]*?\bservice_role\b[^;]*?;/i;
+    expect(sql).toMatch(allowed);
+  });
+
+  it('grants EXECUTE on cleanup_semantic_cache to service_role', () => {
+    const allowed =
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+cleanup_semantic_cache[^;]*?\bservice_role\b[^;]*?;/i;
+    expect(sql).toMatch(allowed);
+  });
+
+  it('still revokes insert_semantic_cache from public and anon', () => {
+    const revoke =
+      /REVOKE\s+ALL\s+ON\s+FUNCTION\s+insert_semantic_cache[^;]*?\b(?:public|anon)\b[^;]*?;/i;
+    expect(sql).toMatch(revoke);
+  });
+
+  it('still revokes cleanup_semantic_cache from public and anon', () => {
+    const revoke =
+      /REVOKE\s+ALL\s+ON\s+FUNCTION\s+cleanup_semantic_cache[^;]*?\b(?:public|anon)\b[^;]*?;/i;
+    expect(sql).toMatch(revoke);
+  });
+});
