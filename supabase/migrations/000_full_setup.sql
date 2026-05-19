@@ -1370,8 +1370,10 @@ $$;
 -- ============================================================================
 
 -- RAG system
-GRANT SELECT, INSERT, DELETE, UPDATE ON dubai_code_chunks TO anon, authenticated, service_role;
-GRANT USAGE, SELECT ON SEQUENCE dubai_code_chunks_id_seq TO anon, authenticated, service_role;
+-- A3/C5: anon and authenticated can only read; ingestion runs via service_role.
+GRANT SELECT ON dubai_code_chunks TO anon, authenticated;
+GRANT SELECT, INSERT, DELETE, UPDATE ON dubai_code_chunks TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE dubai_code_chunks_id_seq TO service_role;
 
 -- RAG search functions
 GRANT EXECUTE ON FUNCTION match_dubai_code TO anon, authenticated, service_role;
