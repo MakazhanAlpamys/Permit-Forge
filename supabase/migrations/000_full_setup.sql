@@ -256,6 +256,7 @@ CREATE TABLE permit_status_history (
 
 CREATE INDEX permit_history_permit_id_idx  ON permit_status_history(permit_id);
 CREATE INDEX permit_history_created_at_idx ON permit_status_history(created_at DESC);
+CREATE INDEX permit_history_changed_by_idx ON permit_status_history(changed_by);
 
 -- ---------------------------------------------------------------------------
 -- 2.9 PERMIT ATTACHMENTS
