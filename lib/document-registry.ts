@@ -54,6 +54,11 @@ export function invalidateRegistryCache(): void {
 
 /** Internal: fetch from DB and populate cache */
 async function doRefreshCache(): Promise<RegistryCache> {
+  // Returned on DB error — ts=0 so isCacheValid() always returns false, so the
+  // next call re-tries. Crucially we do NOT assign this to `cache`, otherwise a
+  // single hiccup would silently empty the registry for 5 minutes.
+  const transient: RegistryCache = { docs: [], byId: new Map(), ts: 0 };
+
   try {
     const { createAdminClient } = await import('@/lib/supabase-server');
     const supabase = createAdminClient();
@@ -64,21 +69,17 @@ async function doRefreshCache(): Promise<RegistryCache> {
       .eq('is_active', true)
       .order('created_at');
 
-    if (error || !data || data.length === 0) {
-      const empty: RegistryCache = { docs: [], byId: new Map(), ts: Date.now() };
-      cache = empty;
-      return empty;
-    }
+    if (error) return transient;
 
-    const docs = data.map(mapRow);
+    // Legitimate empty (admin deleted everything, fresh install) — safe to cache.
+    const rows = data ?? [];
+    const docs = rows.map(mapRow);
     const byId = new Map(docs.map(d => [d.id, d]));
     const result: RegistryCache = { docs, byId, ts: Date.now() };
     cache = result;
     return result;
   } catch {
-    const empty: RegistryCache = { docs: [], byId: new Map(), ts: Date.now() };
-    cache = empty;
-    return empty;
+    return transient;
   }
 }
 

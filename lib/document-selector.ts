@@ -44,13 +44,12 @@ async function doLoadSearchProfiles(): Promise<void> {
       .select('id, keywords, categories')
       .eq('is_active', true);
 
-    if (error || !data) {
-      profileCacheTs = Date.now(); // Mark as loaded (empty)
-      return;
-    }
+    // On DB error, leave cache untouched so the next call re-tries instead of
+    // serving an empty profile set for the full TTL.
+    if (error) return;
 
     const profiles: Record<string, DocumentSearchProfile> = {};
-    for (const row of data) {
+    for (const row of data ?? []) {
       profiles[row.id as string] = {
         keywords: (row.keywords as string[]) || [],
         categories: (row.categories as string[]) || [],
@@ -60,7 +59,7 @@ async function doLoadSearchProfiles(): Promise<void> {
     profileCache = profiles;
     profileCacheTs = Date.now();
   } catch {
-    profileCacheTs = Date.now(); // Mark as loaded (empty)
+    // Exception path — same: don't mark as loaded so next call retries.
   }
 }
 
