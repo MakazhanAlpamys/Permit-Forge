@@ -6,6 +6,7 @@
 import { hybridSearch } from '@/lib/rag';
 import { getChatModel } from '@/lib/gemini';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { complianceCheckJsonSchema } from '@/lib/validations';
 import type {
   BuildingDetails,
   ComplianceRequirements,
@@ -13,6 +14,11 @@ import type {
   ComplianceCheckItem,
   ProjectType,
 } from '@/types';
+
+// C23H/M22: cap LLM response size before parsing. Real responses are ~2-5KB;
+// 64KB leaves room for unusually verbose outputs while shutting down a
+// hallucinated megabyte of garbage that could DoS the JSON parser.
+const MAX_LLM_JSON_BYTES = 64 * 1024;
 
 // -----------------------------------------------------------------------------
 // Query Generation
@@ -217,6 +223,14 @@ ${context || 'No relevant code sections found. Mark all areas as requires_review
         ? raw.map(c => (typeof c === 'string' ? c : 'text' in c ? c.text : '')).join('')
         : String(raw);
 
+    // C23H/M22: size-cap the raw text before parsing so a hallucinated
+    // megabyte doesn't blow up JSON.parse.
+    if (responseText.length > MAX_LLM_JSON_BYTES) {
+      throw new Error(
+        `LLM response too large: ${responseText.length} bytes (cap ${MAX_LLM_JSON_BYTES})`,
+      );
+    }
+
     // Extract JSON from response (handle potential markdown wrapping)
     let jsonStr = responseText.trim();
     const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
@@ -224,30 +238,17 @@ ${context || 'No relevant code sections found. Mark all areas as requires_review
       jsonStr = jsonMatch[1];
     }
 
-    const parsed = JSON.parse(jsonStr) as ComplianceCheckResult;
-
-    // Validate structure
-    if (!parsed.overallStatus || !Array.isArray(parsed.checks)) {
-      throw new Error('Invalid response structure');
-    }
-
-    // Ensure valid status values
-    const validStatuses = ['compliant', 'non_compliant', 'requires_review'];
-    if (!validStatuses.includes(parsed.overallStatus)) {
-      parsed.overallStatus = 'requires_review';
-    }
-
-    for (const check of parsed.checks) {
-      if (!validStatuses.includes(check.status)) {
-        check.status = 'requires_review';
-      }
-      if (!Array.isArray(check.codeReferences)) {
-        check.codeReferences = [];
-      }
+    // C23H: Zod-validated shape instead of ad-hoc field checks. Any nesting
+    // depth / array length / string length anomalies bounce here before
+    // they reach the renderer.
+    const rawParsed = JSON.parse(jsonStr);
+    const zodResult = complianceCheckJsonSchema.safeParse(rawParsed);
+    if (!zodResult.success) {
+      throw new Error(`LLM JSON failed schema: ${zodResult.error.issues[0]?.message ?? 'invalid'}`);
     }
 
     return {
-      ...parsed,
+      ...zodResult.data,
       checkedAt: new Date().toISOString(),
     };
   } catch (error) {

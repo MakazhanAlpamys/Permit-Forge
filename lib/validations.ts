@@ -289,6 +289,42 @@ export const fileUploadSchema = z.object({
 // Session Token Payload
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// LLM compliance-check response (C23H/M22)
+// -----------------------------------------------------------------------------
+// Validates the JSON the model is supposed to return. Strict shape + sane
+// length caps so a hallucinated megabyte of text or a malicious nested
+// payload can't blow up downstream renderers.
+
+const complianceCheckReferenceObjectSchema = z.object({
+  page: z.number().int().min(0).max(100_000),
+  section: z.string().max(500),
+  excerpt: z.string().max(2000),
+});
+
+// Models sometimes return references as plain strings ("Section 2.1, Page 30")
+// instead of objects. Accept either and normalize strings into the object
+// shape so downstream renderers see one consistent schema.
+const complianceCheckReferenceSchema = z.union([
+  complianceCheckReferenceObjectSchema,
+  z.string().max(500).transform((s) => ({ page: 0, section: s, excerpt: '' })),
+]);
+
+const complianceCheckItemSchema = z.object({
+  category: z.string().min(1).max(200),
+  status: z.enum(['compliant', 'non_compliant', 'requires_review']),
+  details: z.string().max(4000),
+  codeReferences: z.array(complianceCheckReferenceSchema).max(50),
+});
+
+export const complianceCheckJsonSchema = z.object({
+  overallStatus: z.enum(['compliant', 'non_compliant', 'requires_review']),
+  checks: z.array(complianceCheckItemSchema).max(30),
+  summary: z.string().max(4000),
+});
+
+export type ComplianceCheckJsonInput = z.infer<typeof complianceCheckJsonSchema>;
+
 export const jwtPayloadSchema = z.object({
   sub: z.string().uuid(),
   username: z.string(),
