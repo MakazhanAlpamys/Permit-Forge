@@ -97,7 +97,8 @@ CREATE TABLE users (
 ALTER TABLE users ADD CONSTRAINT users_blocked_by_fkey
   FOREIGN KEY (blocked_by) REFERENCES users(id) ON DELETE SET NULL;
 
-CREATE INDEX users_username_idx ON users(username);
+-- users.username already has a UNIQUE constraint which creates an implicit
+-- B-tree index; an explicit users_username_idx would be redundant (D13/L7).
 CREATE INDEX users_blocked_idx ON users(blocked) WHERE blocked = TRUE;
 CREATE INDEX users_email_idx ON users(email) WHERE email IS NOT NULL;
 
