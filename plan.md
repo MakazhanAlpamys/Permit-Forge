@@ -73,7 +73,7 @@ Risk legend: 🟢 LOW · 🟡 MEDIUM · 🔴 HIGH (touches hot path, needs manua
 
 - [~] **C1H — H2** Fix `.claude/hooks/lint-on-edit.mjs`: drop `shell: true`, validate `abs` against `/^[\w./\\:-]+$/`, ensure `--` prefix on eslint args. Stop swallowing stderr; log via `console.error`. 🟢 — N/A (`.claude/hooks/` not present in repo)
 - [x] **C2H — H3** Trust `X-Forwarded-For` only when a configurable proxy IP allow-list matches. Default behind localhost / vercel deployment hosts. 🟡 — `cf38f66`
-- [ ] **C3H — H4** Add per-account login lockout (counter keyed by username, not IP). Bound to in-memory map sized + TTL'd. 🟡
+- [x] **C3H — H4** Add per-account login lockout (counter keyed by username, not IP). Bound to in-memory map sized + TTL'd. 🟡 — `2d9c123`
 - [ ] **C4H — H5** Either: (a) flip CSRF cookie to `HttpOnly: false` and use double-submit properly with a per-request meta tag; or (b) remove the double-submit pretense and rely on origin check + SameSite=Strict. Pick (a) for least churn. 🟡
 - [ ] **C5H — H6** Move 100MB body limit from global `next.config.ts` to per-route config for `/api/ingest` only. Restore Next default elsewhere. 🟢
 - [ ] **C6H — H9** Fix concurrent-upload TOCTOU in `actions/permit-attachments.ts`: replace `SELECT count → INSERT` with atomic insert guarded by a partial-unique-index or `WITH inserted AS (... RETURNING ...)` that aborts if count(permit_id) > 10. 🟡

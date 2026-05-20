@@ -192,20 +192,29 @@ export async function getQuickSession(): Promise<{ id: string; username: string;
 // -----------------------------------------------------------------------------
 
 /**
- * Generate CSRF token and store in cookie
+ * Generate CSRF token and store in cookie.
+ *
+ * C4H/H5: The cookie is intentionally NOT HttpOnly. This is a real
+ * double-submit-cookie scheme — the client reads the cookie value via JS and
+ * echoes it back in a form field/header, and the server checks that the two
+ * match. With HttpOnly the client can't read the cookie, so the "double-submit"
+ * pretense collapses into "only one submit" with the cookie acting like a
+ * session id. Same-origin policy keeps the cookie unreadable to attackers on
+ * other origins, and SameSite=Strict prevents the cookie itself from being
+ * sent on cross-site requests.
  */
 export async function generateCSRFToken(): Promise<string> {
   const token = crypto.randomBytes(32).toString('hex');
   const cookieStore = await cookies();
-  
+
   cookieStore.set(CSRF_COOKIE_NAME, token, {
-    httpOnly: true,
+    httpOnly: false,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
     maxAge: SESSION_MAX_AGE,
     path: '/',
   });
-  
+
   return token;
 }
 

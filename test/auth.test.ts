@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { generateCSRFToken, validateCSRFToken, createJWTToken, verifyJWTToken } from '@/lib/auth';
+import { cookies } from 'next/headers';
 
 describe('Auth Library', () => {
   beforeEach(() => {
@@ -30,6 +31,25 @@ describe('Auth Library', () => {
     it('should reject empty CSRF token', async () => {
       const isValid = await validateCSRFToken('');
       expect(isValid).toBe(false);
+    });
+
+    // C4H/H5: cookie must be readable from JS so the double-submit pattern works.
+    it('should set CSRF cookie with httpOnly: false (double-submit)', async () => {
+      const setSpy = vi.fn();
+      vi.mocked(cookies).mockResolvedValueOnce({
+        get: vi.fn(),
+        set: setSpy,
+        delete: vi.fn(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      await generateCSRFToken();
+
+      expect(setSpy).toHaveBeenCalledTimes(1);
+      const [name, , options] = setSpy.mock.calls[0];
+      expect(name).toBe('ef_csrf');
+      expect(options.httpOnly).toBe(false);
+      expect(options.sameSite).toBe('strict');
     });
   });
 
