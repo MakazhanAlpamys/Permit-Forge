@@ -195,8 +195,10 @@ CREATE TABLE audit_logs (
   action TEXT NOT NULL,
   target_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   metadata JSONB DEFAULT '{}',
-  ip_address TEXT,
-  user_agent TEXT,
+  -- D10/M18: bound at IPv6-with-embedded-v4 max length and a generous UA
+  -- ceiling so a forged request can't bloat the table.
+  ip_address VARCHAR(45),
+  user_agent VARCHAR(512),
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
