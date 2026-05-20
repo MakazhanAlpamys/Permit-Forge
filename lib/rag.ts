@@ -127,6 +127,40 @@ async function exactSearch(
   }));
 }
 
+/**
+ * Run exact search if the query names a specific code reference; otherwise
+ * return []. Optionally filter to one or more page ranges (used by the
+ * tree-reasoning / scope-detected path).
+ *
+ * Collapses the two near-identical "needsExactSearch + .match + exactSearch +
+ * optional page filter" blocks that lived in queryBuildingCode and
+ * queryBuildingCodeFiltered. (F16 / Simplify #16)
+ */
+const EXACT_REFERENCE_CAPTURE_REGEX =
+  /\b(\d+\.\d+(?:\.\d+)?)\b|section\s+(\d+[\.\d]*)|table\s+(\d+[-\d]*)/i;
+
+async function runExactSearchIfApplicable(
+  query: string,
+  pageRanges?: PageRange[],
+): Promise<MatchedChunk[]> {
+  if (!EXACT_REFERENCE_REGEX.test(query)) return [];
+
+  const m = query.match(EXACT_REFERENCE_CAPTURE_REGEX);
+  if (!m) return [];
+
+  const pattern = m[1] || m[2] || m[3];
+  const exactResults = await exactSearch(pattern, 5);
+
+  if (!pageRanges || pageRanges.length === 0) return exactResults;
+
+  return exactResults.filter((chunk) => {
+    const chunkPage = chunk.metadata.page || 0;
+    return pageRanges.some(
+      (range) => chunkPage >= range.startPage && chunkPage <= range.endPage,
+    );
+  });
+}
+
 // -----------------------------------------------------------------------------
 // Main RAG Query (with pre-computed embedding + document filter)
 // -----------------------------------------------------------------------------
@@ -144,19 +178,7 @@ export async function queryBuildingCode(
 ): Promise<RAGResult> {
   const { query, matchCount = DEFAULT_MATCH_COUNT } = params;
 
-  // Detect if query needs exact search
-  const needsExactSearch = EXACT_REFERENCE_REGEX.test(query);
-
-  let chunks: MatchedChunk[] = [];
-
-  if (needsExactSearch) {
-    const patternMatch = query.match(/\b(\d+\.\d+(?:\.\d+)?)\b|section\s+(\d+[\.\d]*)|table\s+(\d+[-\d]*)/i);
-    if (patternMatch) {
-      const pattern = patternMatch[1] || patternMatch[2] || patternMatch[3];
-      const exactResults = await exactSearch(pattern, 5);
-      chunks.push(...exactResults);
-    }
-  }
+  let chunks: MatchedChunk[] = await runExactSearchIfApplicable(query);
 
   // Hybrid search with pre-computed embedding
   const hybridResults = await hybridSearch(query, matchCount, {
@@ -330,26 +352,7 @@ export async function queryBuildingCodeFiltered(
 ): Promise<RAGResult> {
   const { query, pageRanges, matchCount = DEFAULT_MATCH_COUNT } = params;
 
-  const needsExactSearch = EXACT_REFERENCE_REGEX.test(query);
-
-  let chunks: MatchedChunk[] = [];
-
-  if (needsExactSearch) {
-    const patternMatch = query.match(/\b(\d+\.\d+(?:\.\d+)?)\b|section\s+(\d+[\.\d]*)|table\s+(\d+[-\d]*)/i);
-    if (patternMatch) {
-      const pattern = patternMatch[1] || patternMatch[2] || patternMatch[3];
-      const exactResults = await exactSearch(pattern, 5);
-
-      const filteredExact = exactResults.filter(chunk => {
-        const chunkPage = chunk.metadata.page || 0;
-        return pageRanges.some(range =>
-          chunkPage >= range.startPage && chunkPage <= range.endPage
-        );
-      });
-
-      chunks.push(...filteredExact);
-    }
-  }
+  let chunks: MatchedChunk[] = await runExactSearchIfApplicable(query, pageRanges);
 
   const filteredResults = await filteredHybridSearch(
     query, pageRanges, matchCount, params.precomputedEmbedding
