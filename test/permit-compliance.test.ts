@@ -10,12 +10,13 @@ vi.mock('@/lib/rag', () => ({
   hybridSearch: (...args: unknown[]) => mockHybridSearch(...args),
 }));
 
-// Mock Gemini chatModel
+// Mock Gemini chat model — F26 replaced the chatModel proxy export with
+// getChatModel(), so the mock factory now returns a getter function.
 const mockInvoke = vi.fn();
 vi.mock('@/lib/gemini', () => ({
-  chatModel: {
+  getChatModel: () => ({
     invoke: (...args: unknown[]) => mockInvoke(...args),
-  },
+  }),
 }));
 
 vi.mock('@langchain/core/messages', () => ({

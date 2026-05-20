@@ -3,7 +3,7 @@ import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 import { getQuickSession, validateCSRFToken } from '@/lib/auth';
 import { chatMessageSchema } from '@/lib/validations';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
-import { COMPLIANCE_SYSTEM_PROMPT, streamingModel } from '@/lib/gemini';
+import { COMPLIANCE_SYSTEM_PROMPT, getStreamingModel } from '@/lib/gemini';
 import { MAX_CONTEXT_LENGTH } from '@/lib/constants';
 import {
   classifyUserTopic,
@@ -213,7 +213,7 @@ export async function POST(request: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          const streamResponse = await streamingModel.stream(langchainMessages);
+          const streamResponse = await getStreamingModel().stream(langchainMessages);
           let fullContent = '';
 
           for await (const chunk of streamResponse) {

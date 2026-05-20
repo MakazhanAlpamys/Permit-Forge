@@ -4,7 +4,7 @@
 // ============================================================================
 
 import { hybridSearch } from '@/lib/rag';
-import { chatModel } from '@/lib/gemini';
+import { getChatModel } from '@/lib/gemini';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import type {
   BuildingDetails,
@@ -195,7 +195,7 @@ RELEVANT BUILDING CODE SECTIONS:
 ${context || 'No relevant code sections found. Mark all areas as requires_review.'}`;
 
   try {
-    const response = await chatModel.invoke([
+    const response = await getChatModel().invoke([
       new SystemMessage(systemPrompt),
       new HumanMessage(userMessage),
     ]);

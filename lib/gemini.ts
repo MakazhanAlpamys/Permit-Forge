@@ -59,22 +59,6 @@ function getGenaiClient(): GoogleGenAI {
   return _genaiClient;
 }
 
-// Backward-compatible named exports (used by existing callers)
-// These are aliases for the getter functions — callers can migrate gradually
-/** @deprecated Use getChatModel() instead */
-export const chatModel = new Proxy({} as ChatGoogleGenerativeAI, {
-  get(_target, prop) {
-    return (getChatModel() as unknown as Record<string | symbol, unknown>)[prop];
-  },
-});
-
-/** @deprecated Use getStreamingModel() instead */
-export const streamingModel = new Proxy({} as ChatGoogleGenerativeAI, {
-  get(_target, prop) {
-    return (getStreamingModel() as unknown as Record<string | symbol, unknown>)[prop];
-  },
-});
-
 // Legacy LangChain embeddings model — kept for backward compatibility import
 // Use generateEmbedding() or embedQuery() instead
 export const embeddingsModel = {

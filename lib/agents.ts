@@ -4,7 +4,7 @@
 // Kept: classifyTopic, detectQueryType, classifyQueryStructure, treeReasoner
 // ============================================================================
 
-import { chatModel } from '@/lib/gemini';
+import { getChatModel } from '@/lib/gemini';
 import { HumanMessage } from '@langchain/core/messages';
 import type { TreeNode, TreeReasoningResult, QueryClassification } from '@/types';
 
@@ -79,7 +79,7 @@ export async function classifyTopic(userQuery: string): Promise<TopicClassificat
 
   // Use LLM for ambiguous cases
   try {
-    const response = await chatModel.invoke([
+    const response = await getChatModel().invoke([
       new HumanMessage(TOPIC_CLASSIFIER_PROMPT + userQuery),
     ]);
 
