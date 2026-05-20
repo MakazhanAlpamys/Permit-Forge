@@ -6,7 +6,7 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { logAuditEvent, hashPassword, getRequestMetadata } from '@/lib/auth';
-import { uuidSchema, createUserSchema } from '@/lib/validations';
+import { uuidSchema, createUserSchema, validatePassword } from '@/lib/validations';
 import { requireAdmin, requireCSRF } from '@/lib/security';
 
 // -----------------------------------------------------------------------------
@@ -445,7 +445,6 @@ export async function adminResetPassword(
     }
     
     // Validate password with complexity requirements
-    const { validatePassword } = await import('@/lib/validations');
     const passwordValidation = validatePassword(newPassword);
     if (!passwordValidation.valid) {
       return { success: false, error: passwordValidation.error };
