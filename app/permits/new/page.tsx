@@ -154,6 +154,10 @@ export default function NewPermitPage() {
     setLoading(false);
 
     if (submitResult.success) {
+      // B8: surface notification-dispatch failure as a flash on the detail page.
+      if (submitResult.warning && typeof window !== 'undefined') {
+        window.sessionStorage.setItem(`permit-warning-${permitId}`, submitResult.warning);
+      }
       router.push(`/permits/${permitId}`);
     } else {
       setError(submitResult.error || 'Failed to submit');

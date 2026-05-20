@@ -69,8 +69,9 @@ vi.mock('@/lib/supabase-server', () => ({
 }));
 
 // Mock notifications
+const mockCreateNotification = vi.fn().mockResolvedValue(undefined);
 vi.mock('@/lib/notifications', () => ({
-  createNotification: vi.fn().mockResolvedValue(undefined),
+  createNotification: (...args: unknown[]) => mockCreateNotification(...args),
   getNotificationContent: vi.fn().mockReturnValue({ title: 'Test', body: 'Test notification' }),
 }));
 
@@ -224,6 +225,36 @@ describe('Permits Server Actions', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Access denied');
+    });
+
+    // B8: notification dispatch failure must not roll back submit, but it
+    // must surface a warning so the client can flash it.
+    it('should still succeed but surface a warning when notification dispatch fails', async () => {
+      mockSingle
+        .mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null })
+        .mockResolvedValueOnce({
+          data: {
+            status: 'draft',
+            building_details: {
+              numberOfFloors: 5,
+              totalBuiltUpArea: 2000,
+              plotArea: 1000,
+              buildingHeight: 20,
+            },
+            compliance_requirements: { fireSafety: true },
+            project_name: 'Test Building',
+            revision_count: 0,
+          },
+          error: null,
+        });
+
+      mockCreateNotification.mockRejectedValueOnce(new Error('SMTP outage'));
+
+      const result = await submitPermit(validUUID, 'csrf-token');
+
+      expect(result.success).toBe(true);
+      expect(result.warning).toBeDefined();
+      expect(result.warning).toMatch(/notification/i);
     });
   });
 

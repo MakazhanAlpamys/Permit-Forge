@@ -342,6 +342,19 @@ describe('Admin Permits Server Actions', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
     });
+
+    // B8: notification dispatch failure should surface as a warning, not break
+    // the review (which has already committed to the DB).
+    it('should still succeed but surface a warning when notification dispatch fails', async () => {
+      setupReviewPermitMocks('submitted');
+      mockCreateNotification.mockRejectedValueOnce(new Error('SMTP outage'));
+
+      const result = await reviewPermit(approveData, 'csrf-token');
+
+      expect(result.success).toBe(true);
+      expect(result.warning).toBeDefined();
+      expect(result.warning).toMatch(/notification/i);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -458,6 +471,18 @@ describe('Admin Permits Server Actions', () => {
         to_status: 'under_review',
         changed_by: adminUser.id,
       }));
+    });
+
+    // B8: status change committed; notification failure must only warn.
+    it('should still succeed but surface a warning when notification dispatch fails', async () => {
+      setupUnderReviewMocks();
+      mockCreateNotification.mockRejectedValueOnce(new Error('SMTP outage'));
+
+      const result = await setPermitUnderReview(validUUID, 'csrf-token');
+
+      expect(result.success).toBe(true);
+      expect(result.warning).toBeDefined();
+      expect(result.warning).toMatch(/notification/i);
     });
   });
 

@@ -42,6 +42,9 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
   const [reviewComments, setReviewComments] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState('');
+  // B8: notification dispatch can fail without invalidating the status change.
+  // Show the warning inline next to the error banner; auto-clears after 6s.
+  const [warning, setWarning] = useState('');
 
   const csrfTokenRef = useRef<string | null>(null);
   useEffect(() => {
@@ -53,12 +56,18 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
     onFilterStatus(status);
   };
 
+  const flashWarning = (msg: string) => {
+    setWarning(msg);
+    setTimeout(() => setWarning(prev => (prev === msg ? '' : prev)), 6000);
+  };
+
   const handleStartReview = async (permit: PermitApplication) => {
     if (permit.status !== 'submitted') return;
     setActionLoading(permit.id);
     const result = await setPermitUnderReview(permit.id, csrfTokenRef.current || undefined);
     setActionLoading(null);
     if (result.success) {
+      if (result.warning) flashWarning(result.warning);
       onRefresh();
     } else {
       setError(result.error || 'Failed to start review');
@@ -81,6 +90,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
     if (result.success) {
       setReviewDialog(null);
       setReviewComments('');
+      if (result.warning) flashWarning(result.warning);
       onRefresh();
     } else {
       setError(result.error || 'Failed to review permit');
@@ -121,6 +131,12 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
       {error && (
         <div className="p-3 rounded-md bg-red-500/10 border border-red-500/30 text-red-500 text-sm">
           {error}
+        </div>
+      )}
+
+      {warning && (
+        <div className="p-3 rounded-md bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 text-sm">
+          {warning}
         </div>
       )}
 

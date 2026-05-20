@@ -232,7 +232,7 @@ export async function updatePermitComplianceRequirements(
 export async function submitPermit(
   permitId: string,
   csrfToken: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; warning?: string }> {
   try {
     const authCheck = await requireAuth();
     if (!authCheck.success || !authCheck.user) {
@@ -304,7 +304,11 @@ export async function submitPermit(
       ...metadata,
     });
 
-    // Send notification
+    // B8: notification dispatch is best-effort and must not block the submit,
+    // but the user deserves to know a confirmation email/in-app entry didn't
+    // arrive. Surface a warning so the client can flash a non-blocking toast
+    // instead of pretending everything succeeded.
+    let notificationWarning: string | undefined;
     try {
       const { createNotification, getNotificationContent } = await import('@/lib/notifications');
       const content = getNotificationContent('permit_submitted', permit.project_name);
@@ -314,9 +318,14 @@ export async function submitPermit(
         ...content,
         data: { permitId, permitName: permit.project_name },
       });
-    } catch { /* notification failure should not break submit */ }
+    } catch (notifyError) {
+      console.error('submitPermit notification failed:', notifyError);
+      notificationWarning = 'Permit submitted, but the confirmation notification could not be delivered.';
+    }
 
-    return { success: true };
+    return notificationWarning
+      ? { success: true, warning: notificationWarning }
+      : { success: true };
   } catch (error) {
     console.error('submitPermit error:', error);
     return {

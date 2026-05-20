@@ -34,7 +34,25 @@ export default function PermitDetailPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
+
+  const flashWarning = (msg: string) => {
+    setWarning(msg);
+    setTimeout(() => setWarning(prev => (prev === msg ? '' : prev)), 6000);
+  };
+
+  // B8: when navigating in from /permits/new on submit, the flash warning is
+  // stashed in sessionStorage so it survives the navigation. Drain it on mount.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const flashKey = `permit-warning-${permitId}`;
+    const flash = window.sessionStorage.getItem(flashKey);
+    if (flash) {
+      window.sessionStorage.removeItem(flashKey);
+      flashWarning(flash);
+    }
+  }, [permitId]);
 
   const loadPermit = useCallback(async () => {
     setLoading(true);
@@ -80,6 +98,7 @@ export default function PermitDetailPage() {
     setActionLoading(null);
 
     if (result.success) {
+      if (result.warning) flashWarning(result.warning);
       await loadPermit();
     } else {
       setError(result.error || 'Failed to submit');
@@ -263,6 +282,12 @@ export default function PermitDetailPage() {
         {error && (
           <div className="mb-4 p-3 rounded-md bg-red-500/10 border border-red-500/30 text-red-500 text-sm">
             {error}
+          </div>
+        )}
+
+        {warning && (
+          <div className="mb-4 p-3 rounded-md bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 text-sm">
+            {warning}
           </div>
         )}
 

@@ -60,7 +60,7 @@ export async function getAdminPermits(
 export async function reviewPermit(
   data: ReviewPermitInput,
   csrfToken?: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; warning?: string }> {
   try {
     const authCheck = await requireAdmin();
     if (!authCheck.success || !authCheck.user) {
@@ -141,7 +141,10 @@ export async function reviewPermit(
       ...metadata,
     });
 
-    // Send notification to permit owner
+    // B8: notify the permit owner. Failure must not roll back the review
+    // (the DB transition already committed) but the admin should see a warning
+    // so they can manually contact the user if the notification didn't land.
+    let notificationWarning: string | undefined;
     try {
       const { createNotification, getNotificationContent } = await import('@/lib/notifications');
       const notifType = action === 'approve'
@@ -157,9 +160,14 @@ export async function reviewPermit(
         ...content,
         data: { permitId, permitName: permit.project_name },
       });
-    } catch { /* notification failure should not break review */ }
+    } catch (notifyError) {
+      console.error('reviewPermit notification failed:', notifyError);
+      notificationWarning = 'Decision recorded, but the applicant notification could not be delivered.';
+    }
 
-    return { success: true };
+    return notificationWarning
+      ? { success: true, warning: notificationWarning }
+      : { success: true };
   } catch (error) {
     console.error('reviewPermit error:', error);
     return {
@@ -176,7 +184,7 @@ export async function reviewPermit(
 export async function setPermitUnderReview(
   permitId: string,
   csrfToken?: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; warning?: string }> {
   try {
     const authCheck = await requireAdmin();
     if (!authCheck.success || !authCheck.user) {
@@ -226,7 +234,9 @@ export async function setPermitUnderReview(
       comment: 'Review started',
     });
 
-    // Notify permit owner
+    // B8: same pattern as reviewPermit — notification failure is reported as
+    // a warning so the admin UI can surface it without rolling back the status.
+    let notificationWarning: string | undefined;
     try {
       const { createNotification, getNotificationContent } = await import('@/lib/notifications');
       const content = getNotificationContent('permit_under_review', permit.project_name);
@@ -236,9 +246,14 @@ export async function setPermitUnderReview(
         ...content,
         data: { permitId, permitName: permit.project_name },
       });
-    } catch { /* notification failure should not break status change */ }
+    } catch (notifyError) {
+      console.error('setPermitUnderReview notification failed:', notifyError);
+      notificationWarning = 'Status updated, but the applicant notification could not be delivered.';
+    }
 
-    return { success: true };
+    return notificationWarning
+      ? { success: true, warning: notificationWarning }
+      : { success: true };
   } catch (error) {
     console.error('setPermitUnderReview error:', error);
     return {
