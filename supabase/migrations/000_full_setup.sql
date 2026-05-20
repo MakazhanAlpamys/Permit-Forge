@@ -317,7 +317,9 @@ CREATE TABLE permit_certificates (
 );
 
 CREATE INDEX permit_certificates_permit_id_idx ON permit_certificates(permit_id);
-CREATE UNIQUE INDEX permit_certificates_number_idx ON permit_certificates(certificate_number);
+-- certificate_number already has a UNIQUE column constraint above, which creates
+-- an implicit unique index; a second permit_certificates_number_idx would be
+-- redundant (D14/L8).
 
 -- ---------------------------------------------------------------------------
 -- 2.12 PARENT CHUNKS (v2 Pipeline - Parent-Child Chunking)
