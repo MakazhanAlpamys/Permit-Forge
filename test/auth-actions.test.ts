@@ -83,10 +83,13 @@ function resetChainMocks() {
 vi.mock('@/lib/supabase-server', () => ({
   createServerClient: vi.fn(() => ({
     from: (...args: unknown[]) => mockFrom(...args),
+    rpc: vi.fn().mockResolvedValue({ data: [{ allowed: true }], error: null }),
   })),
   createAdminClient: vi.fn(() => ({
     from: (...args: unknown[]) => mockFrom(...args),
+    rpc: vi.fn().mockResolvedValue({ data: [{ allowed: true }], error: null }),
   })),
+  checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
 }));
 
 import {
@@ -154,6 +157,7 @@ describe('Auth Server Actions', () => {
         id: validUser.id,
         username: validUser.username,
         role: 'user',
+        tokenVersion: 0,
       });
       expect(mockGenerateCSRFToken).toHaveBeenCalled();
       expect(mockLogAuditEvent).toHaveBeenCalledWith(

@@ -293,6 +293,11 @@ export const jwtPayloadSchema = z.object({
   sub: z.string().uuid(),
   username: z.string(),
   role: z.enum(['admin', 'user']),
+  // C14H/M3: token version. Bumped on role change / password change so any
+  // outstanding JWT with the previous tv is invalidated server-side at the
+  // next middleware hop. Optional for backwards compatibility with sessions
+  // issued before this migration; treated as 0 when missing.
+  tv: z.number().int().nonnegative().optional(),
   iat: z.number(),
   exp: z.number(),
 });

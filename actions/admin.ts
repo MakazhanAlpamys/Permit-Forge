@@ -468,9 +468,13 @@ export async function adminResetPassword(
       .from('users')
       .update({ password_hash: passwordHash })
       .eq('id', userId);
-    
+
     if (error) throw error;
-    
+
+    // C14H: bump target user's token_version so any device still holding
+    // their old JWT is logged out on the next middleware hop.
+    await supabase.rpc('bump_user_token_version', { p_user_id: userId });
+
     // Log the action
     await logAuditWithMeta(authCheck.user.id, 'password_reset', {
       targetUserId: userId,

@@ -45,6 +45,8 @@ interface TokenUser {
   id: string;
   username: string;
   role: 'admin' | 'user';
+  /** C14H: persisted users.token_version snapshot. Defaults to 0 if omitted. */
+  tokenVersion?: number;
 }
 
 /**
@@ -52,17 +54,18 @@ interface TokenUser {
  */
 export async function createJWTToken(user: TokenUser): Promise<string> {
   const secret = getJWTSecret();
-  
+
   const token = await new SignJWT({
     sub: user.id,
     username: user.username,
     role: user.role,
+    tv: user.tokenVersion ?? 0,
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_MAX_AGE}s`)
     .sign(secret);
-  
+
   return token;
 }
 

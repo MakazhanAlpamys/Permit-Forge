@@ -76,49 +76,56 @@ function clearSessionAndRedirect(request: NextRequest, nonce: string, reason?: s
 }
 
 // Verify JWT token without database call
-async function verifyToken(token: string): Promise<{ valid: true; payload: { sub: string; role: string } } | { valid: false }> {
+async function verifyToken(token: string): Promise<{ valid: true; payload: { sub: string; role: string; tv: number } } | { valid: false }> {
   try {
     const secret = getJWTSecret();
     const { payload } = await jwtVerify(token, secret);
-    
+
     const result = jwtPayloadSchema.safeParse(payload);
     if (!result.success) {
       return { valid: false };
     }
-    
-    return { 
-      valid: true, 
-      payload: { sub: result.data.sub, role: result.data.role } 
+
+    return {
+      valid: true,
+      payload: { sub: result.data.sub, role: result.data.role, tv: result.data.tv ?? 0 },
     };
   } catch {
     return { valid: false };
   }
 }
 
-// Check if user is blocked (with caching for performance)
-async function checkUserBlocked(userId: string): Promise<{ blocked: boolean; reason?: string }> {
+// Check if user is blocked and read their current token_version
+// (C14H: same DB hop, so the version check costs zero extra round-trips).
+async function checkUserBlocked(
+  userId: string,
+): Promise<{ blocked: boolean; reason?: string; tokenVersion?: number }> {
   const now = Date.now();
   const cached = blockStatusCache.get(userId);
-  
+
   // Return cached result if still valid
   if (cached && (now - cached.checkedAt) < BLOCK_CHECK_INTERVAL_MS) {
-    return { blocked: cached.blocked, reason: cached.reason };
+    return {
+      blocked: cached.blocked,
+      reason: cached.reason,
+      tokenVersion: cached.tokenVersion,
+    };
   }
-  
+
   try {
     // Direct fetch to Supabase REST API (Edge-compatible, no SDK needed)
     // Using service_role key to bypass RLS (anon doesn't have access to users table)
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
+
     if (!supabaseUrl || !serviceRoleKey) {
       console.error('Supabase credentials missing for block check');
       // Fail-safe: don't block if we can't check
       return { blocked: false };
     }
-    
+
     const response = await fetch(
-      `${supabaseUrl}/rest/v1/users?id=eq.${userId}&select=blocked,blocked_reason`,
+      `${supabaseUrl}/rest/v1/users?id=eq.${userId}&select=blocked,blocked_reason,token_version`,
       {
         headers: {
           'apikey': serviceRoleKey,
@@ -129,16 +136,16 @@ async function checkUserBlocked(userId: string): Promise<{ blocked: boolean; rea
         cache: 'no-store',
       }
     );
-    
+
     if (!response.ok) {
       console.error('Block check failed:', response.status);
       // Fail-safe: don't block if we can't check
       return { blocked: false };
     }
-    
+
     const users = await response.json();
     const user = users?.[0];
-    
+
     if (!user) {
       // User not found - they're effectively blocked (deleted)
       blockStatusCache.set(userId, { blocked: true, reason: 'User not found', checkedAt: now });
@@ -146,10 +153,17 @@ async function checkUserBlocked(userId: string): Promise<{ blocked: boolean; rea
     }
 
     const blocked = user.blocked === true;
+    const tokenVersion: number =
+      typeof user.token_version === 'number' ? user.token_version : 0;
 
-    // Update cache (include reason so cached lookups show it)
-    blockStatusCache.set(userId, { blocked, reason: user.blocked_reason, checkedAt: now });
-    
+    // Update cache (include reason + tv so cached lookups don't need a DB hit)
+    blockStatusCache.set(userId, {
+      blocked,
+      reason: user.blocked_reason,
+      tokenVersion,
+      checkedAt: now,
+    });
+
     // Clean up old cache entries (prevent memory leak)
     if (blockStatusCache.size > 1000) {
       const oldestAllowed = now - BLOCK_CHECK_INTERVAL_MS * 2;
@@ -159,8 +173,8 @@ async function checkUserBlocked(userId: string): Promise<{ blocked: boolean; rea
       }
       keysToDelete.forEach(k => blockStatusCache.delete(k));
     }
-    
-    return { blocked, reason: user.blocked_reason };
+
+    return { blocked, reason: user.blocked_reason, tokenVersion };
   } catch (error) {
     console.error('Block check error:', error);
     // Fail-safe: don't block if we can't check
@@ -217,10 +231,10 @@ export async function middleware(request: NextRequest) {
     return clearSessionAndRedirect(request, nonce);
   }
 
-  const { sub: userId, role } = verification.payload;
+  const { sub: userId, role, tv: tokenVersion } = verification.payload;
 
   // =========================================================================
-  // REAL-TIME BLOCK CHECK (with caching for performance)
+  // REAL-TIME BLOCK CHECK + TOKEN VERSION (C14H/M3) — single DB hop.
   // =========================================================================
   const blockStatus = await checkUserBlocked(userId);
 
@@ -228,6 +242,16 @@ export async function middleware(request: NextRequest) {
     // User is blocked - terminate session immediately
     console.log(`Blocked user ${userId} attempted access`);
     return clearSessionAndRedirect(request, nonce, blockStatus.reason || 'Your account has been blocked');
+  }
+
+  // C14H: if token_version in the DB has advanced past the value baked into
+  // this JWT, an admin role change / password change / forced logout has
+  // happened since the session was issued. Treat as logged out.
+  if (
+    blockStatus.tokenVersion !== undefined &&
+    tokenVersion < blockStatus.tokenVersion
+  ) {
+    return clearSessionAndRedirect(request, nonce);
   }
 
   // If logged in and trying to access public auth pages

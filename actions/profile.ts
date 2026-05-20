@@ -199,6 +199,11 @@ export async function confirmPasswordChangeAction(
 
   if (error) return { error: 'Password change failed' };
 
+  // C14H: bump token_version so any other JWT outstanding for this user
+  // (e.g. a leaked cookie on another device) is invalidated next time it
+  // hits the middleware.
+  await supabase.rpc('bump_user_token_version', { p_user_id: auth.user.id });
+
   const metadata = await getRequestMetadata();
   await logAuditEvent({
     userId: auth.user.id,
@@ -249,6 +254,9 @@ export async function adminChangePasswordAction(
     .eq('id', auth.user.id);
 
   if (error) return { error: 'Password change failed' };
+
+  // C14H: bump token_version so other outstanding sessions are invalidated.
+  await supabase.rpc('bump_user_token_version', { p_user_id: auth.user.id });
 
   const metadata = await getRequestMetadata();
   await logAuditEvent({

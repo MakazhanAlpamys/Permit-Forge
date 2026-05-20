@@ -108,7 +108,7 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
     // Find user by username
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, username, password_hash, role, blocked, email, email_verified')
+      .select('id, username, password_hash, role, blocked, email, email_verified, token_version')
       .eq('username', validation.data.username)
       .single();
 
@@ -172,6 +172,7 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
       id: user.id,
       username: user.username,
       role: user.role as 'admin' | 'user',
+      tokenVersion: (user as { token_version?: number }).token_version ?? 0,
     });
 
     // Generate CSRF token
@@ -509,6 +510,10 @@ export async function resetPasswordAction(
     if (updateError) {
       return { error: 'Password reset failed. Please try again.' };
     }
+
+    // C14H: bump token_version so any device still holding the old JWT is
+    // logged out at its next middleware hop.
+    await supabase.rpc('bump_user_token_version', { p_user_id: user.id });
 
     resetCodeAttempts(resetAttemptKey);
 

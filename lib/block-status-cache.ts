@@ -16,6 +16,8 @@
 export interface BlockStatusEntry {
   blocked: boolean;
   reason?: string;
+  /** C14H: latest users.token_version. Compared to JWT.tv in middleware. */
+  tokenVersion?: number;
   checkedAt: number;
 }
 
