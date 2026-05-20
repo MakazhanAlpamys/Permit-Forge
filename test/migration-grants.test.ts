@@ -97,3 +97,29 @@ describe('migration grants — semantic cache RPCs (A4 / H19)', () => {
     expect(sql).toMatch(revoke);
   });
 });
+
+describe('migration search_path — SECURITY DEFINER analytics functions (A7 / M16)', () => {
+  // M16: SECURITY DEFINER functions without a pinned search_path are vulnerable
+  // to search-path-injection attacks. Pin each to (public, pg_temp).
+  const FUNCTIONS = [
+    'get_analytics_dashboard_stats',
+    'get_message_activity_30d',
+    'get_top_active_users',
+    'get_weekly_activity',
+  ] as const;
+
+  for (const fn of FUNCTIONS) {
+    it(`pins search_path on ${fn}`, () => {
+      // Match the function body up to the AS $$ marker and assert SET search_path
+      // = public, pg_temp appears within it.
+      const bodyPattern = new RegExp(
+        `CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+${fn}\\b[\\s\\S]*?AS\\s+\\$\\$`,
+        'i',
+      );
+      const match = sql.match(bodyPattern);
+      expect(match, `${fn} declaration not found`).not.toBeNull();
+      expect(match![0]).toMatch(/SECURITY\s+DEFINER/i);
+      expect(match![0]).toMatch(/SET\s+search_path\s*=\s*public\s*,\s*pg_temp/i);
+    });
+  }
+});

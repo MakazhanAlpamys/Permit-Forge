@@ -1063,7 +1063,7 @@ CREATE OR REPLACE FUNCTION get_weekly_activity()
 RETURNS TABLE (day DATE, messages BIGINT, users BIGINT)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 BEGIN
   RETURN QUERY
@@ -1135,6 +1135,7 @@ RETURNS TABLE (
 )
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
   SELECT
     (SELECT count(*) FROM users),
@@ -1171,6 +1172,7 @@ RETURNS TABLE (
 )
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
   WITH date_series AS (
     SELECT generate_series(
@@ -1219,6 +1221,7 @@ RETURNS TABLE (
 )
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
   SELECT
     u.id, u.username, u.full_name,
