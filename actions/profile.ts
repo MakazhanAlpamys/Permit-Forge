@@ -202,7 +202,18 @@ export async function confirmPasswordChangeAction(
   // C14H: bump token_version so any other JWT outstanding for this user
   // (e.g. a leaked cookie on another device) is invalidated next time it
   // hits the middleware.
-  await supabase.rpc('bump_user_token_version', { p_user_id: auth.user.id });
+  const { data: bumpData } = await supabase.rpc('bump_user_token_version', { p_user_id: auth.user.id });
+  const newTv = typeof bumpData === 'number' ? bumpData : 0;
+
+  // C29H/L4: rotate the current session's JWT so this device stays logged
+  // in (otherwise the next middleware hop sees tv mismatch and logs the
+  // user out on the device they just used to change the password).
+  await createSession({
+    id: auth.user.id,
+    username: auth.user.username,
+    role: auth.user.role,
+    tokenVersion: newTv,
+  });
 
   const metadata = await getRequestMetadata();
   await logAuditEvent({
@@ -255,8 +266,16 @@ export async function adminChangePasswordAction(
 
   if (error) return { error: 'Password change failed' };
 
-  // C14H: bump token_version so other outstanding sessions are invalidated.
-  await supabase.rpc('bump_user_token_version', { p_user_id: auth.user.id });
+  // C14H + C29H: bump token_version then rotate this device's session so
+  // other sessions are invalidated but the caller stays logged in.
+  const { data: bumpData } = await supabase.rpc('bump_user_token_version', { p_user_id: auth.user.id });
+  const newTv = typeof bumpData === 'number' ? bumpData : 0;
+  await createSession({
+    id: auth.user.id,
+    username: auth.user.username,
+    role: auth.user.role,
+    tokenVersion: newTv,
+  });
 
   const metadata = await getRequestMetadata();
   await logAuditEvent({
