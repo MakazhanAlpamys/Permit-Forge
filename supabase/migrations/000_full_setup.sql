@@ -81,8 +81,12 @@ CREATE TABLE users (
   full_name TEXT,
   email TEXT UNIQUE,
   email_verified BOOLEAN DEFAULT FALSE,
-  verification_code TEXT,
-  reset_code TEXT,
+  -- D9/M17: both code columns are always exactly 6 numeric chars
+  -- (generateSixDigitCode in lib/email.ts). CHAR(6) enforces the
+  -- length at the type level; since values always fill the column
+  -- there's no space-padding surprise on read.
+  verification_code CHAR(6),
+  reset_code CHAR(6),
   code_expires_at TIMESTAMPTZ,
   reset_code_expires_at TIMESTAMPTZ,
   role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
