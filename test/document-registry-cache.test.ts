@@ -107,4 +107,158 @@ describe('document-registry cache — error path (B2 / C7)', () => {
     expect(second).toEqual([]);
     expect(mockFrom).toHaveBeenCalledTimes(1);
   });
+
+  // ==========================================================================
+  // E7: extra coverage (sync helpers, dedup, by-id, by-filename, IDs)
+  // ==========================================================================
+
+  it('deduplicates concurrent getAllDocuments calls into a single DB hit', async () => {
+    const reg = await freshModule();
+
+    mockOrder.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'doc-a',
+          display_name: 'A',
+          short_name: 'A',
+          file_name: 'a.pdf',
+          source_url: '',
+          authority: '',
+          description: '',
+          badge_color: '',
+        },
+      ],
+      error: null,
+    });
+
+    const [r1, r2, r3] = await Promise.all([
+      reg.getAllDocuments(),
+      reg.getAllDocuments(),
+      reg.getAllDocuments(),
+    ]);
+
+    expect(mockFrom).toHaveBeenCalledTimes(1);
+    expect(r1).toEqual(r2);
+    expect(r2).toEqual(r3);
+  });
+
+  it('getDocumentByIdSync returns undefined on cold cache, then resolves after async load', async () => {
+    const reg = await freshModule();
+
+    // Cold cache — nothing in cache yet.
+    expect(reg.getDocumentByIdSync('doc-a')).toBeUndefined();
+    expect(reg.getAllDocumentsSync()).toEqual([]);
+    expect(reg.getAllDocumentIdsSync()).toEqual([]);
+
+    mockOrder.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'doc-a',
+          display_name: 'Doc A',
+          short_name: 'A',
+          file_name: 'a.pdf',
+          source_url: '',
+          authority: 'Authority A',
+          description: 'desc',
+          badge_color: 'blue',
+        },
+      ],
+      error: null,
+    });
+    await reg.getAllDocuments();
+
+    // Warm cache.
+    const doc = reg.getDocumentByIdSync('doc-a');
+    expect(doc?.displayName).toBe('Doc A');
+    expect(doc?.authority).toBe('Authority A');
+    expect(reg.getAllDocumentsSync()).toHaveLength(1);
+    expect(reg.getAllDocumentIdsSync()).toEqual(['doc-a']);
+  });
+
+  it('getDocumentByFileName finds a doc by its file_name field', async () => {
+    const reg = await freshModule();
+    mockOrder.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'doc-a',
+          display_name: 'Doc A',
+          short_name: 'A',
+          file_name: 'foo.pdf',
+          source_url: '',
+          authority: '',
+          description: '',
+          badge_color: '',
+        },
+      ],
+      error: null,
+    });
+    const found = await reg.getDocumentByFileName('foo.pdf');
+    expect(found?.id).toBe('doc-a');
+
+    const missing = await reg.getDocumentByFileName('nope.pdf');
+    expect(missing).toBeUndefined();
+  });
+
+  it('getDocumentPdfPath returns public/ path for known docs', async () => {
+    const reg = await freshModule();
+    mockOrder.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'doc-a',
+          display_name: 'A',
+          short_name: 'A',
+          file_name: 'foo.pdf',
+          source_url: '',
+          authority: '',
+          description: '',
+          badge_color: '',
+        },
+      ],
+      error: null,
+    });
+    await expect(reg.getDocumentPdfPath('doc-a')).resolves.toBe('public/foo.pdf');
+    await expect(reg.getDocumentPdfPath('does-not-exist')).rejects.toThrow(/Unknown document/);
+  });
+
+  it('invalidateRegistryCache forces the next call to re-hit the DB', async () => {
+    const reg = await freshModule();
+    mockOrder.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'doc-a',
+          display_name: 'A',
+          short_name: 'A',
+          file_name: 'a.pdf',
+          source_url: '',
+          authority: '',
+          description: '',
+          badge_color: '',
+        },
+      ],
+      error: null,
+    });
+    await reg.getAllDocuments();
+
+    reg.invalidateRegistryCache();
+
+    mockOrder.mockResolvedValueOnce({
+      data: [
+        {
+          id: 'doc-b',
+          display_name: 'B',
+          short_name: 'B',
+          file_name: 'b.pdf',
+          source_url: '',
+          authority: '',
+          description: '',
+          badge_color: '',
+        },
+      ],
+      error: null,
+    });
+    const out = await reg.getAllDocuments();
+    expect(out).toHaveLength(1);
+    expect(out[0].id).toBe('doc-b');
+    expect(mockFrom).toHaveBeenCalledTimes(2);
+  });
 });
