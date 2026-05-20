@@ -4,8 +4,8 @@
 // New Permit Application — Multi-Step Form
 // ============================================================================
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Header } from '@/components/dashboard';
 import { PermitFormStepper, PermitFormStep1, PermitFormStep2, PermitFormStep3, ComplianceCheckPanel } from '@/components/permits';
 import {
@@ -14,11 +14,13 @@ import {
   updatePermitComplianceRequirements,
   submitPermit,
   runComplianceCheck,
+  getMyPermits,
+  getPermitById,
 } from '@/actions/permits';
 import { getCSRFTokenAction } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
-import type { BuildingDetails, ComplianceRequirements, ComplianceCheckResult } from '@/types';
+import type { BuildingDetails, ComplianceRequirements, ComplianceCheckResult, PermitApplication } from '@/types';
 
 const STEPS = ['Project Info', 'Building Details', 'Compliance'];
 
@@ -43,15 +45,46 @@ const EMPTY_COMPLIANCE: ComplianceRequirements = {
   additionalNotes: '',
 };
 
+// B9: clamp the ?step= URL param so a hand-edited `step=9` can't break the
+// stepper. The wizard has three steps; step 1 is also the default.
+function parseStep(raw: string | null): 1 | 2 | 3 {
+  const n = Number(raw);
+  return n === 2 || n === 3 ? n : 1;
+}
+
+function applyPermitToFormState(
+  permit: PermitApplication,
+  setStep1: React.Dispatch<React.SetStateAction<{ projectName: string; projectType: string; projectAddress: string; plotNumber: string; projectDescription: string }>>,
+  setStep2: React.Dispatch<React.SetStateAction<BuildingDetails>>,
+  setStep3: React.Dispatch<React.SetStateAction<ComplianceRequirements>>,
+) {
+  setStep1({
+    projectName: permit.projectName || '',
+    projectType: permit.projectType || '',
+    projectAddress: permit.projectAddress || '',
+    plotNumber: permit.plotNumber || '',
+    projectDescription: permit.projectDescription || '',
+  });
+  setStep2({ ...EMPTY_BUILDING_DETAILS, ...(permit.buildingDetails || {}) });
+  setStep3({ ...EMPTY_COMPLIANCE, ...(permit.complianceRequirements || {}) });
+}
+
 export default function NewPermitPage() {
   const router = useRouter();
-  const [currentStep, setCurrentStep] = useState(1);
+  const searchParams = useSearchParams();
+  const urlPermitId = searchParams.get('id');
+  const urlStep = parseStep(searchParams.get('step'));
+
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(urlStep);
   const [loading, setLoading] = useState(false);
   const [checkLoading, setCheckLoading] = useState(false);
   const [error, setError] = useState('');
-  const [permitId, setPermitId] = useState<string | null>(null);
+  const [permitId, setPermitId] = useState<string | null>(urlPermitId);
   const [complianceResult, setComplianceResult] = useState<ComplianceCheckResult | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
+  // B9: gate the form render while we resolve "latest open draft" so we don't
+  // briefly flash step 1 before redirecting into an existing draft.
+  const [bootstrapping, setBootstrapping] = useState(true);
 
   useEffect(() => {
     getCSRFTokenAction().then(setCsrfToken);
@@ -68,6 +101,72 @@ export default function NewPermitPage() {
 
   const [step2Data, setStep2Data] = useState<BuildingDetails>(EMPTY_BUILDING_DETAILS);
   const [step3Data, setStep3Data] = useState<ComplianceRequirements>(EMPTY_COMPLIANCE);
+
+  // B9: helper to keep URL in sync with state. router.replace avoids creating
+  // history entries on every step click — back-button should leave /permits/new
+  // entirely, not walk backwards through stepper states.
+  const syncUrl = useCallback((id: string | null, step: 1 | 2 | 3) => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams();
+    if (id) params.set('id', id);
+    params.set('step', String(step));
+    router.replace(`/permits/new?${params.toString()}`);
+  }, [router]);
+
+  const goToStep = useCallback((step: 1 | 2 | 3) => {
+    setCurrentStep(step);
+    syncUrl(permitId, step);
+  }, [permitId, syncUrl]);
+
+  // B9: hydrate from URL (?id=...) or fall back to the user's most recently
+  // updated draft. Either way we land the user on whatever they were doing
+  // last instead of resetting to a blank step 1.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function hydrate() {
+      // Explicit ?id= takes priority.
+      if (urlPermitId) {
+        const result = await getPermitById(urlPermitId);
+        if (cancelled) return;
+        if (result.data && (result.data.status === 'draft' || result.data.status === 'revision_requested')) {
+          setPermitId(result.data.id);
+          applyPermitToFormState(result.data, setStep1Data, setStep2Data, setStep3Data);
+          setCurrentStep(urlStep);
+        } else {
+          // Stale / inaccessible id — drop it from the URL and start fresh.
+          router.replace('/permits/new');
+        }
+        setBootstrapping(false);
+        return;
+      }
+
+      // No ?id= — look for the user's latest open draft and pivot to it.
+      const my = await getMyPermits();
+      if (cancelled) return;
+      const latestDraft = my.data.find(p => p.status === 'draft' || p.status === 'revision_requested');
+      if (latestDraft) {
+        setPermitId(latestDraft.id);
+        applyPermitToFormState(latestDraft, setStep1Data, setStep2Data, setStep3Data);
+        // Resume on step 2 if building details exist, step 3 if compliance
+        // requirements exist — otherwise step 1 is the natural entry point.
+        const bd = latestDraft.buildingDetails;
+        const cr = latestDraft.complianceRequirements;
+        const hasBuilding = !!(bd && bd.numberOfFloors);
+        const hasCompliance = !!(cr && (cr.fireSafety || cr.accessibility || cr.parkingCompliance || cr.structuralSafety || cr.mepSystems || cr.energyEfficiency));
+        const resumeStep: 1 | 2 | 3 = hasCompliance ? 3 : hasBuilding ? 2 : 1;
+        setCurrentStep(resumeStep);
+        syncUrl(latestDraft.id, resumeStep);
+      }
+      setBootstrapping(false);
+    }
+
+    hydrate();
+    return () => { cancelled = true; };
+    // We deliberately depend only on the initial URL params; later step changes
+    // route through goToStep, which calls syncUrl directly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Step 1 → Create draft
   const handleStep1Next = async () => {
@@ -86,6 +185,9 @@ export default function NewPermitPage() {
 
     if (result.success && result.permitId) {
       setPermitId(result.permitId);
+      // B9: stamp the new permit id into the URL so a refresh lands back here
+      // instead of a blank step 1.
+      syncUrl(result.permitId, 2);
       setCurrentStep(2);
     } else {
       setError(result.error || 'Failed to create permit');
@@ -106,7 +208,7 @@ export default function NewPermitPage() {
     setLoading(false);
 
     if (result.success) {
-      setCurrentStep(3);
+      goToStep(3);
     } else {
       setError(result.error || 'Failed to save building details');
     }
@@ -212,8 +314,14 @@ export default function NewPermitPage() {
         {/* Stepper */}
         <PermitFormStepper currentStep={currentStep} steps={STEPS} />
 
+        {bootstrapping && (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            Loading draft…
+          </p>
+        )}
+
         {/* Step content */}
-        {currentStep === 1 && (
+        {!bootstrapping && currentStep === 1 && (
           <PermitFormStep1
             data={step1Data}
             onChange={setStep1Data}
@@ -223,23 +331,23 @@ export default function NewPermitPage() {
           />
         )}
 
-        {currentStep === 2 && (
+        {!bootstrapping && currentStep === 2 && (
           <PermitFormStep2
             data={step2Data}
             onChange={setStep2Data}
             onNext={handleStep2Next}
-            onBack={() => setCurrentStep(1)}
+            onBack={() => goToStep(1)}
             loading={loading}
             error={error}
           />
         )}
 
-        {currentStep === 3 && (
+        {!bootstrapping && currentStep === 3 && (
           <>
             <PermitFormStep3
               data={step3Data}
               onChange={setStep3Data}
-              onBack={() => setCurrentStep(2)}
+              onBack={() => goToStep(2)}
               onSaveDraft={handleSaveDraft}
               onSubmit={handleSubmit}
               onRunCheck={handleRunCheck}
