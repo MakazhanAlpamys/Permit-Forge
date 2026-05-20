@@ -19,7 +19,7 @@ const FINAL_CHUNK_COUNT = 10;
 const MAX_CHUNK_LENGTH = 1500;
 
 // CRAG threshold — if top chunk score is below this, search quality is too low
-export const CRAG_THRESHOLD = 0.3;
+const CRAG_THRESHOLD = 0.3;
 
 // -----------------------------------------------------------------------------
 // Hybrid Search (accepts pre-computed embedding)

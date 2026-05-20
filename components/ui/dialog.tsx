@@ -59,31 +59,6 @@ export function Dialog({ open = false, onOpenChange, children }: DialogProps) {
 }
 
 // -----------------------------------------------------------------------------
-// Dialog Trigger
-// -----------------------------------------------------------------------------
-
-interface DialogTriggerProps {
-  children: React.ReactNode;
-  asChild?: boolean;
-}
-
-export function DialogTrigger({ children, asChild }: DialogTriggerProps) {
-  const { onOpenChange } = useDialogContext();
-  
-  if (asChild && React.isValidElement(children)) {
-    return React.cloneElement(children as React.ReactElement<{ onClick?: () => void }>, {
-      onClick: () => onOpenChange(true),
-    });
-  }
-  
-  return (
-    <button type="button" onClick={() => onOpenChange(true)}>
-      {children}
-    </button>
-  );
-}
-
-// -----------------------------------------------------------------------------
 // Dialog Portal & Overlay
 // -----------------------------------------------------------------------------
 

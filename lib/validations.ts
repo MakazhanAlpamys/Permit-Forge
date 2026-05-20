@@ -183,7 +183,7 @@ export const changePasswordSchema = z.object({
 // Citation Schema
 // -----------------------------------------------------------------------------
 
-export const citationSchema = z.object({
+const citationSchema = z.object({
   chunkId: z.number().int().positive(),
   page: z.number().int().nonnegative(),
   section: z.string().optional(),
@@ -210,10 +210,6 @@ export type PaginationInput = z.infer<typeof paginationSchema>;
 
 export const projectTypeSchema = z.enum([
   'residential', 'commercial', 'industrial', 'mixed_use', 'institutional'
-]);
-
-export const permitStatusSchema = z.enum([
-  'draft', 'submitted', 'under_review', 'approved', 'rejected', 'revision_requested'
 ]);
 
 export const buildingDetailsSchema = z.object({
