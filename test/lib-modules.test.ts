@@ -177,59 +177,82 @@ describe('lib/file-upload', () => {
       } as unknown as File;
     }
 
-    it('should accept valid PDF file', () => {
+    it('should accept valid PDF file', async () => {
       const file = createMockFile('document.pdf', 1024 * 1024, 'application/pdf');
-      const result = validateFile(file);
+      const result = await validateFile(file);
       expect(result.valid).toBe(true);
       expect(result.error).toBeUndefined();
     });
 
-    it('should accept valid PNG file', () => {
+    it('should accept valid PNG file', async () => {
       const file = createMockFile('photo.png', 500 * 1024, 'image/png');
-      const result = validateFile(file);
+      const result = await validateFile(file);
       expect(result.valid).toBe(true);
     });
 
-    it('should accept valid JPG file', () => {
+    it('should accept valid JPG file', async () => {
       const file = createMockFile('photo.jpg', 500 * 1024, 'image/jpeg');
-      const result = validateFile(file);
+      const result = await validateFile(file);
       expect(result.valid).toBe(true);
     });
 
-    it('should reject oversized file (>10MB)', () => {
+    it('should reject oversized file (>10MB)', async () => {
       const file = createMockFile('big.pdf', 11 * 1024 * 1024, 'application/pdf');
-      const result = validateFile(file);
+      const result = await validateFile(file);
       expect(result.valid).toBe(false);
       expect(result.error).toContain('10MB limit');
     });
 
-    it('should reject empty file', () => {
+    it('should reject empty file', async () => {
       const file = createMockFile('empty.pdf', 0, 'application/pdf');
-      const result = validateFile(file);
+      const result = await validateFile(file);
       expect(result.valid).toBe(false);
       expect(result.error).toBe('File is empty');
     });
 
-    it('should reject invalid extension', () => {
+    it('should reject invalid extension', async () => {
       const file = createMockFile('script.exe', 1024, 'application/x-msdownload');
-      const result = validateFile(file);
+      const result = await validateFile(file);
       expect(result.valid).toBe(false);
       expect(result.error).toContain('File type not allowed');
     });
 
-    it('should reject file with mismatched MIME type', () => {
+    it('should reject file with mismatched MIME type', async () => {
       // A .pdf extension with an image MIME type
       const file = createMockFile('fake.pdf', 1024, 'image/png');
-      const result = validateFile(file);
+      const result = await validateFile(file);
       expect(result.valid).toBe(false);
       expect(result.error).toContain('MIME type');
     });
 
-    it('should reject file with no MIME type', () => {
+    it('should reject file with no MIME type', async () => {
       const file = createMockFile('data.pdf', 1024, '');
-      const result = validateFile(file);
+      const result = await validateFile(file);
       expect(result.valid).toBe(false);
       expect(result.error).toBe('File type could not be determined');
+    });
+
+    it('should reject file whose magic bytes disagree with declared MIME', async () => {
+      // .pdf extension + application/pdf MIME, but the bytes are a PNG header
+      const pngHeader = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      const file = {
+        name: 'fake.pdf',
+        size: 1024,
+        type: 'application/pdf',
+        lastModified: Date.now(),
+        webkitRelativePath: '',
+        arrayBuffer: () => Promise.resolve(pngHeader.buffer.slice(0)),
+        bytes: () => Promise.resolve(pngHeader),
+        slice: () =>
+          ({
+            arrayBuffer: () => Promise.resolve(pngHeader.buffer.slice(0)),
+          }) as unknown as Blob,
+        stream: () => new ReadableStream(),
+        text: () => Promise.resolve(''),
+      } as unknown as File;
+      const result = await validateFile(file);
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain('do not match declared type');
     });
   });
 

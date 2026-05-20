@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { FILE_UPLOAD_LIMITS } from './constants';
+import { sniffFileMagic, magicMatchesMime } from './file-magic';
 
 // Map of allowed extensions to their expected MIME types
 const ALLOWED_MIME_TYPES: Record<string, string[]> = {
@@ -15,9 +16,13 @@ const ALLOWED_MIME_TYPES: Record<string, string[]> = {
 };
 
 /**
- * Validate a file for permit attachment upload
+ * Validate a file for permit attachment upload.
+ * C7H/H10: now async because we read the first few bytes and compare them
+ * to known format signatures. Defeats the "rename evil.exe → invoice.pdf,
+ * lie about MIME type" trick where every client-supplied field agrees but
+ * the actual bytes don't.
  */
-export function validateFile(file: File): { valid: boolean; error?: string } {
+export async function validateFile(file: File): Promise<{ valid: boolean; error?: string }> {
   // Check file size
   if (file.size > FILE_UPLOAD_LIMITS.maxFileSize) {
     const maxMB = FILE_UPLOAD_LIMITS.maxFileSize / (1024 * 1024);
@@ -52,6 +57,17 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
     return {
       valid: false,
       error: `File MIME type (${file.type}) does not match extension (${ext})`,
+    };
+  }
+
+  // C7H/H10: magic-byte check. Recognized signatures that disagree with the
+  // claimed MIME are rejected; unrecognized magic falls back to the
+  // MIME+extension check above.
+  const detected = await sniffFileMagic(file);
+  if (!magicMatchesMime(detected, file.type)) {
+    return {
+      valid: false,
+      error: `File contents (${detected}) do not match declared type (${file.type})`,
     };
   }
 

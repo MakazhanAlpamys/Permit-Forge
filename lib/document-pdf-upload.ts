@@ -15,6 +15,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { logAuditEvent } from '@/lib/auth';
 import { invalidateRegistryCache } from '@/lib/document-registry';
 import { DOCUMENT_PDF_LIMITS } from '@/lib/constants';
+import { sniffMagic } from '@/lib/file-magic';
 
 export interface UploadDocumentPdfInput {
   documentId: string;
@@ -74,6 +75,13 @@ export async function uploadDocumentPdfShared(
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = new Uint8Array(arrayBuffer);
+
+    // C7H/H10: confirm the bytes are really a PDF. The MIME check above
+    // trusts client-supplied data; the magic bytes don't.
+    if (sniffMagic(buffer.subarray(0, 32)) !== 'pdf') {
+      return { success: false, error: 'File contents are not a valid PDF' };
+    }
+
     const pdfHash = await sha256Hex(buffer);
 
     const { error: uploadError } = await supabase.storage

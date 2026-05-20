@@ -77,8 +77,8 @@ export async function uploadPermitAttachment(
       return { success: false, error: 'No file provided' };
     }
 
-    // Validate file
-    const validation = validateFile(file);
+    // Validate file (size, extension, MIME, magic bytes)
+    const validation = await validateFile(file);
     if (!validation.valid) {
       return { success: false, error: validation.error };
     }
