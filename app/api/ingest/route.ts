@@ -46,10 +46,16 @@ export async function POST(request: NextRequest) {
   let documentId: string;
   let pdfBuffer: Uint8Array | undefined;
   let pdfPath: string | undefined;
+  let replaceChunks = false;
+  let pdfHash: string | null = null;
 
   try {
     const body = await request.json();
     documentId = body.documentId;
+    // B5: client signals consent to overwrite prior chunks. The action layer
+    // is the only place that validates whether replacing is justified — this
+    // route just honors the flag.
+    replaceChunks = body.replaceChunks === true;
 
     if (!documentId) {
       return jsonError({ error: 'Missing documentId' }, 400);
@@ -59,13 +65,15 @@ export async function POST(request: NextRequest) {
     const supabase = createAdminClient();
     const { data: dbDoc } = await supabase
       .from('document_registry')
-      .select('file_name, is_active, storage_path')
+      .select('file_name, is_active, storage_path, pdf_hash')
       .eq('id', documentId)
       .single();
 
     if (!dbDoc || !dbDoc.is_active) {
       return jsonError({ error: 'Unknown document ID' }, 400);
     }
+
+    pdfHash = (dbDoc.pdf_hash as string | null) ?? null;
 
     if (dbDoc.storage_path) {
       // Download PDF from Supabase Storage
@@ -112,12 +120,42 @@ export async function POST(request: NextRequest) {
         message: `Reading PDF for ${documentId}...`,
       });
 
+      // B5: when the caller asked to replace, clear prior chunks BEFORE the
+      // pipeline starts inserting. We can't make this truly transactional
+      // across a streaming pipeline, but clearing first guarantees the chunk
+      // table is never simultaneously old + new.
+      if (replaceChunks) {
+        const adminSupabase = createAdminClient();
+        await adminSupabase
+          .from('dubai_code_chunks')
+          .delete()
+          .eq('document_name', documentId);
+        await adminSupabase
+          .from('parent_chunks')
+          .delete()
+          .eq('document_name', documentId);
+        await adminSupabase
+          .from('document_trees')
+          .delete()
+          .eq('document_name', documentId);
+      }
+
       // Run the centralized ingestion pipeline with document info
-      await runIngestionPipeline({
+      const pipelineResult = await runIngestionPipeline({
         documentId,
         ...(pdfBuffer ? { pdfBuffer } : { pdfPath }),
         onProgress: sendProgress,
       });
+
+      // B5: stamp last_ingested_pdf_hash so the next re-ingest can detect
+      // whether the *content* changed (vs. the same file being re-ingested).
+      if (pipelineResult?.success && pdfHash) {
+        const adminSupabase = createAdminClient();
+        await adminSupabase
+          .from('document_registry')
+          .update({ last_ingested_pdf_hash: pdfHash })
+          .eq('id', documentId);
+      }
     } catch (error) {
       console.error('Ingestion error:', error);
       try {

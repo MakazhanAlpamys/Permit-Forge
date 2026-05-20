@@ -12,6 +12,7 @@ import {
   uploadDocumentPDF,
   deleteDocument,
   restoreDocument,
+  checkPdfReingest,
   type DocumentRecord,
 } from '@/actions/documents';
 import { clearDocumentChunks, getIngestionStatus, testRAGQuery } from '@/actions/ingest-pdf';
@@ -299,6 +300,26 @@ export function DocumentManagement() {
 
   // Ingestion handlers
   const handleIngestDocument = async (documentId: string) => {
+    // B5: when the uploaded PDF differs from the one that produced the
+    // existing chunk set, mixing old + new chunks would silently corrupt
+    // search results. Prompt before continuing.
+    let replaceChunks = false;
+    try {
+      const reingest = await checkPdfReingest(documentId);
+      if (reingest.hashChanged && reingest.chunkCount > 0) {
+        const ok = window.confirm(
+          `The uploaded PDF differs from the one that produced the current ${reingest.chunkCount} chunks. ` +
+            `Replace existing ${reingest.chunkCount} chunks before re-ingesting?\n\n` +
+            `Click OK to clear prior chunks and re-ingest, Cancel to abort.`,
+        );
+        if (!ok) return;
+        replaceChunks = true;
+      }
+    } catch {
+      // If the hash-check call fails, fall through to the normal ingest path
+      // — better to risk a duplicate-chunks warning than to block re-ingest.
+    }
+
     setIngestionStatus(prev => ({ ...prev, [documentId]: 'loading' }));
     setIngestionMessages(prev => ({ ...prev, [documentId]: 'Starting ingestion...' }));
     setActiveProgress(prev => ({ ...prev, [documentId]: { stage: 'starting', progress: 0, total: 100, message: 'Connecting...' } }));
@@ -310,7 +331,7 @@ export function DocumentManagement() {
           'Content-Type': 'application/json',
           'x-csrf-token': csrfTokenRef.current || '',
         },
-        body: JSON.stringify({ documentId }),
+        body: JSON.stringify({ documentId, replaceChunks }),
       });
 
       if (!response.ok) throw new Error('Failed to start ingestion');

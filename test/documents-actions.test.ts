@@ -101,6 +101,7 @@ import {
   deleteDocument,
   restoreDocument,
   uploadDocumentPDF,
+  checkPdfReingest,
 } from '@/actions/documents';
 
 const adminUser = { id: 'admin-123', email: 'admin@test.com', role: 'admin' };
@@ -430,6 +431,89 @@ describe('Document Registry Server Actions', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('DB update failed');
+    });
+
+    // B5: the upload response now exposes the SHA-256 of the file and the
+    // previous stored hash so the client can prompt before re-ingesting.
+    it('should return computed pdfHash and previousPdfHash', async () => {
+      // First single() = read prior hash; return an existing value.
+      mockSingle.mockResolvedValueOnce({ data: { pdf_hash: 'older-hash-deadbeef' }, error: null });
+
+      const result = await uploadDocumentPDF('test-doc', createPDFFormData(), 'csrf-token');
+
+      expect(result.success).toBe(true);
+      expect(result.pdfHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(result.previousPdfHash).toBe('older-hash-deadbeef');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // checkPdfReingest (B5)
+  // ---------------------------------------------------------------------------
+
+  describe('checkPdfReingest', () => {
+    function setHashes(pdf_hash: string | null, last_ingested_pdf_hash: string | null) {
+      mockSingle.mockResolvedValueOnce({ data: { pdf_hash, last_ingested_pdf_hash }, error: null });
+    }
+
+    function setChunkCount(count: number) {
+      // The hash lookup also walks through mockEq once (single() chain), so we
+      // route the second eq() invocation — the count query — to the count
+      // result. mockReturnValueOnce alone fires on the *first* call, which
+      // would clobber the hash lookup chain.
+      let callCount = 0;
+      mockEq.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { eq: mockEq, single: mockSingle, select: mockSelect, order: mockOrder, delete: mockDelete };
+        }
+        return { count, data: null, error: null };
+      });
+    }
+
+    it('reports hashChanged=true when uploaded PDF differs from last ingest and chunks exist', async () => {
+      setHashes('new-hash', 'old-hash');
+      setChunkCount(42);
+
+      const result = await checkPdfReingest('test-doc');
+
+      expect(result.hashChanged).toBe(true);
+      expect(result.chunkCount).toBe(42);
+      expect(result.pdfHash).toBe('new-hash');
+      expect(result.lastIngestedPdfHash).toBe('old-hash');
+    });
+
+    it('reports hashChanged=false when the hashes match', async () => {
+      setHashes('same-hash', 'same-hash');
+      setChunkCount(10);
+
+      const result = await checkPdfReingest('test-doc');
+
+      expect(result.hashChanged).toBe(false);
+    });
+
+    it('reports hashChanged=false on first-time ingest (last_ingested is null)', async () => {
+      setHashes('uploaded-hash', null);
+      setChunkCount(0);
+
+      const result = await checkPdfReingest('test-doc');
+
+      expect(result.hashChanged).toBe(false);
+      expect(result.chunkCount).toBe(0);
+    });
+
+    it('rejects malformed documentId', async () => {
+      const result = await checkPdfReingest('Bad ID Spaces!');
+
+      expect(result.error).toBe('Invalid documentId');
+    });
+
+    it('rejects non-admin callers', async () => {
+      mockRequireAdmin.mockResolvedValue({ success: false, error: 'Admin required' });
+
+      const result = await checkPdfReingest('test-doc');
+
+      expect(result.error).toBe('Admin required');
     });
   });
 });

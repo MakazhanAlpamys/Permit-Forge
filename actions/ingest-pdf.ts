@@ -17,7 +17,8 @@ import type { ChunkMetadata, IngestionResult } from '@/types';
 
 export async function ingestPDF(
   documentId: string,
-  csrfToken: string
+  csrfToken: string,
+  options: { replaceChunks?: boolean } = {}
 ): Promise<IngestionResult> {
   // SECURITY: Verify admin role
   const authCheck = await requireAdmin();
@@ -44,7 +45,7 @@ export async function ingestPDF(
   const supabase = createAdminClient();
   const { data: dbDoc } = await supabase
     .from('document_registry')
-    .select('file_name, is_active, storage_path')
+    .select('file_name, is_active, storage_path, pdf_hash')
     .eq('id', documentId)
     .single();
 
@@ -54,6 +55,16 @@ export async function ingestPDF(
       chunksProcessed: 0,
       error: 'Unknown document ID',
     };
+  }
+
+  // B5: caller-supplied replace flag. The streaming API route owns the UI
+  // confirm flow; this action mirrors the same handling for the (rare)
+  // direct server-action call path so the two ingestion entry points
+  // behave the same way.
+  if (options.replaceChunks) {
+    await supabase.from('dubai_code_chunks').delete().eq('document_name', documentId);
+    await supabase.from('parent_chunks').delete().eq('document_name', documentId);
+    await supabase.from('document_trees').delete().eq('document_name', documentId);
   }
 
   // Determine PDF source: Supabase Storage or local file
@@ -108,6 +119,13 @@ export async function ingestPDF(
   // Invalidate the tree cache for this document
   if (result.success) {
     clearDocumentTreeCache(documentId);
+    // B5: record which PDF content produced the now-current chunk set.
+    if (dbDoc.pdf_hash) {
+      await supabase
+        .from('document_registry')
+        .update({ last_ingested_pdf_hash: dbDoc.pdf_hash })
+        .eq('id', documentId);
+    }
   }
 
   // Log completion

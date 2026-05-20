@@ -29,6 +29,8 @@ export interface DocumentRecord {
   keywords: string[];
   categories: string[];
   isActive: boolean;
+  pdfHash: string | null;
+  lastIngestedPdfHash: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -328,6 +330,82 @@ export async function restoreDocument(
 }
 
 // -----------------------------------------------------------------------------
+// B5: Check whether the currently-uploaded PDF differs from the one that
+// produced the existing chunks. Called by the admin UI just before re-ingest
+// to decide if the user should be prompted to replace prior chunks.
+// -----------------------------------------------------------------------------
+
+export async function checkPdfReingest(
+  documentId: string
+): Promise<{
+  pdfHash: string | null;
+  lastIngestedPdfHash: string | null;
+  hashChanged: boolean;
+  chunkCount: number;
+  error?: string;
+}> {
+  const authCheck = await requireAdmin();
+  if (!authCheck.success) {
+    return {
+      pdfHash: null,
+      lastIngestedPdfHash: null,
+      hashChanged: false,
+      chunkCount: 0,
+      error: authCheck.error || 'Unauthorized',
+    };
+  }
+
+  if (!documentId || !/^[a-z0-9-]{1,100}$/.test(documentId)) {
+    return {
+      pdfHash: null,
+      lastIngestedPdfHash: null,
+      hashChanged: false,
+      chunkCount: 0,
+      error: 'Invalid documentId',
+    };
+  }
+
+  try {
+    const supabase = createAdminClient();
+
+    const { data: docRow } = await supabase
+      .from('document_registry')
+      .select('pdf_hash, last_ingested_pdf_hash')
+      .eq('id', documentId)
+      .single();
+
+    const pdfHash = (docRow?.pdf_hash as string | null) ?? null;
+    const lastIngestedPdfHash = (docRow?.last_ingested_pdf_hash as string | null) ?? null;
+
+    const { count } = await supabase
+      .from('dubai_code_chunks')
+      .select('*', { count: 'exact', head: true })
+      .eq('document_name', documentId);
+
+    // hashChanged only matters when we *have* a baseline ingestion to compare
+    // against. First-time ingest (lastIngestedPdfHash IS NULL) is not a
+    // replacement — the chunk table is empty for this document.
+    const hashChanged =
+      pdfHash !== null && lastIngestedPdfHash !== null && pdfHash !== lastIngestedPdfHash;
+
+    return {
+      pdfHash,
+      lastIngestedPdfHash,
+      hashChanged,
+      chunkCount: count ?? 0,
+    };
+  } catch (error) {
+    return {
+      pdfHash: null,
+      lastIngestedPdfHash: null,
+      hashChanged: false,
+      chunkCount: 0,
+      error: error instanceof Error ? error.message : 'Failed to check reingest state',
+    };
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Upload Document PDF to Supabase Storage
 // -----------------------------------------------------------------------------
 
@@ -335,7 +413,17 @@ export async function uploadDocumentPDF(
   documentId: string,
   formData: FormData,
   csrfToken?: string
-): Promise<{ success: boolean; storagePath?: string; error?: string }> {
+): Promise<{
+  success: boolean;
+  storagePath?: string;
+  error?: string;
+  /**
+   * B5: SHA-256 of the bytes that were uploaded. The client compares this to
+   * the previous pdf_hash to decide whether re-ingesting will drop chunks.
+   */
+  pdfHash?: string;
+  previousPdfHash?: string | null;
+}> {
   const authCheck = await requireAdmin();
   if (!authCheck.success || !authCheck.user) {
     return { success: false, error: authCheck.error || 'Unauthorized' };
@@ -368,6 +456,16 @@ export async function uploadDocumentPDF(
   try {
     const supabase = createAdminClient();
 
+    // B5: read the previous hash before overwriting it so we can return both
+    // to the client. The client compares them to decide whether to prompt
+    // "Replace existing N chunks?" before re-ingestion.
+    const { data: priorRow } = await supabase
+      .from('document_registry')
+      .select('pdf_hash')
+      .eq('id', documentId)
+      .single();
+    const previousPdfHash = (priorRow?.pdf_hash as string | null) ?? null;
+
     // Sanitize filename
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const storagePath = `documents/${documentId}/${safeName}`;
@@ -375,6 +473,7 @@ export async function uploadDocumentPDF(
     // Upload to Supabase Storage
     const arrayBuffer = await file.arrayBuffer();
     const buffer = new Uint8Array(arrayBuffer);
+    const pdfHash = await sha256Hex(buffer);
 
     const { error: uploadError } = await supabase.storage
       .from(DOCUMENT_PDF_LIMITS.storageBucket)
@@ -387,12 +486,13 @@ export async function uploadDocumentPDF(
       return { success: false, error: `Upload failed: ${uploadError.message}` };
     }
 
-    // Update document_registry with storage_path and file_name
+    // Update document_registry with storage_path, file_name, and pdf_hash.
     const { error: updateError } = await supabase
       .from('document_registry')
       .update({
         storage_path: storagePath,
         file_name: file.name,
+        pdf_hash: pdfHash,
         updated_at: new Date().toISOString(),
       })
       .eq('id', documentId);
@@ -407,11 +507,11 @@ export async function uploadDocumentPDF(
     await logAuditEvent({
       userId: authCheck.user.id,
       action: 'pdf_ingested',
-      metadata: { stage: 'pdf_uploaded', documentId, fileName: file.name, fileSize: file.size },
+      metadata: { stage: 'pdf_uploaded', documentId, fileName: file.name, fileSize: file.size, pdfHash },
       ...metadata,
     });
 
-    return { success: true, storagePath };
+    return { success: true, storagePath, pdfHash, previousPdfHash };
   } catch (error) {
     return {
       success: false,
@@ -438,7 +538,27 @@ function mapDbRow(row: Record<string, unknown>): DocumentRecord {
     keywords: (row.keywords as string[]) || [],
     categories: (row.categories as string[]) || [],
     isActive: row.is_active !== false,
+    pdfHash: (row.pdf_hash as string) || null,
+    lastIngestedPdfHash: (row.last_ingested_pdf_hash as string) || null,
     createdAt: (row.created_at as string) || '',
     updatedAt: (row.updated_at as string) || '',
   };
+}
+
+// B5: SHA-256 of an arbitrary buffer, hex-encoded. Used to fingerprint the
+// uploaded PDF so the admin UI can detect a true content change vs. just a
+// "re-ingest" click on the same file.
+async function sha256Hex(buffer: Uint8Array | ArrayBuffer): Promise<string> {
+  // crypto.subtle.digest insists on a plain ArrayBuffer (not SharedArrayBuffer).
+  // Copy into a fresh ArrayBuffer to satisfy the type checker and stay safe.
+  const source = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  const ab = new ArrayBuffer(source.byteLength);
+  new Uint8Array(ab).set(source);
+  const digest = await crypto.subtle.digest('SHA-256', ab);
+  const bytes = new Uint8Array(digest);
+  let hex = '';
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, '0');
+  }
+  return hex;
 }
