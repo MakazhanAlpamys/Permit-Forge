@@ -121,7 +121,7 @@ Risk legend: 🟢 LOW · 🟡 MEDIUM · 🔴 HIGH (touches hot path, needs manua
 - [x] **D7 — M14** Add B-tree index on `dubai_code_chunks.parent_id`. 🟢 — `ad61dbd`
 - [x] **D8 — M15** Add functional index on `find_chunks_by_section`'s JSONB extraction; or rewrite RPC to use `metadata @> '{"section": "..."}'` with GIN. 🟡 — `f32c1cc`
 - [x] **D9 — M17** Tighten `users.verification_code` / `reset_code` to `CHAR(6)`. Provide a migration that truncates existing values. 🟢 — `cd80c7d`
-- [ ] **D10 — M18** Bound `audit_logs.ip_address` to `VARCHAR(45)`, `user_agent` to `VARCHAR(512)`. 🟢
+- [x] **D10 — M18** Bound `audit_logs.ip_address` to `VARCHAR(45)`, `user_agent` to `VARCHAR(512)`. 🟢 — `257fb1f`
 - [ ] **D11 — M19** Bound `document_registry.id` / `display_name` / `badge_color` to reasonable lengths. 🟢
 - [ ] **D12 — M21** Switch `get_all_users_admin` pagination from OFFSET to keyset on `(created_at, id)`. 🟡
 - [x] **D13 — L7** Drop redundant `users_username_idx` (UNIQUE already provides it). 🟢 — `3f0400d`

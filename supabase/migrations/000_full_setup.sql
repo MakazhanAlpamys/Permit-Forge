@@ -376,15 +376,16 @@ CREATE INDEX semantic_cache_created_at_idx ON semantic_cache(created_at DESC);
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE document_registry (
-  id TEXT PRIMARY KEY,                          -- e.g. 'building-code-2021'
-  display_name TEXT NOT NULL,
+  -- D11/M19: bound to reasonable lengths (id is also an FK target).
+  id VARCHAR(64) PRIMARY KEY,                   -- e.g. 'building-code-2021'
+  display_name VARCHAR(128) NOT NULL,
   short_name TEXT NOT NULL,
   file_name TEXT NOT NULL,                      -- PDF filename (original name)
   storage_path TEXT DEFAULT NULL,               -- Supabase Storage path (e.g. 'documents/doc-id/file.pdf')
   source_url TEXT DEFAULT '',
   authority TEXT DEFAULT '',
   description TEXT DEFAULT '',
-  badge_color TEXT DEFAULT 'bg-gray-500/20 text-gray-400 border-gray-500/30',
+  badge_color VARCHAR(128) DEFAULT 'bg-gray-500/20 text-gray-400 border-gray-500/30',
   keywords TEXT[] DEFAULT '{}',                 -- For document selector scoring
   categories TEXT[] DEFAULT '{}',               -- Category tags
   is_active BOOLEAN DEFAULT TRUE,               -- Soft delete / disable
