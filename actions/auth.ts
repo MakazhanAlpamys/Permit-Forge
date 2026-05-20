@@ -26,6 +26,11 @@ import { getRequestMetadata, getCSRFToken } from '@/lib/auth';
 import { requireCSRF } from '@/lib/security';
 import { generateSixDigitCode, sendVerificationEmail, sendPasswordResetEmail } from '@/lib/email';
 import { safeEqual, checkCodeAttempts, resetCodeAttempts } from '@/lib/code-verification';
+import {
+  isAccountLockedOut,
+  recordFailedLogin,
+  clearLoginAttempts,
+} from '@/lib/login-lockout';
 
 const LOGIN_WINDOW_SECONDS = 60;
 const LOGIN_MAX_ATTEMPTS = 10;
@@ -78,6 +83,25 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
       return { error: validation.error.issues[0].message };
     }
 
+    // C3H/H4: per-account lockout (defense-in-depth on top of IP limiter).
+    // Checked BEFORE the DB lookup / bcrypt so a locked account skips the
+    // expensive password verification entirely.
+    const lockState = isAccountLockedOut(validation.data.username);
+    if (lockState.locked) {
+      await logAuditEvent({
+        action: 'login_failed',
+        metadata: {
+          reason: 'account_locked',
+          username: validation.data.username,
+          retryAfterSec: Math.ceil(lockState.retryAfterMs / 1000),
+        },
+        ...metadata,
+      });
+      return {
+        error: 'Too many failed attempts. Please try again in a few minutes.',
+      };
+    }
+
     // Use admin client for login - anon key doesn't have access to users table
     const supabase = createAdminClient();
 
@@ -89,6 +113,7 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
       .single();
 
     if (error || !user) {
+      recordFailedLogin(validation.data.username);
       await logAuditEvent({
         action: 'login_failed',
         metadata: { reason: 'user_not_found', username: validation.data.username },
@@ -118,14 +143,23 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
     const isValidPassword = await verifyPassword(validation.data.password, user.password_hash);
     
     if (!isValidPassword) {
+      const failState = recordFailedLogin(validation.data.username);
       await logAuditEvent({
         action: 'login_failed',
         userId: user.id,
-        metadata: { reason: 'invalid_password' },
+        metadata: {
+          reason: 'invalid_password',
+          ...(failState.locked
+            ? { lockedOut: true, retryAfterSec: Math.ceil(failState.retryAfterMs / 1000) }
+            : {}),
+        },
         ...metadata,
       });
       return { error: 'Invalid username or password' };
     }
+
+    // Success — drop the lockout counter so the next failure starts fresh.
+    clearLoginAttempts(validation.data.username);
 
     // Update last login
     await supabase
