@@ -68,6 +68,18 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
         isInternalSessionCreateRef.current = false;
         setCurrentSessionId(sessionId);
       } else {
+        // Switching to a different session — abort any in-flight stream from
+        // the previous session, otherwise its setMessages will race with the
+        // loadSessionMessages call below and mix messages across sessions.
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          abortControllerRef.current = null;
+        }
+        isCancelledRef.current = true;
+        setIsLoading(false);
+        setIsStreaming(false);
+        setStreamingContent('');
+        setIsVerifyingSources(false);
         loadSessionMessages(sessionId);
         setCurrentSessionId(sessionId);
       }
