@@ -170,7 +170,6 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/security.ts` | `requireAuth`/`requireAdmin` middleware guards for server actions |
 | `lib/validations.ts` | Zod v4 schemas for all inputs (passwords, chat messages, citations, JWT payloads) |
 | `lib/supabase-server.ts` | Two clients: `createServerClient()` (anon) and `createAdminClient()` (service_role, singleton pattern). See `LOCAL_NOTES.md` for trust-boundary detail. |
-| `lib/logger.ts` | Centralized logging with `LOG_LEVEL` env var support |
 | `lib/file-upload.ts` | File validation (size, extension, MIME), storage path generation |
 | `lib/email.ts` | Email sending via Nodemailer SMTP: verification, password reset, password change codes; `generateSixDigitCode()` |
 | `lib/transforms.ts` | Shared data transforms: permit DB row → TypeScript object |
@@ -258,4 +257,3 @@ Optional:
 - `SMTP_PORT` — SMTP port (default: `587`)
 - `SMTP_USER` — Gmail address for sending emails
 - `SMTP_PASS` — Gmail App Password (16 chars)
-- `LOG_LEVEL` — Logging verbosity (`debug`/`info`/`warn`/`error`)
