@@ -258,6 +258,7 @@ export type AuditAction =
   | 'login_success'
   | 'login_failed'
   | 'logout'
+  | 'permission_denied'
   | 'user_created'
   | 'user_updated'
   | 'user_deleted'

@@ -102,13 +102,15 @@ export async function requireAdmin(): Promise<SecurityCheckResult> {
   }
   
   if (authResult.user.role !== 'admin') {
-    // Log unauthorized admin access attempt
+    // C28H/L3: log as permission_denied, not login_failed — escalation
+    // attempts and bad-password retries are different signals and they
+    // shouldn't share an event type.
     try {
       const metadata = await getRequestMetadata();
       await logAuditEvent({
         userId: authResult.user.id,
-        action: 'login_failed', // Using existing action type
-        metadata: { 
+        action: 'permission_denied',
+        metadata: {
           reason: 'unauthorized_admin_attempt',
           attemptedRole: 'admin',
           actualRole: authResult.user.role,
@@ -118,10 +120,10 @@ export async function requireAdmin(): Promise<SecurityCheckResult> {
     } catch (e) {
       console.error('Failed to log security event:', e);
     }
-    
-    return { 
-      success: false, 
-      error: 'Unauthorized: Admin access required' 
+
+    return {
+      success: false,
+      error: 'Unauthorized: Admin access required'
     };
   }
   
