@@ -4,7 +4,6 @@
 // Authentication Server Actions (with JWT, CSRF, and Audit Logging)
 // ============================================================================
 
-import crypto from 'crypto';
 import { createAdminClient } from '@/lib/supabase-server';
 import {
   verifyPassword,
@@ -25,46 +24,10 @@ import {
 import { redirect } from 'next/navigation';
 import { getRequestMetadata, getCSRFToken } from '@/lib/auth';
 import { generateSixDigitCode, sendVerificationEmail, sendPasswordResetEmail } from '@/lib/email';
+import { safeEqual, checkCodeAttempts, resetCodeAttempts } from '@/lib/code-verification';
 
 const LOGIN_WINDOW_SECONDS = 60;
 const LOGIN_MAX_ATTEMPTS = 10;
-
-/** Constant-time string comparison to prevent timing side-channel attacks on short codes */
-function safeEqual(a: string, b: string): boolean {
-  // Pad both to equal length before comparing (prevents length oracle)
-  const maxLen = Math.max(a.length, b.length);
-  const bufA = Buffer.alloc(maxLen);
-  const bufB = Buffer.alloc(maxLen);
-  bufA.write(a);
-  bufB.write(b);
-  return crypto.timingSafeEqual(bufA, bufB);
-}
-
-// In-memory code attempt tracker (keyed by "verify:<email>" or "reset:<email>")
-// Prevents brute-force of 6-digit codes (1,000,000 possibilities / 5 tries = lockout)
-const codeAttempts = new Map<string, { count: number; firstAttempt: number }>();
-const CODE_ATTEMPT_WINDOW_MS = 15 * 60 * 1000; // 15 min (matches code TTL)
-const CODE_MAX_ATTEMPTS = 5;
-
-function checkCodeAttempts(key: string): boolean {
-  const now = Date.now();
-  if (codeAttempts.size > 500) {
-    for (const [k, v] of codeAttempts) {
-      if (now - v.firstAttempt > CODE_ATTEMPT_WINDOW_MS) codeAttempts.delete(k);
-    }
-  }
-  const entry = codeAttempts.get(key);
-  if (!entry || now - entry.firstAttempt > CODE_ATTEMPT_WINDOW_MS) {
-    codeAttempts.set(key, { count: 1, firstAttempt: now });
-    return true;
-  }
-  entry.count++;
-  return entry.count <= CODE_MAX_ATTEMPTS;
-}
-
-function resetCodeAttempts(key: string): void {
-  codeAttempts.delete(key);
-}
 
 // DB-backed IP rate limiter (works in serverless/multi-instance environments)
 // Uses the ip_rate_limits table via check_ip_rate_limit() RPC (migration 001)

@@ -4,21 +4,12 @@
 // Profile Server Actions (User profile management + password change via email)
 // ============================================================================
 
-import crypto from 'crypto';
 import { createAdminClient } from '@/lib/supabase-server';
 import { requireAuth, requireAdmin, requireCSRF } from '@/lib/security';
 import { hashPassword, verifyPassword, logAuditEvent, getRequestMetadata, createSession } from '@/lib/auth';
 import { updateProfileSchema, validatePassword } from '@/lib/validations';
 import { generateSixDigitCode, sendPasswordChangeCodeEmail } from '@/lib/email';
-
-function safeEqual(a: string, b: string): boolean {
-  const maxLen = Math.max(a.length, b.length);
-  const bufA = Buffer.alloc(maxLen);
-  const bufB = Buffer.alloc(maxLen);
-  bufA.write(a);
-  bufB.write(b);
-  return crypto.timingSafeEqual(bufA, bufB);
-}
+import { safeEqual } from '@/lib/code-verification';
 
 const CODE_EXPIRY_MINUTES = 15;
 
