@@ -254,8 +254,27 @@ export function DocumentManagement() {
         }
 
         if (!uploadResult.success) {
-          setFormError(uploadResult.error || 'PDF upload failed');
-          // Metadata saved but upload failed — user can retry upload via edit
+          // B14: the metadata row was just inserted (or updated) but the PDF
+          // never landed. Behavior depends on whether this is a new-document
+          // flow or an edit:
+          //   - NEW (no editingId): compensating-delete the row so we don't
+          //     leave an empty registry entry behind. Hard-delete (clearChunks
+          //     true) because the doc has no chunks yet anyway.
+          //   - EDIT: keep the row and surface a sticky warning — the existing
+          //     PDF (if any) and chunks are still valid; only the new upload
+          //     attempt failed.
+          if (!editingId) {
+            await deleteDocument(docId, true, csrfTokenRef.current || '');
+            setFormError(
+              (uploadResult.error || 'PDF upload failed') +
+                ' — the document entry was rolled back. Please try again.',
+            );
+          } else {
+            setFormError(
+              (uploadResult.error || 'PDF upload failed') +
+                ' — metadata was saved but the new PDF was not uploaded. The previous PDF (if any) is unchanged.',
+            );
+          }
           loadDocuments();
           return;
         }
