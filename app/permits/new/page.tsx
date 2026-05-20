@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Header } from '@/components/dashboard';
-import { PermitFormStepper, PermitFormStep1, PermitFormStep2, PermitFormStep3, ComplianceCheckPanel } from '@/components/permits';
+import { PermitFormStepper, PermitFormStep1, PermitFormStep2, PermitFormStep3, ComplianceCheckPanel, FileUploadZone } from '@/components/permits';
 import {
   createPermit,
   updatePermitBuildingDetails,
@@ -17,10 +17,11 @@ import {
   getMyPermits,
   getPermitById,
 } from '@/actions/permits';
+import { getPermitAttachments } from '@/actions/permit-attachments';
 import { getCSRFTokenAction } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft } from 'lucide-react';
-import type { BuildingDetails, ComplianceRequirements, ComplianceCheckResult, PermitApplication } from '@/types';
+import type { BuildingDetails, ComplianceRequirements, ComplianceCheckResult, PermitApplication, PermitAttachment } from '@/types';
 
 const STEPS = ['Project Info', 'Building Details', 'Compliance'];
 
@@ -101,6 +102,22 @@ export default function NewPermitPage() {
 
   const [step2Data, setStep2Data] = useState<BuildingDetails>(EMPTY_BUILDING_DETAILS);
   const [step3Data, setStep3Data] = useState<ComplianceRequirements>(EMPTY_COMPLIANCE);
+  // B10: load attachments once a permit id exists so the upload zone on step 3
+  // can show what's already there. Refreshes after every upload/delete.
+  const [attachments, setAttachments] = useState<PermitAttachment[]>([]);
+
+  const refreshAttachments = useCallback(async (id: string | null) => {
+    if (!id) {
+      setAttachments([]);
+      return;
+    }
+    const result = await getPermitAttachments(id);
+    setAttachments(result.data || []);
+  }, []);
+
+  useEffect(() => {
+    refreshAttachments(permitId);
+  }, [permitId, refreshAttachments]);
 
   // B9: helper to keep URL in sync with state. router.replace avoids creating
   // history entries on every step click — back-button should leave /permits/new
@@ -356,6 +373,19 @@ export default function NewPermitPage() {
               error={error}
               lastCheckAt={complianceResult?.checkedAt}
             />
+
+            {/* B10: file uploads belong on step 3 because they're optional and
+                require an existing permit row to attach to. Hidden while the
+                permit is still unsaved (no id) — step 1/2 must run first. */}
+            {permitId && (
+              <div className="mt-6 p-4 border border-border rounded-lg bg-card/50">
+                <FileUploadZone
+                  permitId={permitId}
+                  attachments={attachments}
+                  onUpdate={() => refreshAttachments(permitId)}
+                />
+              </div>
+            )}
 
             {complianceResult && (
               <div className="mt-4">
