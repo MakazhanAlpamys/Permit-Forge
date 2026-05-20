@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase-server';
-import { logAuditEvent, hashPassword, getRequestMetadata } from '@/lib/auth';
+import { logAuditWithMeta, hashPassword } from '@/lib/auth';
 import { uuidSchema, createUserSchema, validatePassword } from '@/lib/validations';
 import { requireAdmin, requireCSRF } from '@/lib/security';
 
@@ -202,13 +202,9 @@ export async function blockUser(
     if (error) throw error;
     
     // Log the action
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: blocked ? 'user_blocked' : 'user_unblocked',
+    await logAuditWithMeta(authCheck.user.id, blocked ? 'user_blocked' : 'user_unblocked', {
       targetUserId: userId,
       metadata: { reason },
-      ...metadata,
     });
     
     return { success: true };
@@ -254,13 +250,9 @@ export async function updateUserRole(
     if (error) throw error;
     
     // Log the action
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'role_changed',
+    await logAuditWithMeta(authCheck.user.id, 'role_changed', {
       targetUserId: userId,
       metadata: { newRole: role },
-      ...metadata,
     });
     
     return { success: true };
@@ -337,13 +329,9 @@ export async function adminCreateUser(data: {
     
     // Log the action
     try {
-      const metadata = await getRequestMetadata();
-      await logAuditEvent({
-        userId: authCheck.user.id,
-        action: 'user_created',
+      await logAuditWithMeta(authCheck.user.id, 'user_created', {
         targetUserId: newUser.id,
         metadata: { username, role: role || 'user' },
-        ...metadata,
       });
     } catch (auditError) {
       console.error('Audit log error:', auditError);
@@ -402,13 +390,9 @@ export async function adminDeleteUser(userId: string, csrfToken?: string): Promi
     if (error) throw error;
     
     // Log the action
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'user_deleted',
+    await logAuditWithMeta(authCheck.user.id, 'user_deleted', {
       targetUserId: userId,
       metadata: { action: 'deleted', username: targetUser?.username },
-      ...metadata,
     });
     
     return { success: true };
@@ -461,12 +445,8 @@ export async function adminResetPassword(
     if (error) throw error;
     
     // Log the action
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'password_reset',
+    await logAuditWithMeta(authCheck.user.id, 'password_reset', {
       targetUserId: userId,
-      ...metadata,
     });
     
     return { success: true };

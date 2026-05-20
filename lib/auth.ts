@@ -312,3 +312,26 @@ export async function getRequestMetadata() {
     userAgent: headersList.get('user-agent') || 'unknown',
   };
 }
+
+/**
+ * Convenience wrapper around getRequestMetadata + logAuditEvent. The vast
+ * majority of audit calls in the codebase repeat this exact two-step dance;
+ * collapsing it removes ~25 occurrences of metadata plumbing. (F4 / Simplify #4)
+ */
+export async function logAuditWithMeta(
+  userId: string,
+  action: AuditAction,
+  extras?: {
+    targetUserId?: string;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<void> {
+  const meta = await getRequestMetadata();
+  await logAuditEvent({
+    userId,
+    action,
+    targetUserId: extras?.targetUserId,
+    metadata: extras?.metadata,
+    ...meta,
+  });
+}

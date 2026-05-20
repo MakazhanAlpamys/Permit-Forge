@@ -18,10 +18,14 @@ const mockHashPassword = vi.fn().mockResolvedValue('hashed-password-123');
 const mockGetQuickSession = vi.fn();
 const mockLogAuditEvent = vi.fn().mockResolvedValue(undefined);
 const mockGetRequestMetadata = vi.fn().mockResolvedValue({ ip: '127.0.0.1', userAgent: 'test' });
+// logAuditWithMeta is the convenience wrapper (F4); it composes getRequestMetadata
+// + logAuditEvent, so adapt the existing audit assertions onto a single mock.
+const mockLogAuditWithMeta = vi.fn().mockResolvedValue(undefined);
 vi.mock('@/lib/auth', () => ({
   hashPassword: (...args: unknown[]) => mockHashPassword(...args),
   getQuickSession: (...args: unknown[]) => mockGetQuickSession(...args),
   logAuditEvent: (...args: unknown[]) => mockLogAuditEvent(...args),
+  logAuditWithMeta: (...args: unknown[]) => mockLogAuditWithMeta(...args),
   getRequestMetadata: (...args: unknown[]) => mockGetRequestMetadata(...args),
 }));
 
@@ -282,10 +286,11 @@ describe('Admin Server Actions', () => {
       const result = await blockUser(validUUID, false, undefined, 'csrf-token');
 
       expect(result.success).toBe(true);
-      expect(mockLogAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
-        action: 'user_unblocked',
-        targetUserId: validUUID,
-      }));
+      expect(mockLogAuditWithMeta).toHaveBeenCalledWith(
+        adminUser.id,
+        'user_unblocked',
+        expect.objectContaining({ targetUserId: validUUID }),
+      );
     });
 
     it('should reject non-admin users', async () => {
@@ -327,12 +332,14 @@ describe('Admin Server Actions', () => {
 
       await blockUser(validUUID, true, 'Spam', 'csrf-token');
 
-      expect(mockLogAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
-        userId: adminUser.id,
-        action: 'user_blocked',
-        targetUserId: validUUID,
-        metadata: { reason: 'Spam' },
-      }));
+      expect(mockLogAuditWithMeta).toHaveBeenCalledWith(
+        adminUser.id,
+        'user_blocked',
+        expect.objectContaining({
+          targetUserId: validUUID,
+          metadata: { reason: 'Spam' },
+        }),
+      );
     });
   });
 
@@ -384,11 +391,14 @@ describe('Admin Server Actions', () => {
 
       await updateUserRole(validUUID, 'user', 'csrf-token');
 
-      expect(mockLogAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
-        action: 'role_changed',
-        targetUserId: validUUID,
-        metadata: { newRole: 'user' },
-      }));
+      expect(mockLogAuditWithMeta).toHaveBeenCalledWith(
+        adminUser.id,
+        'role_changed',
+        expect.objectContaining({
+          targetUserId: validUUID,
+          metadata: { newRole: 'user' },
+        }),
+      );
     });
 
     it('should handle RPC error gracefully', async () => {
@@ -479,17 +489,17 @@ describe('Admin Server Actions', () => {
 
       await adminCreateUser(validUserData, 'csrf-token');
 
-      expect(mockLogAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
-        userId: adminUser.id,
-        action: 'user_created',
-        targetUserId: validUUID,
-      }));
+      expect(mockLogAuditWithMeta).toHaveBeenCalledWith(
+        adminUser.id,
+        'user_created',
+        expect.objectContaining({ targetUserId: validUUID }),
+      );
     });
 
     it('should not fail if audit log throws', async () => {
       mockSingle.mockResolvedValueOnce({ data: null, error: null });
       mockSingle.mockResolvedValueOnce({ data: { id: validUUID }, error: null });
-      mockLogAuditEvent.mockRejectedValueOnce(new Error('audit failure'));
+      mockLogAuditWithMeta.mockRejectedValueOnce(new Error('audit failure'));
 
       const result = await adminCreateUser(validUserData, 'csrf-token');
 
@@ -557,11 +567,14 @@ describe('Admin Server Actions', () => {
 
       await adminDeleteUser(targetUUID, 'csrf-token');
 
-      expect(mockLogAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
-        action: 'user_deleted',
-        targetUserId: targetUUID,
-        metadata: { action: 'deleted', username: 'deleteduser' },
-      }));
+      expect(mockLogAuditWithMeta).toHaveBeenCalledWith(
+        adminUser.id,
+        'user_deleted',
+        expect.objectContaining({
+          targetUserId: targetUUID,
+          metadata: { action: 'deleted', username: 'deleteduser' },
+        }),
+      );
     });
   });
 
@@ -616,11 +629,11 @@ describe('Admin Server Actions', () => {
 
       await adminResetPassword(validUUID, 'NewStrong123!', 'csrf-token');
 
-      expect(mockLogAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
-        userId: adminUser.id,
-        action: 'password_reset',
-        targetUserId: validUUID,
-      }));
+      expect(mockLogAuditWithMeta).toHaveBeenCalledWith(
+        adminUser.id,
+        'password_reset',
+        expect.objectContaining({ targetUserId: validUUID }),
+      );
     });
 
     it('should handle DB error gracefully', async () => {
