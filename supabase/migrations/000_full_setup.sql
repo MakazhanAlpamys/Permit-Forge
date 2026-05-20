@@ -429,8 +429,11 @@ SELECT
   COUNT(*) FILTER (WHERE cm.role = 'assistant') AS assistant_messages
 FROM chat_messages cm
 JOIN chat_sessions cs ON cm.session_id = cs.id
-GROUP BY DATE(cm.created_at)
-ORDER BY date DESC;
+GROUP BY DATE(cm.created_at);
+-- ORDER BY inside a materialized view is dropped on every REFRESH and only
+-- happens to hold on the initial CREATE; consumers must add ORDER BY at query
+-- time. The unique index on (date) lets the planner serve sorted scans for free
+-- when the consumer asks for them. (D15/L9)
 
 CREATE UNIQUE INDEX analytics_daily_date_idx ON analytics_daily(date);
 
