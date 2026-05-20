@@ -88,10 +88,10 @@ CREATE TABLE users (
   role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
   blocked BOOLEAN DEFAULT FALSE,
   blocked_reason TEXT,
-  blocked_at TIMESTAMP WITH TIME ZONE,
+  blocked_at TIMESTAMPTZ,
   blocked_by UUID,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  last_login TIMESTAMP WITH TIME ZONE
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  last_login TIMESTAMPTZ
 );
 
 ALTER TABLE users ADD CONSTRAINT users_blocked_by_fkey
@@ -114,7 +114,7 @@ CREATE TABLE dubai_code_chunks (
   document_name TEXT NOT NULL DEFAULT 'unknown',
   parent_id BIGINT,  -- References parent_chunks for parent-child chunking (v2)
   fts tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX dubai_code_chunks_embedding_idx
@@ -141,8 +141,8 @@ CREATE TABLE document_trees (
   document_name TEXT NOT NULL UNIQUE,
   total_pages INT NOT NULL DEFAULT 0,
   tree_data JSONB NOT NULL DEFAULT '[]',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX idx_document_trees_name ON document_trees(document_name);
@@ -155,8 +155,8 @@ CREATE TABLE chat_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE chat_messages (
@@ -166,7 +166,7 @@ CREATE TABLE chat_messages (
   content TEXT NOT NULL,
   citations JSONB DEFAULT '[]',
   compliance_status TEXT CHECK (compliance_status IN ('compliant', 'non-compliant', 'requires-review', 'pending')),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX chat_messages_session_id_idx ON chat_messages(session_id);
@@ -185,7 +185,7 @@ CREATE TABLE audit_logs (
   metadata JSONB DEFAULT '{}',
   ip_address TEXT,
   user_agent TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX audit_logs_user_id_idx    ON audit_logs(user_id);
@@ -200,7 +200,7 @@ CREATE INDEX audit_logs_target_user_idx ON audit_logs(target_user_id);
 CREATE TABLE rate_limits (
   id BIGSERIAL PRIMARY KEY,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  request_timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  request_timestamp TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX rate_limits_user_time_idx ON rate_limits(user_id, request_timestamp DESC);
@@ -224,13 +224,13 @@ CREATE TABLE permit_applications (
   compliance_requirements JSONB NOT NULL DEFAULT '{}',
   compliance_check_result JSONB DEFAULT NULL,
   reviewed_by UUID REFERENCES users(id) ON DELETE SET NULL,
-  reviewed_at TIMESTAMP WITH TIME ZONE,
+  reviewed_at TIMESTAMPTZ,
   review_comments TEXT,
   revision_count INTEGER NOT NULL DEFAULT 0,
   revision_notes TEXT,
-  submitted_at TIMESTAMP WITH TIME ZONE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  submitted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX permit_apps_user_id_idx     ON permit_applications(user_id);
@@ -253,7 +253,7 @@ CREATE TABLE permit_status_history (
     CHECK (to_status IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'revision_requested')),
   changed_by UUID REFERENCES users(id) ON DELETE SET NULL,
   comment TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX permit_history_permit_id_idx  ON permit_status_history(permit_id);
@@ -272,7 +272,7 @@ CREATE TABLE permit_attachments (
   file_type TEXT NOT NULL,
   storage_path TEXT NOT NULL,
   uploaded_by UUID REFERENCES users(id) ON DELETE SET NULL,
-  uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  uploaded_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX permit_attachments_permit_id_idx   ON permit_attachments(permit_id);
@@ -296,7 +296,7 @@ CREATE TABLE notifications (
   body TEXT NOT NULL,
   data JSONB DEFAULT '{}',
   read BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX notifications_user_id_idx    ON notifications(user_id);
@@ -313,7 +313,7 @@ CREATE TABLE permit_certificates (
   certificate_number TEXT NOT NULL UNIQUE,
   generated_by UUID REFERENCES users(id) ON DELETE SET NULL,
   storage_path TEXT,
-  generated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  generated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX permit_certificates_permit_id_idx ON permit_certificates(permit_id);
@@ -330,7 +330,7 @@ CREATE TABLE parent_chunks (
   content TEXT NOT NULL,
   metadata JSONB DEFAULT '{}',
   document_name TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX parent_chunks_document_name_idx ON parent_chunks(document_name);
@@ -349,7 +349,7 @@ CREATE TABLE semantic_cache (
   query_embedding VECTOR(768) NOT NULL,
   response TEXT NOT NULL,
   citations JSONB DEFAULT '[]',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
   ttl_seconds INT NOT NULL DEFAULT 3600  -- 1 hour default
 );
 
@@ -375,8 +375,8 @@ CREATE TABLE document_registry (
   categories TEXT[] DEFAULT '{}',               -- Category tags
   is_active BOOLEAN DEFAULT TRUE,               -- Soft delete / disable
   keywords_auto_generated BOOLEAN DEFAULT TRUE,  -- FALSE if admin manually edited keywords
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX idx_document_registry_active ON document_registry(is_active) WHERE is_active = TRUE;
@@ -988,8 +988,8 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  v_window_start TIMESTAMP WITH TIME ZONE;
-  v_last_request TIMESTAMP WITH TIME ZONE;
+  v_window_start TIMESTAMPTZ;
+  v_last_request TIMESTAMPTZ;
   v_request_count INT;
   v_ms_since_last INT;
 BEGIN
@@ -1687,8 +1687,8 @@ RETURNS TABLE (
   categories TEXT[],
   is_active BOOLEAN,
   keywords_auto_generated BOOLEAN,
-  created_at TIMESTAMP WITH TIME ZONE,
-  updated_at TIMESTAMP WITH TIME ZONE
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
