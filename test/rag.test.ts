@@ -143,18 +143,24 @@ describe('RAG Module', () => {
     it('should detect exact search patterns and include exact results', async () => {
       // Mock for exact search
       mockRpc
-        .mockResolvedValueOnce({ 
-          data: [{ id: 5, content: 'Section 3.2.1 content', metadata: { section: '3.2.1' }, match_position: 0 }], 
-          error: null 
+        .mockResolvedValueOnce({
+          data: [{ id: 5, content: 'Section 3.2.1 content', metadata: { section: '3.2.1' }, match_position: 0 }],
+          error: null
         })
         .mockResolvedValueOnce({ data: [], error: null }); // Hybrid search
 
-      const _result = await queryBuildingCode({
+      const result = await queryBuildingCode({
         query: 'section 3.2.1 requirements',
         matchCount: 10,
       });
 
       expect(mockRpc).toHaveBeenCalledWith('search_dubai_code_exact', expect.any(Object));
+      // E17: the exact-search row must actually appear in the merged output,
+      // not just trigger the RPC. The exact chunk has similarity 1.0 from
+      // lib/rag.ts so it should be ranked first.
+      expect(result.chunks).toHaveLength(1);
+      expect(result.chunks[0].id).toBe(5);
+      expect(result.chunks[0].similarity).toBe(1.0);
     });
   });
 

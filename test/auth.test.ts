@@ -26,7 +26,10 @@ describe('Auth Library', () => {
     it('should generate a CSRF token string', async () => {
       const token = await generateCSRFToken();
       expect(typeof token).toBe('string');
-      expect(token.length).toBeGreaterThan(0);
+      // E17: assert the actual format. crypto.randomBytes(32).toString('hex')
+      // produces 64 lowercase hex characters; anything else is a regression
+      // (e.g. someone swapping to a shorter or base64-encoded token).
+      expect(token).toMatch(/^[0-9a-f]{64}$/);
     });
 
     it('should generate unique tokens each time', async () => {
@@ -92,11 +95,36 @@ describe('Auth Library', () => {
 
       const token = await createJWTToken(payload);
       const result = await verifyJWTToken(token);
-      
+
       expect(result).not.toBeNull();
       expect(result?.sub).toBe('550e8400-e29b-41d4-a716-446655440000');
       expect(result?.username).toBe('testuser');
       expect(result?.role).toBe('user');
+      // E17: assert tokens are properly clamped to the {admin,user} enum and
+      // include the rest of the schema. A future regression that widens the
+      // enum or strips iat/exp would now fail here instead of silently passing.
+      expect(['admin', 'user']).toContain(result?.role);
+      expect(typeof result?.iat).toBe('number');
+      expect(typeof result?.exp).toBe('number');
+      expect(result!.exp).toBeGreaterThan(result!.iat);
+    });
+
+    it('rejects a JWT whose role is not in the {admin,user} enum', async () => {
+      // Sign with the project secret but with a bogus role value.
+      const { SignJWT } = await import('jose');
+      const secret = new TextEncoder().encode(process.env.JWT_SECRET!);
+      const tampered = await new SignJWT({
+        sub: '550e8400-e29b-41d4-a716-446655440000',
+        username: 'tester',
+        role: 'superadmin',
+        tv: 0,
+      })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setIssuedAt()
+        .setExpirationTime('1h')
+        .sign(secret);
+      const result = await verifyJWTToken(tampered);
+      expect(result).toBeNull();
     });
 
     it('should return null for invalid JWT token', async () => {

@@ -497,8 +497,13 @@ describe('Admin Server Actions', () => {
 
       const result = await adminCreateUser(validUserData, 'csrf-token');
 
+      // E17: assert the EXACT user-facing message. A previous regression was
+      // dropping to a generic "Database error: ..." text which leaked the raw
+      // Postgres error code to the UI. The string must stay user-friendly.
       expect(result.success).toBe(false);
       expect(result.error).toBe('Username already exists');
+      // Also: no audit row should be written when creation failed.
+      expect(mockLogAuditWithMeta).not.toHaveBeenCalled();
     });
 
     it('should log audit event on success', async () => {

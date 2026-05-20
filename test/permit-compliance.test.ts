@@ -91,6 +91,13 @@ describe('Permit Compliance Check', () => {
     expect(result.checks).toHaveLength(1);
     expect(result.checks[0].category).toBe('Building Height');
     expect(result.checkedAt).toBeDefined();
+    // E17: hybridSearch must be called with at least one building-context
+    // query, otherwise the AI is reasoning blind.
+    expect(mockHybridSearch).toHaveBeenCalled();
+    const queries = mockHybridSearch.mock.calls.map((c) => String(c[0]).toLowerCase());
+    expect(queries.some((q) => /(building|height|parking|safety|fire|accessibility)/.test(q))).toBe(
+      true,
+    );
   });
 
   it('should call hybridSearch with generated queries', async () => {
@@ -101,8 +108,14 @@ describe('Permit Compliance Check', () => {
     );
 
     expect(mockHybridSearch).toHaveBeenCalled();
-    // Should have multiple queries for different aspects
-    expect(mockHybridSearch.mock.calls.length).toBeGreaterThanOrEqual(1);
+    // E17: should have at least one query per enabled compliance check.
+    // sampleComplianceReqs has 5 trues (fire, accessibility, parking,
+    // structural, mep). The function may also issue a generic project-type
+    // query, so we assert >= 5 to allow growth but reject a single combined query.
+    const enabledChecks = Object.values(sampleComplianceReqs).filter(
+      (v) => v === true,
+    ).length;
+    expect(mockHybridSearch.mock.calls.length).toBeGreaterThanOrEqual(enabledChecks);
   });
 
   it('should handle AI returning non_compliant status', async () => {
@@ -153,8 +166,14 @@ describe('Permit Compliance Check', () => {
       sampleProjectType
     );
 
-    // Should still return a result (AI will work with empty context)
-    expect(result).toBeDefined();
+    // E17: empty context must still produce a structured result and the AI
+    // must still have been invoked — we don't want a silent short-circuit
+    // that returns "compliant" without checking anything.
+    expect(mockInvoke).toHaveBeenCalled();
+    expect(['compliant', 'non_compliant', 'requires_review']).toContain(
+      result.overallStatus,
+    );
+    expect(Array.isArray(result.checks)).toBe(true);
     expect(result.checkedAt).toBeDefined();
   });
 

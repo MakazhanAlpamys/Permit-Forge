@@ -125,7 +125,11 @@ describe('Chat Pipeline', () => {
       expect(mockClassifyQueryStructure).toHaveBeenCalledWith('What are parking requirements?');
       expect(result.chunks).toHaveLength(2);
       expect(result.chunks[0].content).toContain('Parking');
-      expect(result.queryEmbedding).toBeDefined();
+      // E17: queryEmbedding must be the actual 768-dim vector the mock returns,
+      // not just "defined". A buggy pipeline that swallowed embeddings would
+      // otherwise pass.
+      expect(Array.isArray(result.queryEmbedding)).toBe(true);
+      expect(result.queryEmbedding.length).toBe(768);
       expect(result.fromCache).toBe(false);
     });
 
@@ -143,11 +147,15 @@ describe('Chat Pipeline', () => {
       });
 
       // Tree reasoning returns empty → falls back to standard
-      const result = await executeRAGPipeline('summarize chapter 3');
+      await executeRAGPipeline('summarize chapter 3');
 
       expect(mockClassifyQueryStructure).toHaveBeenCalledWith('summarize chapter 3');
-      // Falls back to standard since no trees are available (mocked empty Map)
-      expect(result.chunks.length).toBeGreaterThanOrEqual(0);
+      // E17: assert the tree path was actually attempted (cache lookup),
+      // not just that the call returned without crashing.
+      expect(getAllCachedDocumentTrees).toHaveBeenCalled();
+      // And the standard path ran as fallback (mockQueryBuildingCode is the
+      // hybrid-search wrapper).
+      expect(mockQueryBuildingCode).toHaveBeenCalled();
     });
 
     it('should fall back to standard pipeline when tree reasoning fails', async () => {
@@ -159,9 +167,12 @@ describe('Chat Pipeline', () => {
 
       const result = await executeRAGPipeline('What is in section 5.1?');
 
-      // Should still return results via fallback
-      expect(result).toBeDefined();
-      expect(result.chunks).toBeDefined();
+      // E17: must verify the fallback specifically — queryBuildingCode (the
+      // standard search) was invoked AND we returned the chunks it produced.
+      expect(mockQueryBuildingCode).toHaveBeenCalled();
+      expect(result.chunks).toHaveLength(2);
+      expect(result.chunks[0].content).toContain('Parking');
+      expect(result.fromCache).toBe(false);
     });
 
     it('should return empty chunks when CRAG check fails', async () => {

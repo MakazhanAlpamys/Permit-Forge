@@ -177,6 +177,9 @@ describe('AI Agents', () => {
       const ranges = getPageRangesForNodes(['n1', 'n2'], sampleTree);
       expect(ranges).toHaveLength(2);
       expect(ranges[0]).toEqual({ startPage: 40, endPage: 50, section: '3.1' });
+      // E17: the second non-overlapping range must also come through
+      // unmerged — a regression that always merged would have hidden here.
+      expect(ranges[1]).toEqual({ startPage: 90, endPage: 110, section: '5.1' });
     });
 
     it('should merge overlapping ranges', () => {

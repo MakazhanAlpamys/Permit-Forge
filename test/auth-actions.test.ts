@@ -254,6 +254,15 @@ describe('Auth Server Actions', () => {
       expect(mockHashPassword).toHaveBeenCalledWith('StrongPass1!');
       expect(mockGenerateSixDigitCode).toHaveBeenCalled();
       expect(mockSendVerificationEmail).toHaveBeenCalledWith('new@example.com', '123456');
+      // E17: the DB insert payload must mark the user as unverified and
+      // record the generated 6-digit code. A regression that defaulted
+      // email_verified=true would skip the verification step entirely.
+      expect(mockInsert).toHaveBeenCalledTimes(1);
+      const insertedRow = mockInsert.mock.calls[0][0];
+      expect(insertedRow.email_verified).toBe(false);
+      expect(insertedRow.verification_code).toBe('123456');
+      expect(insertedRow.email).toBe('new@example.com');
+      expect(insertedRow.username).toBe('newuser');
     });
 
     it('should return error for duplicate username', async () => {
