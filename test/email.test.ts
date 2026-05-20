@@ -11,6 +11,7 @@ vi.mock('nodemailer', () => ({
 
 import {
   generateSixDigitCode,
+  hashRecipient,
   sendVerificationEmail,
   sendPasswordResetEmail,
   sendPasswordChangeCodeEmail,
@@ -243,5 +244,74 @@ describe('sendPasswordChangeCodeEmail', () => {
     mockSendMail.mockRejectedValueOnce(new Error('Timeout'));
     const result = await sendPasswordChangeCodeEmail('user@test.com', '111111');
     expect(result).toBe(false);
+  });
+});
+
+// ============================================================================
+// hashRecipient + PII-in-logs guard (A8 / H20)
+// ============================================================================
+describe('hashRecipient', () => {
+  it('returns a stable 12-char hex digest', () => {
+    const h1 = hashRecipient('user@test.com');
+    const h2 = hashRecipient('user@test.com');
+    expect(h1).toBe(h2);
+    expect(h1).toMatch(/^[0-9a-f]{12}$/);
+  });
+
+  it('treats case as insignificant', () => {
+    expect(hashRecipient('User@Test.com')).toBe(hashRecipient('user@test.com'));
+  });
+
+  it('differs for different addresses', () => {
+    expect(hashRecipient('a@b.co')).not.toBe(hashRecipient('c@d.co'));
+  });
+});
+
+describe('email logs — no recipient PII (A8 / H20)', () => {
+  const originalUser = process.env.SMTP_USER;
+  const originalPass = process.env.SMTP_PASS;
+  let logSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    mockSendMail.mockClear();
+    mockSendMail.mockResolvedValue({ messageId: 'test-id' });
+    process.env.SMTP_USER = 'sender@gmail.com';
+    process.env.SMTP_PASS = 'p';
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+    if (originalUser !== undefined) process.env.SMTP_USER = originalUser;
+    else delete process.env.SMTP_USER;
+    if (originalPass !== undefined) process.env.SMTP_PASS = originalPass;
+    else delete process.env.SMTP_PASS;
+  });
+
+  function joinedLogs(): string {
+    return (logSpy.mock.calls as unknown[][])
+      .map((call) => call.map((arg) => String(arg)).join(' '))
+      .join('\n');
+  }
+
+  it('does not log the recipient email when sending verification', async () => {
+    await sendVerificationEmail('victim@example.com', '123456');
+    const all = joinedLogs();
+    expect(all).not.toContain('victim@example.com');
+    expect(all).toContain(hashRecipient('victim@example.com'));
+  });
+
+  it('does not log the recipient email when sending password reset', async () => {
+    await sendPasswordResetEmail('victim@example.com', '654321');
+    const all = joinedLogs();
+    expect(all).not.toContain('victim@example.com');
+    expect(all).toContain(hashRecipient('victim@example.com'));
+  });
+
+  it('does not log the recipient email when sending password change code', async () => {
+    await sendPasswordChangeCodeEmail('victim@example.com', '111111');
+    const all = joinedLogs();
+    expect(all).not.toContain('victim@example.com');
+    expect(all).toContain(hashRecipient('victim@example.com'));
   });
 });

@@ -9,6 +9,12 @@ function getFromEmail(): string {
   return `PermitForge <${process.env.SMTP_USER || 'noreply@permitforge.app'}>`;
 }
 
+// Hash recipient address for INFO logs so audit-trail correlation still works
+// without leaking the address itself.
+export function hashRecipient(email: string): string {
+  return crypto.createHash('sha256').update(email.toLowerCase()).digest('hex').slice(0, 12);
+}
+
 // Lazy transporter — created on first use so env vars are always read at call time,
 // not at module load time (fixes broken state when SMTP_* vars arrive after startup)
 let _transporter: nodemailer.Transporter | null = null;
@@ -81,7 +87,7 @@ export async function sendVerificationEmail(email: string, code: string): Promis
 
   try {
     const fromEmail = getFromEmail();
-    console.log('[Email] Sending verification email to:', email, 'from:', fromEmail);
+    console.log('[Email] Sending verification email recipient=%s', hashRecipient(email));
 
     await getTransporter().sendMail({
       from: fromEmail,
@@ -110,7 +116,7 @@ export async function sendPasswordResetEmail(email: string, code: string): Promi
 
   try {
     const fromEmail = getFromEmail();
-    console.log('[Email] Sending password reset email to:', email, 'from:', fromEmail);
+    console.log('[Email] Sending password reset email recipient=%s', hashRecipient(email));
 
     await getTransporter().sendMail({
       from: fromEmail,
@@ -139,7 +145,7 @@ export async function sendPasswordChangeCodeEmail(email: string, code: string): 
 
   try {
     const fromEmail = getFromEmail();
-    console.log('[Email] Sending password change email to:', email, 'from:', fromEmail);
+    console.log('[Email] Sending password change email recipient=%s', hashRecipient(email));
 
     await getTransporter().sendMail({
       from: fromEmail,
