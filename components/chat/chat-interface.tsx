@@ -50,6 +50,11 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
   const [hasMoreMessages, setHasMoreMessages] = useState(false);
   const [messageCursor, setMessageCursor] = useState<string | undefined>(undefined);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  // B17: when the assistant message persists locally but the DB save fails,
+  // the in-memory transcript is ahead of the stored session. Surface that drift
+  // so the user knows reloading will reconcile (and that they shouldn't trust
+  // the chat-export endpoint for the latest reply yet).
+  const [saveSyncFailed, setSaveSyncFailed] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastRequestRef = useRef<number>(0);
@@ -80,6 +85,8 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
         setIsStreaming(false);
         setStreamingContent('');
         setIsVerifyingSources(false);
+        // B17: switching session refetches from DB, which is the reconcile step.
+        setSaveSyncFailed(false);
         loadSessionMessages(sessionId);
         setCurrentSessionId(sessionId);
       }
@@ -98,6 +105,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       setIsVerifyingSources(false);
       setHasMoreMessages(false);
       setMessageCursor(undefined);
+      setSaveSyncFailed(false);
     }
   }, [sessionId]);
 
@@ -357,15 +365,29 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       setMessages(prev => [...prev, assistantMessage]);
       setStreamingContent('');
 
-      // Save assistant message to database
+      // B17: persist the assistant reply best-effort. If the save throws or
+      // returns success:false, the on-screen transcript is ahead of the DB.
+      // Flip saveSyncFailed so the UI can show a "not synced" indicator; the
+      // session-switch effect already calls loadSessionMessages, which will
+      // reconcile on the next mount/reload.
       if (activeSessionId) {
-        await saveMessageToSession({
-          sessionId: activeSessionId,
-          role: 'assistant',
-          content: fullContent,
-          citations: citations,
-          complianceStatus: 'pending',
-        });
+        try {
+          const saveResult = await saveMessageToSession({
+            sessionId: activeSessionId,
+            role: 'assistant',
+            content: fullContent,
+            citations: citations,
+            complianceStatus: 'pending',
+          });
+          if (!saveResult.success && isMountedRef.current) {
+            setSaveSyncFailed(true);
+          }
+        } catch (saveError) {
+          console.error('Failed to save assistant message:', saveError);
+          if (isMountedRef.current) {
+            setSaveSyncFailed(true);
+          }
+        }
       }
     } catch (error) {
       // Don't show error if cancelled or unmounted
@@ -484,6 +506,14 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
           </div>
         )}
       </ScrollArea>
+
+      {/* B17: surface drift between in-memory transcript and the DB session.
+          Refreshing the page or switching sessions will refetch from DB. */}
+      {saveSyncFailed && (
+        <div className="border-t border-yellow-500/30 bg-yellow-500/10 text-yellow-700 px-4 py-2 text-xs text-center">
+          Save failed — last reply isn&apos;t synced. Refresh to reconcile this session.
+        </div>
+      )}
 
       {/* Input Area */}
       <div className="border-t border-border bg-card/50 p-4">
