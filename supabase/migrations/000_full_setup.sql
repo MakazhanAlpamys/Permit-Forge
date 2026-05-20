@@ -131,6 +131,10 @@ CREATE INDEX idx_chunks_document_name ON dubai_code_chunks(document_name);
 CREATE INDEX idx_chunks_parent_id ON dubai_code_chunks(parent_id);
 CREATE INDEX idx_chunks_doc_pages
   ON dubai_code_chunks(document_name, ((metadata->>'startPage')::INT), ((metadata->>'endPage')::INT));
+-- D3/H17: trigram expression index so search_dubai_code_exact's
+-- LOWER(content) LIKE '%pattern%' uses the index instead of seq-scanning.
+CREATE INDEX dubai_code_chunks_content_lower_trgm_idx
+  ON dubai_code_chunks USING gin (LOWER(content) gin_trgm_ops);
 
 -- ---------------------------------------------------------------------------
 -- 2.3 DOCUMENT TREES (Tree Reasoning)
