@@ -64,14 +64,28 @@ export function NotificationBell() {
 
   const handleMarkRead = async (notification: Notification) => {
     if (!notification.read) {
-      await markNotificationRead(notification.id, csrfTokenRef.current || '');
+      // Snapshot pre-mutation state so we can roll back if the server rejects.
+      const prevNotifications = notifications;
+      const prevUnreadCount = unreadCount;
+
+      // Optimistic local update — bell badge updates immediately.
       setNotifications(prev =>
         prev.map(n => n.id === notification.id ? { ...n, read: true } : n)
       );
       setUnreadCount(prev => Math.max(0, prev - 1));
+
+      const result = await markNotificationRead(notification.id, csrfTokenRef.current || '');
+      if (!result.success) {
+        // Roll back — server refused (CSRF, auth, DB) and the badge would
+        // otherwise stay incorrect until the next 30 s poll.
+        setNotifications(prevNotifications);
+        setUnreadCount(prevUnreadCount);
+      }
     }
 
-    // Navigate to permit
+    // Navigate to permit regardless of mark-read outcome — the click signaled
+    // intent to view; a failed read flag is a separate concern surfaced by
+    // the rolled-back badge.
     const permitId = notification.data?.permitId as string;
     if (permitId) {
       setIsOpen(false);
@@ -81,9 +95,17 @@ export function NotificationBell() {
 
   const handleMarkAllRead = async () => {
     setLoading(true);
-    await markAllNotificationsRead(csrfTokenRef.current || '');
+    const prevNotifications = notifications;
+    const prevUnreadCount = unreadCount;
+
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     setUnreadCount(0);
+
+    const result = await markAllNotificationsRead(csrfTokenRef.current || '');
+    if (!result.success) {
+      setNotifications(prevNotifications);
+      setUnreadCount(prevUnreadCount);
+    }
     setLoading(false);
   };
 
