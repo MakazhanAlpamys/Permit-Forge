@@ -4,6 +4,7 @@
 // Chat History Server Actions (with Access Control)
 // ============================================================================
 
+import DOMPurify from 'isomorphic-dompurify';
 import { createAdminClient } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent } from '@/lib/auth';
 import { requireAuth, requireCSRF, verifyOwnership } from '@/lib/security';
@@ -363,8 +364,13 @@ export async function updateSessionTitle(sessionId: string, title: string, csrfT
       return { success: false, error: 'Access denied' };
     }
     
-    // Sanitize title
-    const sanitizedTitle = title.slice(0, 100).trim();
+    // Sanitize title — DOMPurify strips any HTML so a malicious user can't
+    // store an active payload in their session title that would then render
+    // inside the sidebar (C18H/M8). slice + trim keep the length cap.
+    const sanitizedTitle = DOMPurify.sanitize(title, {
+      ALLOWED_TAGS: [],
+      ALLOWED_ATTR: [],
+    }).slice(0, 100).trim();
     
     const supabase = createAdminClient();
     const { error } = await supabase
