@@ -35,7 +35,15 @@ vi.mock('@/lib/document-registry', () => ({
 }));
 
 // Import after mocks
-import { hybridSearch, queryBuildingCode, sanitizeChunkContent, buildContext } from '@/lib/rag';
+import {
+  hybridSearch,
+  queryBuildingCode,
+  sanitizeChunkContent,
+  buildContext,
+  passesCRAGCheck,
+  filteredHybridSearch,
+  expandToParentChunks,
+} from '@/lib/rag';
 import type { MatchedChunk } from '@/types';
 
 describe('RAG Module', () => {
@@ -256,6 +264,226 @@ describe('RAG Module', () => {
       // Only the wrapper-closing </context> should remain, never one inside.
       const closes = (ctx.match(/<\/context>/g) || []).length;
       expect(closes).toBe(1);
+    });
+
+    // E4: extra coverage for buildContext
+    it('returns empty string for zero chunks', () => {
+      expect(buildContext([])).toBe('');
+    });
+
+    it('truncates content beyond MAX_CHUNK_LENGTH', () => {
+      const long = 'X'.repeat(2000);
+      const ctx = buildContext([mkChunk(long)]);
+      // 1500 char cap + ellipsis
+      expect(ctx).toContain('...');
+      // Sanity: we did not output the full 2000 chars.
+      expect(ctx.length).toBeLessThan(2200);
+    });
+
+    it('groups multiple documents in the CONTEXT FROM: header', () => {
+      const a: MatchedChunk = {
+        id: 1,
+        content: 'A',
+        metadata: { page: 1, startPage: 1, endPage: 1, documentName: 'doc-a' },
+        similarity: 0.9,
+      };
+      const b: MatchedChunk = {
+        id: 2,
+        content: 'B',
+        metadata: { page: 2, startPage: 2, endPage: 2, documentName: 'doc-b' },
+        similarity: 0.8,
+      };
+      const ctx = buildContext([a, b]);
+      expect(ctx).toMatch(/^CONTEXT FROM:/);
+      // Both should appear (mock returns "Building Code" for any id so we
+      // can't easily assert two distinct names; assert SOURCE wrappers instead).
+      expect(ctx).toContain('source="1"');
+      expect(ctx).toContain('source="2"');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // E4: passesCRAGCheck boundary
+  // ---------------------------------------------------------------------------
+  describe('passesCRAGCheck', () => {
+    function mkChunk(similarity: number): MatchedChunk {
+      return {
+        id: 1,
+        content: 'x',
+        metadata: { page: 1, startPage: 1, endPage: 1 },
+        similarity,
+      };
+    }
+
+    it('returns false for empty chunks', () => {
+      expect(passesCRAGCheck([])).toBe(false);
+    });
+
+    it('returns true at exactly the threshold', () => {
+      // CRAG_THRESHOLD = 0.3 in lib/rag.ts; equality counts as pass.
+      expect(passesCRAGCheck([mkChunk(0.3)])).toBe(true);
+    });
+
+    it('returns false just below the threshold', () => {
+      expect(passesCRAGCheck([mkChunk(0.29)])).toBe(false);
+    });
+
+    it('returns true well above the threshold', () => {
+      expect(passesCRAGCheck([mkChunk(0.85)])).toBe(true);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // E4: filteredHybridSearch happy / fallback / throw
+  // ---------------------------------------------------------------------------
+  describe('filteredHybridSearch', () => {
+    it('returns chunks from match_dubai_code_hybrid_filtered on happy path', async () => {
+      const data = [
+        {
+          id: 7,
+          content: 'in-range content',
+          metadata: { page: 12, startPage: 12, endPage: 12 },
+          vector_similarity: 0.9,
+          keyword_rank: 1,
+          hybrid_score: 0.7,
+        },
+      ];
+      mockRpc.mockResolvedValueOnce({ data, error: null });
+
+      const results = await filteredHybridSearch(
+        'q',
+        [{ startPage: 10, endPage: 20 }],
+        10,
+      );
+
+      expect(mockRpc).toHaveBeenCalledWith(
+        'match_dubai_code_hybrid_filtered',
+        expect.objectContaining({
+          page_ranges: [{ start_page: 10, end_page: 20 }],
+        }),
+      );
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe(7);
+      expect(results[0].hybridScore).toBe(0.7);
+    });
+
+    it('falls back to hybridSearch + post-filter when RPC does not exist', async () => {
+      mockRpc
+        // First call: filtered RPC reports missing
+        .mockResolvedValueOnce({
+          data: null,
+          error: { message: 'function match_dubai_code_hybrid_filtered does not exist' },
+        })
+        // Second call: fallback hybridSearch
+        .mockResolvedValueOnce({
+          data: [
+            {
+              id: 1,
+              content: 'in range',
+              metadata: { page: 15, startPage: 15, endPage: 15 },
+              vector_similarity: 0.9,
+              keyword_rank: 1,
+              hybrid_score: 0.8,
+            },
+            {
+              id: 2,
+              content: 'out of range',
+              metadata: { page: 99, startPage: 99, endPage: 99 },
+              vector_similarity: 0.7,
+              keyword_rank: 2,
+              hybrid_score: 0.6,
+            },
+          ],
+          error: null,
+        });
+
+      const results = await filteredHybridSearch('q', [{ startPage: 10, endPage: 20 }], 10);
+
+      // Only chunk id=1 falls inside the page range.
+      expect(results).toHaveLength(1);
+      expect(results[0].id).toBe(1);
+    });
+
+    it('throws on hard RPC errors (not "does not exist")', async () => {
+      mockRpc.mockResolvedValueOnce({
+        data: null,
+        error: { message: 'permission denied for relation dubai_code_chunks' },
+      });
+
+      await expect(
+        filteredHybridSearch('q', [{ startPage: 1, endPage: 2 }], 5),
+      ).rejects.toThrow(/permission denied/);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // E4: expandToParentChunks happy + error
+  // ---------------------------------------------------------------------------
+  describe('expandToParentChunks', () => {
+    function mkChild(id: number, content: string): MatchedChunk {
+      return {
+        id,
+        content,
+        metadata: { page: 1, startPage: 1, endPage: 1 },
+        similarity: 0.9,
+      };
+    }
+
+    it('returns chunks unchanged when no positive IDs present', async () => {
+      const chunks = [{ ...mkChild(0, 'no-id'), id: 0 }];
+      const out = await expandToParentChunks(chunks);
+      expect(out).toEqual(chunks);
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it('replaces child content with parent content from RPC', async () => {
+      mockRpc.mockResolvedValueOnce({
+        data: [
+          {
+            child_id: 1,
+            parent_content: 'PARENT BODY 1',
+            parent_metadata: { page: 1, startPage: 1, endPage: 2 },
+          },
+        ],
+        error: null,
+      });
+
+      const out = await expandToParentChunks([mkChild(1, 'child body')]);
+      expect(out[0].content).toBe('PARENT BODY 1');
+      expect(mockRpc).toHaveBeenCalledWith('get_parent_chunks', { child_ids: [1] });
+    });
+
+    it('returns original chunks when RPC errors', async () => {
+      mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'rpc broke' } });
+      const input = [mkChild(1, 'child body')];
+      const out = await expandToParentChunks(input);
+      expect(out).toEqual(input);
+    });
+
+    it('returns original chunks when RPC throws', async () => {
+      mockRpc.mockImplementationOnce(() => {
+        throw new Error('network error');
+      });
+      const input = [mkChild(1, 'child body')];
+      const out = await expandToParentChunks(input);
+      expect(out).toEqual(input);
+    });
+
+    it('leaves chunks without a parent row unchanged', async () => {
+      mockRpc.mockResolvedValueOnce({
+        data: [
+          {
+            child_id: 1,
+            parent_content: 'PARENT BODY 1',
+            parent_metadata: {},
+          },
+        ],
+        error: null,
+      });
+      const input = [mkChild(1, 'has parent'), mkChild(2, 'no parent')];
+      const out = await expandToParentChunks(input);
+      expect(out[0].content).toBe('PARENT BODY 1');
+      expect(out[1].content).toBe('no parent');
     });
   });
 });
