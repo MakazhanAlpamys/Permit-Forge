@@ -10,6 +10,7 @@ import { SignJWT, jwtVerify } from 'jose';
 import { jwtPayloadSchema, type JWTPayload } from './validations';
 import { SESSION_COOKIE_NAME, CSRF_COOKIE_NAME, SESSION_MAX_AGE, getJWTSecret } from './constants';
 import { getClientIp } from './client-ip';
+import { secureCookieDefaults } from './cookie-options';
 
 // -----------------------------------------------------------------------------
 // Configuration
@@ -99,10 +100,12 @@ export async function createSession(user: TokenUser): Promise<void> {
   const token = await createJWTToken(user);
   const cookieStore = await cookies();
   
+  // C13H/M1: always secure + sameSite=strict. NEXT_PUBLIC_DEV_INSECURE_COOKIES=1
+  // is the documented local-dev escape hatch (http://localhost would otherwise
+  // lose the cookie under these flags).
   cookieStore.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    ...secureCookieDefaults(),
     maxAge: SESSION_MAX_AGE,
     path: '/',
   });
@@ -209,8 +212,7 @@ export async function generateCSRFToken(): Promise<string> {
 
   cookieStore.set(CSRF_COOKIE_NAME, token, {
     httpOnly: false,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    ...secureCookieDefaults(),
     maxAge: SESSION_MAX_AGE,
     path: '/',
   });
