@@ -1392,7 +1392,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_admin_role TEXT;
@@ -1400,15 +1400,24 @@ BEGIN
   SELECT users.role INTO v_admin_role FROM users WHERE users.id = p_admin_id;
   IF v_admin_role != 'admin' THEN RAISE EXCEPTION 'Unauthorized: Admin role required'; END IF;
 
+  -- D1/H14: replace two correlated subqueries per row with a single
+  -- pre-aggregated session_stats CTE joined once.
   RETURN QUERY
+  WITH session_stats AS (
+    SELECT cs.user_id,
+           COUNT(*)::BIGINT AS session_count,
+           COUNT(cm.id)::BIGINT AS message_count
+    FROM chat_sessions cs
+    LEFT JOIN chat_messages cm ON cm.session_id = cs.id
+    GROUP BY cs.user_id
+  )
   SELECT
     u.id, u.username, u.full_name, u.role, u.blocked, u.blocked_reason,
     u.created_at, u.last_login,
-    (SELECT COUNT(*) FROM chat_sessions cs WHERE cs.user_id = u.id)::BIGINT,
-    (SELECT COUNT(*) FROM chat_messages cm
-     JOIN chat_sessions cs ON cm.session_id = cs.id
-     WHERE cs.user_id = u.id)::BIGINT
+    COALESCE(s.session_count, 0)::BIGINT AS session_count,
+    COALESCE(s.message_count, 0)::BIGINT AS message_count
   FROM users u
+  LEFT JOIN session_stats s ON s.user_id = u.id
   WHERE (p_search IS NULL OR u.username ILIKE '%' || p_search || '%' OR u.full_name ILIKE '%' || p_search || '%')
   ORDER BY u.created_at DESC
   LIMIT LEAST(p_limit, 100) OFFSET p_offset;

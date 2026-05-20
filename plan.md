@@ -112,7 +112,7 @@ Risk legend: 🟢 LOW · 🟡 MEDIUM · 🔴 HIGH (touches hot path, needs manua
 **Owner:** single Claude instance. **Primary file:** `supabase/migrations/000_full_setup.sql` (or a follow-up migration file).
 **Heads-up:** the single-migration model means changes are destructive on reset. Prefer adding a follow-up `001_*.sql` instead of editing `000_*.sql` in place; if forced to edit `000_*.sql`, coordinate with Track A.
 
-- [ ] **D1 — H14** Replace correlated subqueries in `get_all_users_admin` with a single JOIN aggregation. Test admin user list on >100 rows. 🟡
+- [x] **D1 — H14** Replace correlated subqueries in `get_all_users_admin` with a single JOIN aggregation. Test admin user list on >100 rows. 🟡 — pending commit
 - [ ] **D2 — H15 + H16** Wire admin dashboard to read from `analytics_daily`. Refresh the materialized view on admin "Refresh" button OR after every audit-relevant mutation (post-commit trigger acceptable for diploma scope). 🟡
 - [ ] **D3 — H17** Add expression index `CREATE INDEX dubai_code_chunks_content_lower_trgm_idx ON dubai_code_chunks USING gin (LOWER(content) gin_trgm_ops)` so `search_dubai_code_exact` stops seq-scanning. 🟡
 - [ ] **D4 — H18** Rewrite `match_dubai_code_hybrid_filtered` so the vector-search step is its own indexable subquery (no CTE materialization that hides HNSW). Add `EXPLAIN ANALYZE` sample to PR description. 🔴
