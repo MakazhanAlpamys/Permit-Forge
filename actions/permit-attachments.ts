@@ -83,17 +83,8 @@ export async function uploadPermitAttachment(
       return { success: false, error: validation.error };
     }
 
-    // Check attachment count
-    const { count } = await supabase
-      .from('permit_attachments')
-      .select('id', { count: 'exact', head: true })
-      .eq('permit_id', permitId);
-
-    if ((count || 0) >= FILE_UPLOAD_LIMITS.maxFilesPerPermit) {
-      return { success: false, error: `Maximum ${FILE_UPLOAD_LIMITS.maxFilesPerPermit} files allowed per permit` };
-    }
-
-    // Upload to Supabase Storage
+    // Upload to Supabase Storage first so a successful insert never references
+    // a missing object. Cleanup compensates if the RPC then rejects.
     const storagePath = generateStoragePath(permitId, file.name);
     const adminClient = createAdminClient();
     const { error: uploadError } = await adminClient.storage
@@ -108,22 +99,25 @@ export async function uploadPermitAttachment(
       return { success: false, error: 'Failed to upload file' };
     }
 
-    // Insert attachment record
-    const { data: attachment, error: insertError } = await supabase
-      .from('permit_attachments')
-      .insert({
-        permit_id: permitId,
-        file_name: file.name,
-        file_size: file.size,
-        file_type: file.type,
-        storage_path: storagePath,
-        uploaded_by: authCheck.user.id,
-      })
-      .select('*')
-      .single();
+    // C6H/H9: atomic count-and-insert. The previous SELECT count → INSERT
+    // sequence let two concurrent uploads both observe count < 10 and both
+    // insert, blowing through the cap. The RPC takes a row lock on the
+    // parent permit row before counting, serializing concurrent uploaders.
+    const { data: rpcRows, error: rpcError } = await supabase.rpc(
+      'insert_permit_attachment_capped',
+      {
+        p_permit_id: permitId,
+        p_file_name: file.name,
+        p_file_size: file.size,
+        p_file_type: file.type,
+        p_storage_path: storagePath,
+        p_uploaded_by: authCheck.user.id,
+        p_max_files: FILE_UPLOAD_LIMITS.maxFilesPerPermit,
+      },
+    );
 
-    if (insertError) {
-      // Clean up uploaded file on DB error
+    if (rpcError || !rpcRows || (Array.isArray(rpcRows) && rpcRows.length === 0)) {
+      // Compensating cleanup so we don't leave an orphan object in storage.
       try {
         await adminClient.storage
           .from(FILE_UPLOAD_LIMITS.storageBucket)
@@ -131,8 +125,18 @@ export async function uploadPermitAttachment(
       } catch (cleanupErr) {
         console.error('Failed to cleanup orphaned file:', cleanupErr);
       }
-      throw insertError;
+
+      const errMsg = rpcError?.message ?? '';
+      if (errMsg.includes('ATTACHMENT_LIMIT_EXCEEDED')) {
+        return {
+          success: false,
+          error: `Maximum ${FILE_UPLOAD_LIMITS.maxFilesPerPermit} files allowed per permit`,
+        };
+      }
+      throw rpcError ?? new Error('Attachment insert returned no rows');
     }
+
+    const attachment = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({
