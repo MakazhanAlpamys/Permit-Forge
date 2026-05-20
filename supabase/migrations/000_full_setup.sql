@@ -1172,6 +1172,9 @@ $$;
 -- 7.5 Message Activity (30 days, no gaps)
 -- ---------------------------------------------------------------------------
 
+-- D2/H15+H16: read historic days from analytics_daily MV, recompute today
+-- live. The admin "Refresh" button calls refresh_analytics() to update the
+-- MV on demand.
 CREATE OR REPLACE FUNCTION get_message_activity_30d()
 RETURNS TABLE (
   day DATE,
@@ -1191,26 +1194,41 @@ AS $$
       '1 day'::interval
     )::date AS day
   ),
-  daily_messages AS (
+  historic AS (
     SELECT
-      date_trunc('day', cm.created_at)::date AS day,
+      ad.date AS day,
+      ad.user_messages AS user_count,
+      ad.assistant_messages AS assistant_count,
+      ad.total_messages AS total_count,
+      ad.active_users
+    FROM analytics_daily ad
+    WHERE ad.date >= current_date - interval '29 days'
+      AND ad.date < current_date
+  ),
+  today_live AS (
+    SELECT
+      current_date::date AS day,
       count(*) FILTER (WHERE cm.role = 'user') AS user_count,
       count(*) FILTER (WHERE cm.role = 'assistant') AS assistant_count,
       count(*) AS total_count,
       count(DISTINCT cs.user_id) AS active_users
     FROM chat_messages cm
     JOIN chat_sessions cs ON cs.id = cm.session_id
-    WHERE cm.created_at >= current_date - interval '29 days'
-    GROUP BY 1
+    WHERE cm.created_at >= current_date
+  ),
+  merged AS (
+    SELECT * FROM historic
+    UNION ALL
+    SELECT * FROM today_live WHERE total_count > 0
   )
   SELECT
     ds.day,
-    COALESCE(dm.user_count, 0),
-    COALESCE(dm.assistant_count, 0),
-    COALESCE(dm.total_count, 0),
-    COALESCE(dm.active_users, 0)
+    COALESCE(m.user_count, 0),
+    COALESCE(m.assistant_count, 0),
+    COALESCE(m.total_count, 0),
+    COALESCE(m.active_users, 0)
   FROM date_series ds
-  LEFT JOIN daily_messages dm ON dm.day = ds.day
+  LEFT JOIN merged m ON m.day = ds.day
   ORDER BY ds.day;
 $$;
 

@@ -61,6 +61,7 @@ import {
   getDocumentUsageStats,
   getPermitStatusBreakdown,
   getTopActiveUsers,
+  refreshAnalytics,
 } from '@/actions/analytics';
 
 const adminUser = { id: 'admin-123', email: 'admin@test.com', role: 'admin' };
@@ -393,6 +394,40 @@ describe('Analytics Server Actions', () => {
         p_days: 30,
         p_limit: 5,
       });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // refreshAnalytics (D2)
+  // ---------------------------------------------------------------------------
+
+  describe('refreshAnalytics', () => {
+    it('should call refresh_analytics RPC for admin', async () => {
+      mockRpc.mockResolvedValueOnce({ data: null, error: null });
+
+      const result = await refreshAnalytics();
+
+      expect(result.success).toBe(true);
+      expect(mockRpc).toHaveBeenCalledWith('refresh_analytics');
+    });
+
+    it('should reject non-admin users', async () => {
+      mockRequireAdmin.mockResolvedValue({ success: false, error: 'Unauthorized' });
+
+      const result = await refreshAnalytics();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Unauthorized');
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it('should report RPC errors without throwing', async () => {
+      mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'mv lock contention' } });
+
+      const result = await refreshAnalytics();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Failed to refresh analytics');
     });
   });
 });

@@ -17,6 +17,7 @@ import {
   getDocumentUsageStats,
   getPermitStatusBreakdown,
   getTopActiveUsers,
+  refreshAnalytics,
   type AnalyticsDashboardStats,
   type MessageActivityDay,
   type DocumentUsageStat,
@@ -224,7 +225,13 @@ export default function AdminPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => loadDashboardData()}
+                onClick={async () => {
+                  // D2: refresh the analytics_daily MV before reloading so
+                  // the dashboard reflects the latest pre-aggregated data.
+                  // Failures are silent — loadDashboardData still runs.
+                  await refreshAnalytics();
+                  await loadDashboardData();
+                }}
                 disabled={dataLoading}
               >
                 <RefreshCw className={`h-4 w-4 ${dataLoading ? 'animate-spin' : ''}`} />

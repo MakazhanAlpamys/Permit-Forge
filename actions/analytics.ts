@@ -270,6 +270,44 @@ export async function getPermitStatusBreakdown(): Promise<{
 // 5. Top Active Users
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// 5a. Refresh analytics_daily materialized view (admin Refresh button)
+// -----------------------------------------------------------------------------
+
+/**
+ * D2/H15+H16: Admin "Refresh" trigger for the analytics_daily MV.
+ * Cheap (CONCURRENTLY refresh) and safe to call from the dashboard's refresh
+ * button. Failures are reported but never crash dashboard load.
+ */
+export async function refreshAnalytics(): Promise<{
+  success: boolean;
+  error?: string;
+}> {
+  try {
+    const authCheck = await requireAdmin();
+    if (!authCheck.success) {
+      return { success: false, error: authCheck.error };
+    }
+
+    const supabase = createAdminClient();
+    const { error } = await supabase.rpc('refresh_analytics');
+
+    if (error) {
+      console.error('refreshAnalytics RPC error:', error);
+      return { success: false, error: 'Failed to refresh analytics' };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('refreshAnalytics error:', error);
+    return { success: false, error: 'Failed to refresh analytics' };
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 6. Top Active Users
+// -----------------------------------------------------------------------------
+
 export async function getTopActiveUsers(
   days: number = 30,
   limit: number = 5
