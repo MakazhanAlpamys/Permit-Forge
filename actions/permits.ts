@@ -337,9 +337,18 @@ export async function getMyPermits(): Promise<{ data: PermitApplication[]; error
     }
 
     const supabase = createAdminClient();
+    // List view only renders project_name, project_type, project_address,
+    // status, plot_number, and the two timestamps (see permit-card.tsx). Skip
+    // the heavy JSONB columns (building_details, compliance_requirements,
+    // compliance_check_result) and free-text fields (project_description,
+    // review_comments, revision_notes) — they balloon the payload and the
+    // list never touches them.
     const { data, error } = await supabase
       .from('permit_applications')
-      .select('*')
+      .select(
+        'id, user_id, status, project_name, project_type, project_address, plot_number, ' +
+          'reviewed_by, reviewed_at, revision_count, submitted_at, created_at, updated_at',
+      )
       .eq('user_id', user.id)
       .order('updated_at', { ascending: false });
 
@@ -375,9 +384,15 @@ export async function getPermitById(
 
     const supabase = createAdminClient();
 
+    // Detail view needs every column transformPermit references.
     let query = supabase
       .from('permit_applications')
-      .select('*')
+      .select(
+        'id, user_id, status, project_name, project_type, project_address, plot_number, ' +
+          'project_description, building_details, compliance_requirements, ' +
+          'compliance_check_result, reviewed_by, reviewed_at, review_comments, ' +
+          'revision_count, revision_notes, submitted_at, created_at, updated_at',
+      )
       .eq('id', permitId);
 
     if (user.role !== 'admin') {
@@ -429,7 +444,7 @@ export async function getPermitHistory(
     const supabase = createAdminClient();
     const { data, error } = await supabase
       .from('permit_status_history')
-      .select('*')
+      .select('id, permit_id, from_status, to_status, changed_by, comment, created_at')
       .eq('permit_id', permitId)
       .order('created_at', { ascending: true });
 
