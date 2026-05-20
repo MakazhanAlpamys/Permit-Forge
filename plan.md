@@ -99,11 +99,11 @@ Risk legend: 🟢 LOW · 🟡 MEDIUM · 🔴 HIGH (touches hot path, needs manua
 - [x] **C26H — L1** Stop leaking service topology / env-var presence from `/api/health`. Return `{ ok: true }` only. 🟢 — `780edc1`
 - [x] **C27H — L2** Hash or sign the pagination cursor in `actions/chat-history.ts:169-172`. 🟢 — `5885fa9`
 - [x] **C28H — L3** Log admin escalation attempts as `permission_denied` (or new event), not `login_failed`. 🟢 — `2bf9eb1`
-- [ ] **C29H — L4** Add session rotation on privilege change (combine with C14H). 🟢
+- [x] **C29H — L4** Add session rotation on privilege change (combine with C14H). 🟢 — `11afaa7` (C14H invalidates other sessions; C29H reissues the JWT on the active device so the user stays logged in after self-password-change)
 - [x] **C30H — L12** Move Lucide icon imports out of `lib/constants.ts` (Edge-runtime risk). Define icon names as strings; resolve in the React layer. 🟢 — `97b1a0d`
 - [x] **C31H — L13** Reject requests with missing `Origin` AND missing `Referer` in `app/api/chat/stream/route.ts:33-50`. 🟢 — `3094d5e`
-- [ ] **C32H — L15 + L16** Stop silently swallowing errors in `.claude/hooks/lint-on-edit.mjs:39-41`; surface stderr without piping raw child stdout. 🟢
-- [ ] **C33H — L17** Tighten `Bash(npx eslint *)` and `Bash(npx next *)` in `.claude/settings.json` to a fixed sub-command allow-list. 🟢
+- [~] **C32H — L15 + L16** Stop silently swallowing errors in `.claude/hooks/lint-on-edit.mjs:39-41`; surface stderr without piping raw child stdout. 🟢 — N/A (`.claude/hooks/` not present in repo)
+- [~] **C33H — L17** Tighten `Bash(npx eslint *)` and `Bash(npx next *)` in `.claude/settings.json` to a fixed sub-command allow-list. 🟢 — N/A (`.claude/settings.json` not present in repo)
 - [~] **C34H — L18** Stop forcing `NODE_ENV=development` in `.claude/settings.json`. 🟢 — N/A (`.claude/settings.json` not present in repo)
 
 ---
