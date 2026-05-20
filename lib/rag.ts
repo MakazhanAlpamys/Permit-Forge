@@ -230,6 +230,34 @@ export function passesCRAGCheck(chunks: MatchedChunk[]): boolean {
 // Context Building
 // -----------------------------------------------------------------------------
 
+/**
+ * Strip the most common prompt-injection vectors from chunk content. We treat
+ * retrieved chunks as untrusted data because they were ingested from PDFs that
+ * an admin uploaded (and in a CTF-like adversarial scenario, anyone with
+ * upload rights could plant instructions). The model is also told to treat
+ * everything inside <context> as data — sanitization + the system-prompt
+ * clause + the wrapping tags together harden against prompt injection.
+ * (B1 / C6)
+ */
+export function sanitizeChunkContent(content: string): string {
+  return content
+    // Imperative override phrases (case-insensitive). Replace with [redacted]
+    // so the chunk still flows naturally without the injection.
+    .replace(
+      /\b(?:ignore|disregard|forget|override)\s+(?:all\s+)?(?:the\s+)?(?:previous|prior|above|earlier|system|user|admin)\s+(?:instructions?|prompts?|rules?|directions?|context)/gi,
+      '[redacted]',
+    )
+    // Pseudo-role separators that LLM tokenizers can interpret as messages.
+    .replace(/\b(system|assistant|user|human|developer)\s*:\s*/gi, '$1​:')
+    // ChatML / Llama / Anthropic-style special tokens.
+    .replace(/<\|(?:im_start|im_end|endoftext|system|user|assistant)\|>/gi, '')
+    .replace(/\[(?:INST|\/INST)\]/g, '')
+    // Closing the <context> wrapper from inside is the obvious break-out.
+    .replace(/<\/?context>/gi, '')
+    // Excessive blank-line runs that could fake a new section in the prompt.
+    .replace(/\n{4,}/g, '\n\n\n');
+}
+
 export function buildContext(chunks: MatchedChunk[]): string {
   if (chunks.length === 0) return '';
 
@@ -241,13 +269,17 @@ export function buildContext(chunks: MatchedChunk[]): string {
     const docInfo = docId ? getDocumentByIdSync(docId) : undefined;
     const docLabel = docInfo ? docInfo.displayName : 'Building Code';
 
-    const content = chunk.content.length > MAX_CHUNK_LENGTH
+    const truncated = chunk.content.length > MAX_CHUNK_LENGTH
       ? chunk.content.slice(0, MAX_CHUNK_LENGTH) + '...'
       : chunk.content;
+    const content = sanitizeChunkContent(truncated);
 
     const header = `[SOURCE ${index + 1}] Document: ${docLabel}, Page ${page}${section ? `, Section ${section}` : ''}${chapter ? `, ${chapter}` : ''}`;
 
-    return `${header}\n${content}`;
+    // Wrap each chunk in <context> tags so the model can syntactically tell
+    // where data begins and ends. Combined with the sanitizer's stripping of
+    // </context>, this prevents a chunk from closing its own wrapper.
+    return `<context source="${index + 1}">\n${header}\n${content}\n</context>`;
   });
 
   const docNames = new Set(chunks.map(c => {
@@ -257,7 +289,7 @@ export function buildContext(chunks: MatchedChunk[]): string {
   }));
   const docsHeader = `CONTEXT FROM: ${Array.from(docNames).join(', ')}`;
 
-  return `${docsHeader}:\n\n${contextParts.join('\n\n---\n\n')}`;
+  return `${docsHeader}:\n\n${contextParts.join('\n\n')}`;
 }
 
 // -----------------------------------------------------------------------------
