@@ -236,15 +236,25 @@ export type PermitStatus = 'draft' | 'submitted' | 'under_review' | 'approved' |
 
 export type ProjectType = 'residential' | 'commercial' | 'industrial' | 'mixed_use' | 'institutional';
 
+/**
+ * Building details captured during step 2 of permit creation.
+ *
+ * C24H/M23: every field is optional because in practice the row exists in
+ * the DB long before the user has filled all of them in (a draft can be
+ * submitted with partial data — the submit-time RPC enforces the actually-
+ * required fields). Treating these as required at the type level silently
+ * hid `undefined`s under `value: number` and made consumers crash on
+ * comparison instead of failing the type check.
+ */
 export interface BuildingDetails {
-  numberOfFloors: number;
-  totalBuiltUpArea: number;     // sq meters
-  plotArea: number;             // sq meters
-  buildingHeight: number;       // meters
-  numberOfUnits: number;
-  numberOfParkingSpaces: number;
-  occupancyType: string;
-  constructionType: string;
+  numberOfFloors?: number;
+  totalBuiltUpArea?: number;     // sq meters
+  plotArea?: number;             // sq meters
+  buildingHeight?: number;       // meters
+  numberOfUnits?: number;
+  numberOfParkingSpaces?: number;
+  occupancyType?: string;
+  constructionType?: string;
 }
 
 export interface ComplianceRequirements {

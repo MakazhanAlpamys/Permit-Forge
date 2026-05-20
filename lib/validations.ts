@@ -223,6 +223,20 @@ export const buildingDetailsSchema = z.object({
   constructionType: z.string().min(1, 'Construction type is required').max(100).transform(sanitizeString),
 });
 
+// C24H/M23: drafts can be saved incrementally — the user types one field
+// and clicks Next. Submit-time guard (submit_permit_atomic RPC) enforces
+// the actually-required fields.
+export const buildingDetailsPartialSchema = z.object({
+  numberOfFloors: z.number().int().min(0).max(200).optional(),
+  totalBuiltUpArea: z.number().min(0).max(1000000).optional(),
+  plotArea: z.number().min(0).max(1000000).optional(),
+  buildingHeight: z.number().min(0).max(1000).optional(),
+  numberOfUnits: z.number().int().min(0).max(10000).optional(),
+  numberOfParkingSpaces: z.number().int().min(0).max(50000).optional(),
+  occupancyType: z.string().max(100).transform(sanitizeString).optional(),
+  constructionType: z.string().max(100).transform(sanitizeString).optional(),
+});
+
 export const complianceRequirementsSchema = z.object({
   fireSafety: z.boolean(),
   accessibility: z.boolean(),
@@ -251,7 +265,7 @@ export type CreatePermitInput = z.infer<typeof createPermitSchema>;
 
 export const updateBuildingDetailsSchema = z.object({
   permitId: uuidSchema,
-  buildingDetails: buildingDetailsSchema,
+  buildingDetails: buildingDetailsPartialSchema,
 });
 
 export type UpdateBuildingDetailsInput = z.infer<typeof updateBuildingDetailsSchema>;

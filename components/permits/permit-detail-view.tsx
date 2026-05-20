@@ -76,13 +76,14 @@ export function PermitDetailView({ permit }: PermitDetailViewProps) {
                   <Ruler className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm">
                     <span className="font-medium">FAR:</span>{' '}
-                    {(bd.totalBuiltUpArea / bd.plotArea).toFixed(2)}
+                    {bd.totalBuiltUpArea && bd.plotArea
+                      ? (bd.totalBuiltUpArea / bd.plotArea).toFixed(2)
+                      : '—'}
                     {' · '}
                     <span className="font-medium">Coverage:</span>{' '}
-                    {(bd.numberOfFloors > 0
-                      ? (bd.totalBuiltUpArea / bd.numberOfFloors / bd.plotArea) * 100
-                      : 0
-                    ).toFixed(1)}%
+                    {bd.totalBuiltUpArea && bd.plotArea && (bd.numberOfFloors ?? 0) > 0
+                      ? ((bd.totalBuiltUpArea / (bd.numberOfFloors as number) / bd.plotArea) * 100).toFixed(1) + '%'
+                      : '—'}
                   </span>
                 </div>
               </div>

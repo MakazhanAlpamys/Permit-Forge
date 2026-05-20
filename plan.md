@@ -93,7 +93,7 @@ Risk legend: 🟢 LOW · 🟡 MEDIUM · 🔴 HIGH (touches hot path, needs manua
 - [x] **C20H — M10** Require CSRF on `logoutAction`. 🟢 — `afeebce`
 - [x] **C21H — M11** Validate `documentId` as UUID in `actions/documents.ts:202` before RPC call. 🟢 — `543ce7e` (validated as slug, not UUID — document_registry.id is TEXT)
 - [x] **C22H — M20** Drop `p_max_requests` parameter from `check_rate_limit` — hardcode per-endpoint limits in the RPC body (looked up from a config table or `CASE`). 🟡 — `961e0aa` (RPC still accepts the param for backwards compat but only honors it for the 'default' bucket)
-- [ ] **C23H — M22** Add JSON-size cap + Zod schema validation to LLM JSON output parsing in `lib/permit-compliance.ts:217`. Reject and re-prompt on schema mismatch. 🟡
+- [x] **C23H — M22** Add JSON-size cap + Zod schema validation to LLM JSON output parsing in `lib/permit-compliance.ts:217`. Reject and re-prompt on schema mismatch. 🟡 — `bfc2370` (size cap 64KB + complianceCheckJsonSchema; references accept either object or string and normalize)
 - [ ] **C24H — M23** Allow `BuildingDetails` to be `Partial` or nullable in `types/index.ts:289`; update consumers to handle the partial shape. 🟢
 - [~] **C25H — M24** Remove `Bash(rm -rf *)` and `Bash(git reset --hard *)` from `ask` list in `.claude/settings.json` (move to deny or delete). 🟢 — N/A (`.claude/settings.json` not present in repo)
 - [ ] **C26H — L1** Stop leaking service topology / env-var presence from `/api/health`. Return `{ ok: true }` only. 🟢
