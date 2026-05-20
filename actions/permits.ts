@@ -585,13 +585,42 @@ export async function runComplianceCheck(
       return { success: false, error: 'Please complete building details before running compliance check' };
     }
 
-    // Run the AI compliance check
-    const { checkPermitCompliance } = await import('@/lib/permit-compliance');
-    const result = await checkPermitCompliance(
-      permit.building_details,
-      permit.compliance_requirements || {},
-      permit.project_type
-    );
+    // B3: server-side budget so a hung LLM call eventually frees the request
+    // slot and doesn't keep burning Gemini quota forever. AbortSignal.timeout
+    // is supported in Node 18+ which Next 15 requires.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60_000);
+
+    let result: import('@/types').ComplianceCheckResult;
+    try {
+      const { checkPermitCompliance } = await import('@/lib/permit-compliance');
+      result = await checkPermitCompliance(
+        permit.building_details,
+        permit.compliance_requirements || {},
+        permit.project_type,
+        controller.signal,
+      );
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return { success: false, error: 'Compliance check timed out — please try again.' };
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    // B3: re-check that the permit still exists in a state where writing the
+    // result is correct. A user could have deleted the permit, or submitted it,
+    // while the LLM call was in flight.
+    const { data: stillDraft } = await supabase
+      .from('permit_applications')
+      .select('status')
+      .eq('id', permitId)
+      .eq('user_id', authCheck.user.id)
+      .single();
+    if (!stillDraft || (stillDraft.status !== 'draft' && stillDraft.status !== 'revision_requested')) {
+      return { success: false, error: 'Permit state changed during analysis — result discarded.' };
+    }
 
     // Store result
     const { error } = await supabase

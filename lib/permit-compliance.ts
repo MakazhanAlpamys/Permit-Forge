@@ -97,8 +97,14 @@ function generateComplianceQueries(
 export async function checkPermitCompliance(
   buildingDetails: BuildingDetails,
   complianceReqs: ComplianceRequirements,
-  projectType: ProjectType
+  projectType: ProjectType,
+  signal?: AbortSignal,
 ): Promise<ComplianceCheckResult> {
+  // B3: bail early if the caller already cancelled — saves an embedding call
+  // and an LLM round-trip when the user has closed the tab.
+  if (signal?.aborted) {
+    throw new DOMException('Compliance check aborted', 'AbortError');
+  }
   // 1. Generate targeted search queries
   const queries = generateComplianceQueries(buildingDetails, complianceReqs, projectType);
 
@@ -195,10 +201,14 @@ RELEVANT BUILDING CODE SECTIONS:
 ${context || 'No relevant code sections found. Mark all areas as requires_review.'}`;
 
   try {
-    const response = await getChatModel().invoke([
-      new SystemMessage(systemPrompt),
-      new HumanMessage(userMessage),
-    ]);
+    const response = await getChatModel().invoke(
+      [
+        new SystemMessage(systemPrompt),
+        new HumanMessage(userMessage),
+      ],
+      // LangChain forwards `signal` to the underlying Google GenAI fetch.
+      signal ? { signal } : undefined,
+    );
 
     const raw = response.content;
     const responseText = typeof raw === 'string'

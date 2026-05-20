@@ -354,13 +354,39 @@ describe('Permits Server Actions Extended', () => {
             project_type: 'residential',
           },
           error: null,
-        });
+        })
+        // B3 re-check: permit still in draft after the LLM call returned
+        .mockResolvedValueOnce({ data: { status: 'draft' }, error: null });
 
       const result = await runComplianceCheck(validUUID, 'csrf-token');
 
       expect(result.success).toBe(true);
       expect(result.data).toEqual(complianceResult);
       expect(mockCheckPermitCompliance).toHaveBeenCalled();
+    });
+
+    it('discards the result if the permit was submitted while LLM was thinking (B3)', async () => {
+      const complianceResult = { overallStatus: 'compliant', checks: [], summary: 'OK' };
+      mockCheckPermitCompliance.mockResolvedValue(complianceResult);
+
+      mockSingle
+        .mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null })
+        .mockResolvedValueOnce({
+          data: {
+            status: 'draft',
+            building_details: { numberOfFloors: 5, totalBuiltUpArea: 2000 },
+            compliance_requirements: {},
+            project_type: 'residential',
+          },
+          error: null,
+        })
+        // Permit transitioned to 'submitted' in another tab while LLM ran
+        .mockResolvedValueOnce({ data: { status: 'submitted' }, error: null });
+
+      const result = await runComplianceCheck(validUUID, 'csrf-token');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/state changed/i);
     });
 
     it('should return error when unauthenticated', async () => {
