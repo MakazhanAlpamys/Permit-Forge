@@ -2,6 +2,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import { permitStatusConfig } from '@/lib/constants';
+import { getStatusIcon } from '@/lib/status-icons';
 import type { PermitStatus } from '@/types';
 
 interface PermitStatusBadgeProps {
@@ -13,7 +14,7 @@ export function PermitStatusBadge({ status, className = '' }: PermitStatusBadgeP
   const config = permitStatusConfig[status];
   if (!config) return null;
 
-  const Icon = config.icon;
+  const Icon = getStatusIcon(config.iconName);
 
   return (
     <Badge variant="outline" className={`${config.badgeClassName} ${className}`}>

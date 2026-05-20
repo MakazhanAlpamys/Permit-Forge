@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { CitationsList } from './source-citation';
 import { complianceStatusConfig } from '@/lib/constants';
+import { getStatusIcon } from '@/lib/status-icons';
 import { User, Bot, Copy, Check } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { useState, useCallback } from 'react';
@@ -62,14 +63,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           }`}
         >
           {/* Compliance Badge for Assistant Messages */}
-          {!isUser && compliance && message.complianceStatus !== 'pending' && (
-            <div className="mb-2">
-              <Badge variant="outline" className={`${compliance.badgeClassName} text-xs`}>
-                <compliance.icon className="h-3 w-3 mr-1" />
-                {compliance.label}
-              </Badge>
-            </div>
-          )}
+          {!isUser && compliance && message.complianceStatus !== 'pending' && (() => {
+            const ComplianceIcon = getStatusIcon(compliance.iconName);
+            return (
+              <div className="mb-2">
+                <Badge variant="outline" className={`${compliance.badgeClassName} text-xs`}>
+                  <ComplianceIcon className="h-3 w-3 mr-1" />
+                  {compliance.label}
+                </Badge>
+              </div>
+            );
+          })()}
 
           {/* Message Text */}
           <div className={`text-sm leading-relaxed ${isUser ? '' : 'prose prose-sm dark:prose-invert max-w-none'}`}>

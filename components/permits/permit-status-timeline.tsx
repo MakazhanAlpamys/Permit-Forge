@@ -1,6 +1,7 @@
 'use client';
 
 import { permitStatusConfig } from '@/lib/constants';
+import { getStatusIcon } from '@/lib/status-icons';
 import type { PermitStatusHistoryEntry, PermitStatus } from '@/types';
 
 interface PermitStatusTimelineProps {
@@ -25,7 +26,7 @@ export function PermitStatusTimeline({ history }: PermitStatusTimelineProps) {
     <div className="space-y-0">
       {history.map((entry, index) => {
         const config = permitStatusConfig[entry.toStatus as PermitStatus];
-        const Icon = config?.icon;
+        const Icon = config ? getStatusIcon(config.iconName) : null;
         const isLast = index === history.length - 1;
 
         return (

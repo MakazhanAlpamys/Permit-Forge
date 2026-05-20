@@ -2,8 +2,21 @@
 // PermitForge Constants & Configuration
 // ============================================================================
 
-import { CheckCircle, XCircle, Clock, FileEdit, Send, Eye, CheckCircle2, RotateCcw } from 'lucide-react';
 import type { ComplianceStatus, PermitStatus } from '@/types';
+
+// C30H/L12: keep this file Edge-Runtime-safe by storing icon names as strings.
+// Components resolve them via lib/status-icons.tsx at render time. Importing
+// lucide-react here used to drag the full icon catalog into any module that
+// transitively imported a constant.
+export type StatusIconName =
+  | 'CheckCircle'
+  | 'XCircle'
+  | 'Clock'
+  | 'FileEdit'
+  | 'Send'
+  | 'Eye'
+  | 'CheckCircle2'
+  | 'RotateCcw';
 
 // ============================================================================
 // Authentication Constants
@@ -71,7 +84,7 @@ export const MIN_REQUEST_INTERVAL_MS = 2000;
 // ============================================================================
 
 export interface StatusConfigItem {
-  icon: typeof CheckCircle;
+  iconName: StatusIconName;
   label: string;
   /** Class for simple text color (used in dashboard) */
   textClassName: string;
@@ -81,19 +94,19 @@ export interface StatusConfigItem {
 
 export const complianceStatusConfig: Record<ComplianceStatus, StatusConfigItem> = {
   'compliant': {
-    icon: CheckCircle,
+    iconName: 'CheckCircle',
     label: 'Compliant',
     textClassName: 'text-violet-400',
     badgeClassName: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
   },
   'non-compliant': {
-    icon: XCircle,
+    iconName: 'XCircle',
     label: 'Non-Compliant',
     textClassName: 'text-red-400',
     badgeClassName: 'bg-red-500/20 text-red-400 border-red-500/30',
   },
   'pending': {
-    icon: Clock,
+    iconName: 'Clock',
     label: 'Pending',
     textClassName: 'text-muted-foreground',
     badgeClassName: 'bg-muted text-muted-foreground border-muted',
@@ -105,7 +118,7 @@ export const complianceStatusConfig: Record<ComplianceStatus, StatusConfigItem> 
 // ============================================================================
 
 export interface PermitStatusConfigItem {
-  icon: typeof CheckCircle;
+  iconName: StatusIconName;
   label: string;
   textClassName: string;
   badgeClassName: string;
@@ -113,37 +126,37 @@ export interface PermitStatusConfigItem {
 
 export const permitStatusConfig: Record<PermitStatus, PermitStatusConfigItem> = {
   'draft': {
-    icon: FileEdit,
+    iconName: 'FileEdit',
     label: 'Draft',
     textClassName: 'text-muted-foreground',
     badgeClassName: 'bg-muted text-muted-foreground border-muted',
   },
   'submitted': {
-    icon: Send,
+    iconName: 'Send',
     label: 'Submitted',
     textClassName: 'text-blue-400',
     badgeClassName: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
   },
   'under_review': {
-    icon: Eye,
+    iconName: 'Eye',
     label: 'Under Review',
     textClassName: 'text-yellow-400',
     badgeClassName: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
   },
   'approved': {
-    icon: CheckCircle2,
+    iconName: 'CheckCircle2',
     label: 'Approved',
     textClassName: 'text-violet-400',
     badgeClassName: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
   },
   'rejected': {
-    icon: XCircle,
+    iconName: 'XCircle',
     label: 'Rejected',
     textClassName: 'text-red-400',
     badgeClassName: 'bg-red-500/20 text-red-400 border-red-500/30',
   },
   'revision_requested': {
-    icon: RotateCcw,
+    iconName: 'RotateCcw',
     label: 'Revision Requested',
     textClassName: 'text-orange-400',
     badgeClassName: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
