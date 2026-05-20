@@ -8,8 +8,50 @@ import { blockStatusCache } from '@/lib/block-status-cache';
 // Block status check interval (5 minutes in milliseconds)
 const BLOCK_CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
+// A5/H1: Build the per-request Content-Security-Policy. The previous policy
+// allowed 'unsafe-inline' AND 'unsafe-eval' for script-src — any reflected XSS
+// became a session takeover because attacker scripts could run. Replace with
+// nonce + 'strict-dynamic': only scripts tagged with the per-request nonce
+// (and scripts they load via document.createElement) can execute.
+//
+// 'unsafe-eval' is dropped entirely in production. Dev keeps it because
+// Next.js HMR + React DevTools rely on eval; the cost in dev is acceptable.
+// style-src keeps 'unsafe-inline' because Tailwind / framer-motion / Radix
+// inject style="..." attributes that nonces don't cover. Tightening that
+// requires hash-based CSP and is out of scope for this pass.
+function buildCSP(nonce: string): string {
+  const scriptSrc = process.env.NODE_ENV === 'production'
+    ? `'self' 'nonce-${nonce}' 'strict-dynamic'`
+    : `'self' 'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval'`;
+  return [
+    "default-src 'self'",
+    `script-src ${scriptSrc}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self' https://*.supabase.co",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join('; ');
+}
+
+function applyCommonSecurityHeaders(response: NextResponse, nonce: string): NextResponse {
+  response.headers.set('X-Content-Type-Options', 'nosniff');
+  response.headers.set('X-Frame-Options', 'DENY');
+  response.headers.set('X-XSS-Protection', '1; mode=block');
+  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  response.headers.set('Content-Security-Policy', buildCSP(nonce));
+  if (process.env.NODE_ENV === 'production') {
+    response.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  }
+  return response;
+}
+
 // Clear session and redirect to login
-function clearSessionAndRedirect(request: NextRequest, reason?: string): NextResponse {
+function clearSessionAndRedirect(request: NextRequest, nonce: string, reason?: string): NextResponse {
   const response = NextResponse.redirect(new URL('/login', request.url));
   response.cookies.delete(SESSION_COOKIE_NAME);
   response.cookies.delete('ef_csrf');
@@ -23,7 +65,7 @@ function clearSessionAndRedirect(request: NextRequest, reason?: string): NextRes
       path: '/',
     });
   }
-  return response;
+  return applyCommonSecurityHeaders(response, nonce);
 }
 
 // Verify JWT token without database call
@@ -125,6 +167,20 @@ export async function middleware(request: NextRequest) {
     return new NextResponse(null, { status: 403 });
   }
 
+  // A5: per-request nonce for script-src. Edge runtime exposes crypto.randomUUID().
+  // We base64-url encode to keep the nonce CSP-safe (alphanumeric + -, _).
+  const nonce = btoa(crypto.randomUUID().replace(/-/g, ''))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  // Forward the nonce to downstream React server components via a request
+  // header — app/layout.tsx reads it via headers() and applies it to <Script>
+  // tags it controls. Next.js itself also reads x-nonce internally for the
+  // scripts it auto-injects (framework runtime, hydration, font preload).
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-nonce', nonce);
+
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const { pathname } = request.nextUrl;
 
@@ -135,17 +191,23 @@ export async function middleware(request: NextRequest) {
   // If no token
   if (!token) {
     if (!isPublicPath) {
-      return NextResponse.redirect(new URL('/login', request.url));
+      return applyCommonSecurityHeaders(
+        NextResponse.redirect(new URL('/login', request.url)),
+        nonce,
+      );
     }
-    return NextResponse.next();
+    return applyCommonSecurityHeaders(
+      NextResponse.next({ request: { headers: requestHeaders } }),
+      nonce,
+    );
   }
 
   // Verify JWT token (NO DATABASE CALL!)
   const verification = await verifyToken(token);
-  
+
   if (!verification.valid) {
     // Invalid token - clear and redirect
-    return clearSessionAndRedirect(request);
+    return clearSessionAndRedirect(request, nonce);
   }
 
   const { sub: userId, role } = verification.payload;
@@ -154,49 +216,43 @@ export async function middleware(request: NextRequest) {
   // REAL-TIME BLOCK CHECK (with caching for performance)
   // =========================================================================
   const blockStatus = await checkUserBlocked(userId);
-  
+
   if (blockStatus.blocked) {
     // User is blocked - terminate session immediately
     console.log(`Blocked user ${userId} attempted access`);
-    return clearSessionAndRedirect(request, blockStatus.reason || 'Your account has been blocked');
+    return clearSessionAndRedirect(request, nonce, blockStatus.reason || 'Your account has been blocked');
   }
 
   // If logged in and trying to access public auth pages
   if (isPublicPath) {
-    if (role === 'admin') {
-      return NextResponse.redirect(new URL('/admin', request.url));
-    }
-    return NextResponse.redirect(new URL('/', request.url));
+    const target = role === 'admin' ? '/admin' : '/';
+    return applyCommonSecurityHeaders(
+      NextResponse.redirect(new URL(target, request.url)),
+      nonce,
+    );
   }
 
   // Check admin access
-  if (pathname.startsWith('/admin')) {
-    if (role !== 'admin') {
-      return NextResponse.redirect(new URL('/', request.url));
-    }
+  if (pathname.startsWith('/admin') && role !== 'admin') {
+    return applyCommonSecurityHeaders(
+      NextResponse.redirect(new URL('/', request.url)),
+      nonce,
+    );
   }
 
   // If admin trying to access user pages, redirect to admin
   if ((pathname === '/' || pathname.startsWith('/permits')) && role === 'admin') {
-    return NextResponse.redirect(new URL('/admin', request.url));
+    return applyCommonSecurityHeaders(
+      NextResponse.redirect(new URL('/admin', request.url)),
+      nonce,
+    );
   }
 
-  // Add user info to headers for downstream use
-  const response = NextResponse.next();
+  // Authenticated, on-path. Pass the nonce-bearing request headers downstream.
+  const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set('x-user-id', userId);
   response.headers.set('x-user-role', role);
-  
-  // =========================================================================
-  // SECURITY HEADERS
-  // =========================================================================
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  response.headers.set('X-Frame-Options', 'DENY');
-  response.headers.set('X-XSS-Protection', '1; mode=block');
-  response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
-  response.headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://*.supabase.co; frame-ancestors 'none'");
-  
-  return response;
+  return applyCommonSecurityHeaders(response, nonce);
 }
 
 export const config = {
