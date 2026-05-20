@@ -62,6 +62,10 @@ vi.mock('@/lib/supabase-server', () => ({
     from: (...args: unknown[]) => mockFrom(...args),
     storage: { from: vi.fn().mockReturnValue({ remove: vi.fn().mockResolvedValue({}) }) },
   })),
+  // A2: user-context client returns the same chainable mock.
+  createUserContextClient: vi.fn(async () => ({
+    from: (...args: unknown[]) => mockFrom(...args),
+  })),
 }));
 
 // Mock notifications

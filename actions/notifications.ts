@@ -4,7 +4,7 @@
 // Notification Server Actions
 // ============================================================================
 
-import { createAdminClient } from '@/lib/supabase-server';
+import { createAdminClient, createUserContextClient } from '@/lib/supabase-server';
 import { getQuickSession } from '@/lib/auth';
 import { requireAuth, requireCSRF } from '@/lib/security';
 import { uuidSchema } from '@/lib/validations';
@@ -37,7 +37,9 @@ export async function getNotifications(
       return { data: [], unreadCount: 0, error: 'Not authenticated' };
     }
 
-    const supabase = createAdminClient();
+    // A2: read own notifications via user-context client so RLS enforces
+    // user_id = auth.uid() (once SUPABASE_JWT_SECRET is configured).
+    const supabase = await createUserContextClient(user.id);
 
     // Fetch notifications
     const { data, error } = await supabase

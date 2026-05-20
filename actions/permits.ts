@@ -4,7 +4,7 @@
 // Permit Application Server Actions (User-Facing)
 // ============================================================================
 
-import { createAdminClient } from '@/lib/supabase-server';
+import { createAdminClient, createUserContextClient } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { requireAuth, requireCSRF, verifyOwnership } from '@/lib/security';
 import {
@@ -337,7 +337,8 @@ export async function getMyPermits(): Promise<{ data: PermitApplication[]; error
       return { data: [], error: 'Not authenticated' };
     }
 
-    const supabase = createAdminClient();
+    // A2: list a user's own permits via user-context client so RLS engages.
+    const supabase = await createUserContextClient(user.id);
     // List view only renders project_name, project_type, project_address,
     // status, plot_number, and the two timestamps (see permit-card.tsx). Skip
     // the heavy JSONB columns (building_details, compliance_requirements,
@@ -383,7 +384,11 @@ export async function getPermitById(
       return { data: null, error: 'Invalid permit ID' };
     }
 
-    const supabase = createAdminClient();
+    // A2: regular users read their own permit via user-context (RLS-respecting);
+    // admins keep service_role since they read across users.
+    const supabase = user.role === 'admin'
+      ? createAdminClient()
+      : await createUserContextClient(user.id);
 
     // Detail view needs every column transformPermit references.
     let query = supabase

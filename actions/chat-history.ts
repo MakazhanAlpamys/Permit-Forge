@@ -5,7 +5,7 @@
 // ============================================================================
 
 import DOMPurify from 'isomorphic-dompurify';
-import { createAdminClient } from '@/lib/supabase-server';
+import { createAdminClient, createUserContextClient } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent } from '@/lib/auth';
 import { requireAuth, requireCSRF, verifyOwnership } from '@/lib/security';
 import { uuidSchema, paginationSchema, citationsArraySchema } from '@/lib/validations';
@@ -146,8 +146,10 @@ export async function getChatSessions(
     const paginationValidation = paginationSchema.safeParse({ cursor, limit });
     const validLimit = paginationValidation.success ? paginationValidation.data.limit : 20;
 
-    const supabase = createAdminClient();
-    
+    // A2: read on behalf of the user so RLS engages once SUPABASE_JWT_SECRET
+    // is configured. Falls back to service_role without it.
+    const supabase = await createUserContextClient(user.id);
+
     let query = supabase
       .from('chat_sessions')
       .select('id, title, created_at, updated_at')
@@ -228,7 +230,9 @@ export async function getSessionMessages(
 
     const validLimit = Math.min(Math.max(limit, 1), 100);
 
-    const supabase = createAdminClient();
+    // A2: ownership already verified above; read with user-context so RLS
+    // applies as a second line of defense.
+    const supabase = await createUserContextClient(user.id);
     let query = supabase
       .from('chat_messages')
       .select('*')

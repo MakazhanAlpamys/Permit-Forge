@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { SignJWT } from 'jose';
 import {
   RATE_LIMIT_WINDOW_SECONDS,
   MAX_REQUESTS_PER_WINDOW,
@@ -75,6 +76,71 @@ export function createAdminClient(): SupabaseClient {
 
 export function createServerClient(): SupabaseClient {
   return createClient(getSupabaseUrl(), getAnonKey(), {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  });
+}
+
+// -----------------------------------------------------------------------------
+// User-Context Client (ANON KEY + minted user JWT — Respects RLS as that user)
+// -----------------------------------------------------------------------------
+//
+// A2/C4: defense-in-depth for the ownership RLS policies introduced in A1.
+// Callers that read on behalf of a specific user (chat history, permits list,
+// permit detail, notifications) can use this instead of createAdminClient so
+// that auth.uid() in the RLS policy resolves to the real user id and a logic
+// bug in a server action can't accidentally read another user's rows.
+//
+// PREREQUISITE: SUPABASE_JWT_SECRET must be set (the Supabase project's JWT
+// signing secret, found in Project Settings → API). If it is not set we fall
+// back to createAdminClient() and log a one-time warning; behavior matches the
+// pre-A2 state until the env var is configured.
+//
+// Do NOT use for cross-user reads or admin operations — those legitimately need
+// service_role.
+
+const SUPABASE_JWT_EXPIRY_S = 60 * 60; // 1 hour — refreshed on each call
+let _missingSupabaseJwtSecretWarned = false;
+
+function getSupabaseJwtSecret(): Uint8Array | null {
+  const secret = process.env.SUPABASE_JWT_SECRET;
+  if (!secret) return null;
+  return new TextEncoder().encode(secret);
+}
+
+async function mintSupabaseUserJWT(userId: string): Promise<string | null> {
+  const secret = getSupabaseJwtSecret();
+  if (!secret) return null;
+  const now = Math.floor(Date.now() / 1000);
+  return await new SignJWT({
+    aud: 'authenticated',
+    role: 'authenticated',
+  })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(userId)
+    .setIssuedAt(now)
+    .setExpirationTime(now + SUPABASE_JWT_EXPIRY_S)
+    .setIssuer('supabase')
+    .sign(secret);
+}
+
+export async function createUserContextClient(userId: string): Promise<SupabaseClient> {
+  const userJwt = await mintSupabaseUserJWT(userId);
+  if (!userJwt) {
+    if (!_missingSupabaseJwtSecretWarned) {
+      _missingSupabaseJwtSecretWarned = true;
+      console.warn(
+        '[supabase] SUPABASE_JWT_SECRET not configured — createUserContextClient ' +
+          'is falling back to service_role. RLS ownership policies (A1) will not engage ' +
+          'until this env var is set. See LOCAL_NOTES.md.',
+      );
+    }
+    return createAdminClient();
+  }
+  return createClient(getSupabaseUrl(), getAnonKey(), {
+    global: { headers: { Authorization: `Bearer ${userJwt}` } },
     auth: {
       autoRefreshToken: false,
       persistSession: false,

@@ -70,6 +70,10 @@ vi.mock('@/lib/supabase-server', () => ({
   createAdminClient: vi.fn(() => ({
     from: (...args: unknown[]) => mockFrom(...args),
   })),
+  // A2: user-context client uses the same mock chain.
+  createUserContextClient: vi.fn(async () => ({
+    from: (...args: unknown[]) => mockFrom(...args),
+  })),
 }));
 
 import {
