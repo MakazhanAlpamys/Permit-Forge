@@ -16,14 +16,18 @@ npm test                 # Run all tests (watch mode)
 npm run test:coverage    # v8 coverage report (HTML)
 npm run test:ui          # Vitest UI dashboard
 npm run lint             # ESLint check
+npx tsc --noEmit         # Type check (run by CI; no script in package.json)
 ```
 
 Single test file: `npx vitest run test/auth.test.ts`
 Pattern match: `npx vitest run -t "pattern"`
+On Windows: append `--pool forks` to `vitest run` for reliability.
+
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `lint` → `tsc --noEmit` → `vitest run --coverage` → `next build` on push/PR to `main` with placeholder env vars.
 
 ## Tech Stack
 
-- **Frontend:** Next.js 15 (App Router), React 18, TypeScript, Tailwind CSS 4, shadcn/ui, Framer Motion (splash screen animations)
+- **Frontend:** Next.js 15 (App Router), React 18, TypeScript, Tailwind CSS 4, shadcn/ui, Framer Motion (splash screen animations), `isomorphic-dompurify` (sanitizes assistant markdown in `components/chat/message-bubble.tsx`)
 - **AI:** Google Gemini 2.5 Flash via LangChain 0.3 (chat), gemini-embedding-001 via @google/genai SDK (embeddings, 768-dim vectors)
 - **Database:** Supabase (PostgreSQL) with pgvector (HNSW) + pg_trgm extensions, 30+ RPC functions
 - **Auth:** JWT (HS256, jose), bcrypt (12 rounds), CSRF tokens, HttpOnly cookies
@@ -165,7 +169,7 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/auth.ts` | JWT create/verify, bcrypt, CSRF, audit logging, session management |
 | `lib/security.ts` | `requireAuth`/`requireAdmin` middleware guards for server actions |
 | `lib/validations.ts` | Zod v4 schemas for all inputs (passwords, chat messages, citations, JWT payloads) |
-| `lib/supabase-server.ts` | Two clients: `createServerClient()` (anon) and `createAdminClient()` (service_role, bypasses RLS, singleton pattern) |
+| `lib/supabase-server.ts` | Two clients: `createServerClient()` (anon) and `createAdminClient()` (service_role, singleton pattern). See `LOCAL_NOTES.md` for trust-boundary detail. |
 | `lib/logger.ts` | Centralized logging with `LOG_LEVEL` env var support |
 | `lib/file-upload.ts` | File validation (size, extension, MIME), storage path generation |
 | `lib/email.ts` | Email sending via Nodemailer SMTP: verification, password reset, password change codes; `generateSixDigitCode()` |
@@ -176,7 +180,7 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 
 Edge Runtime auth — runs on every non-static request:
 1. JWT verification (no DB call, jose library)
-2. Block status check via Supabase REST API (5-min in-memory cache, fail-safe: allows if check fails)
+2. Block status check via Supabase REST API (5-min in-memory cache). See `LOCAL_NOTES.md` for error-path behavior.
 3. Role-based redirects: admins → `/admin`, users → `/`, blocked → clear session + redirect
 4. Injects `x-user-id` and `x-user-role` headers for downstream use
 5. Security headers: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Permissions-Policy` (camera/mic/geo disabled)
@@ -187,7 +191,7 @@ Matcher excludes: `api`, `_next/static`, `_next/image`, static assets (svg/png/j
 
 ### Database
 
-Schema in `supabase/migrations/000_full_setup.sql` (single idempotent migration — drops and recreates everything). All tables use Row-Level Security (RLS). Service role bypasses RLS.
+Schema in `supabase/migrations/000_full_setup.sql` (single idempotent migration — drops and recreates everything). All tables use Row-Level Security (RLS). See `LOCAL_NOTES.md` (gitignored) for trust-boundary detail kept out of public docs.
 
 **Key tables:**
 - `dubai_code_chunks` — child chunks with VECTOR(768) embeddings + TSVECTOR (GIN index) for FTS, `parent_id` FK
