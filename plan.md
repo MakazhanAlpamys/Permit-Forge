@@ -130,7 +130,7 @@ Risk legend: 🟢 LOW · 🟡 MEDIUM · 🔴 HIGH (touches hot path, needs manua
 - [x] **D16 — L10** Normalize all timestamp columns to `TIMESTAMPTZ`. 🟢 — `dc8f911`
 - [x] **D17 — L11** Replace `SELECT *` with explicit column lists in `actions/permits.ts:342, 380, 432` list queries (don't fetch heavy JSONB fields for list views). 🟢 — `e34792d`
 - [x] **D18 — P2-A8** Add a real FK from `dubai_code_chunks.document_name` to `document_registry.id`. Update existing rows to match. 🟡 — `2f7888d`
-- [ ] **D19 — P2-A9** Add a Postgres advisory lock around `runIngestionPipeline` keyed on `documentId` so two parallel ingestions can't insert duplicate chunks. 🟡
+- [x] **D19 — P2-A9** Add a Postgres advisory lock around `runIngestionPipeline` keyed on `documentId` so two parallel ingestions can't insert duplicate chunks. 🟡 — `fc3f6a6` (advisory-xact lock + ingestion_state flag, not a long-lived session lock — see comment in 020_try_start_ingestion.sql)
 
 ---
 

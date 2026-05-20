@@ -631,6 +631,10 @@ $$;
 -- 5.4 Hybrid Search Filtered by Page Ranges (Tree Reasoning)
 -- ---------------------------------------------------------------------------
 
+-- D4/H18: inline the page-range predicate into each branch. A CTE
+-- (page_filtered) materializes and hides the HNSW / fts GIN index
+-- access paths from the inner ORDER BY/LIMIT. Reading dubai_code_chunks
+-- directly in each branch keeps the indexes available.
 CREATE OR REPLACE FUNCTION match_dubai_code_hybrid_filtered(
   query_text TEXT,
   query_embedding VECTOR(768),
@@ -651,7 +655,7 @@ RETURNS TABLE (
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   sanitized_query TEXT;
@@ -664,36 +668,40 @@ BEGIN
   tsquery_val := plainto_tsquery('english', sanitized_query);
 
   RETURN QUERY
-  WITH page_filtered AS (
-    SELECT d.*
-    FROM dubai_code_chunks d
-    WHERE EXISTS (
-      SELECT 1
-      FROM jsonb_array_elements(page_ranges) AS r
-      WHERE
-        COALESCE((d.metadata->>'startPage')::INT, (d.metadata->>'page')::INT, 0) <= (r->>'end_page')::INT
-        AND COALESCE((d.metadata->>'endPage')::INT, (d.metadata->>'page')::INT, 9999) >= (r->>'start_page')::INT
-    )
-    AND (filter_document IS NULL OR d.document_name = filter_document)
-  ),
-  vector_results AS (
+  WITH vector_results AS (
     SELECT
-      pf.id, pf.content, pf.metadata,
-      (1 - (pf.embedding <=> query_embedding))::FLOAT AS v_similarity,
-      ROW_NUMBER() OVER (ORDER BY pf.embedding <=> query_embedding) AS v_rank
-    FROM page_filtered pf
-    WHERE 1 - (pf.embedding <=> query_embedding) > 0.35
-    ORDER BY pf.embedding <=> query_embedding
+      d.id, d.content, d.metadata,
+      (1 - (d.embedding <=> query_embedding))::FLOAT AS v_similarity,
+      ROW_NUMBER() OVER (ORDER BY d.embedding <=> query_embedding) AS v_rank
+    FROM dubai_code_chunks d
+    WHERE 1 - (d.embedding <=> query_embedding) > 0.35
+      AND (filter_document IS NULL OR d.document_name = filter_document)
+      AND EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(page_ranges) AS r
+        WHERE
+          COALESCE((d.metadata->>'startPage')::INT, (d.metadata->>'page')::INT, 0) <= (r->>'end_page')::INT
+          AND COALESCE((d.metadata->>'endPage')::INT, (d.metadata->>'page')::INT, 9999) >= (r->>'start_page')::INT
+      )
+    ORDER BY d.embedding <=> query_embedding
     LIMIT 30
   ),
   keyword_results AS (
     SELECT
-      pf.id, pf.content, pf.metadata,
-      ts_rank_cd(pf.fts, tsquery_val)::FLOAT AS k_rank_score,
-      ROW_NUMBER() OVER (ORDER BY ts_rank_cd(pf.fts, tsquery_val) DESC) AS k_rank
-    FROM page_filtered pf
-    WHERE pf.fts @@ tsquery_val
-    ORDER BY ts_rank_cd(pf.fts, tsquery_val) DESC
+      d.id, d.content, d.metadata,
+      ts_rank_cd(d.fts, tsquery_val)::FLOAT AS k_rank_score,
+      ROW_NUMBER() OVER (ORDER BY ts_rank_cd(d.fts, tsquery_val) DESC) AS k_rank
+    FROM dubai_code_chunks d
+    WHERE d.fts @@ tsquery_val
+      AND (filter_document IS NULL OR d.document_name = filter_document)
+      AND EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(page_ranges) AS r
+        WHERE
+          COALESCE((d.metadata->>'startPage')::INT, (d.metadata->>'page')::INT, 0) <= (r->>'end_page')::INT
+          AND COALESCE((d.metadata->>'endPage')::INT, (d.metadata->>'page')::INT, 9999) >= (r->>'start_page')::INT
+      )
+    ORDER BY ts_rank_cd(d.fts, tsquery_val) DESC
     LIMIT 30
   ),
   combined AS (
