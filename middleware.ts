@@ -3,13 +3,10 @@ import type { NextRequest } from 'next/server';
 import { jwtVerify } from 'jose';
 import { jwtPayloadSchema } from '@/lib/validations';
 import { SESSION_COOKIE_NAME, getJWTSecret } from '@/lib/constants';
+import { blockStatusCache } from '@/lib/block-status-cache';
 
 // Block status check interval (5 minutes in milliseconds)
 const BLOCK_CHECK_INTERVAL_MS = 5 * 60 * 1000;
-
-// In-memory cache for blocked users (Edge Runtime compatible)
-// Key: userId, Value: { blocked: boolean, reason: string | undefined, checkedAt: number }
-const blockStatusCache = new Map<string, { blocked: boolean; reason?: string; checkedAt: number }>();
 
 // Clear session and redirect to login
 function clearSessionAndRedirect(request: NextRequest, reason?: string): NextResponse {

@@ -6,6 +6,7 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { logAuditWithMeta, hashPassword } from '@/lib/auth';
+import { invalidateBlockStatus } from '@/lib/block-status-cache';
 import { uuidSchema, createUserSchema, validatePassword } from '@/lib/validations';
 import { requireAdmin, requireCSRF } from '@/lib/security';
 
@@ -198,9 +199,13 @@ export async function blockUser(
       p_blocked: blocked,
       p_reason: reason || null,
     });
-    
+
     if (error) throw error;
-    
+
+    // B13/H7-clickpath: drop the middleware block-status cache so the next
+    // request from this user re-reads the DB rather than serving stale state.
+    invalidateBlockStatus(userId);
+
     // Log the action
     await logAuditWithMeta(authCheck.user.id, blocked ? 'user_blocked' : 'user_unblocked', {
       targetUserId: userId,
@@ -246,9 +251,12 @@ export async function updateUserRole(
       p_target_user_id: userId,
       p_new_role: role,
     });
-    
+
     if (error) throw error;
-    
+
+    // B13: drop cached state so the next middleware hit reflects the new role.
+    invalidateBlockStatus(userId);
+
     // Log the action
     await logAuditWithMeta(authCheck.user.id, 'role_changed', {
       targetUserId: userId,
@@ -386,9 +394,13 @@ export async function adminDeleteUser(userId: string, csrfToken?: string): Promi
       .from('users')
       .delete()
       .eq('id', userId);
-    
+
     if (error) throw error;
-    
+
+    // B13: drop the cache so a still-pending request with this user's JWT
+    // is treated as "not found" → forced logout on its next middleware pass.
+    invalidateBlockStatus(userId);
+
     // Log the action
     await logAuditWithMeta(authCheck.user.id, 'user_deleted', {
       targetUserId: userId,
