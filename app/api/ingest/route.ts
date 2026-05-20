@@ -104,14 +104,44 @@ export async function POST(request: NextRequest) {
   const stream = new TransformStream();
   const writer = stream.writable.getWriter();
 
+  // B4: pre-create an admin client used for ingestion_state bookkeeping so
+  // every stage stamps the same row without creating fresh clients.
+  const bookkeepingSupabase = createAdminClient();
+
+  // B4: AbortSignal from the inbound request fires when the client tab closes
+  // or explicitly aborts (e.g. the admin UI's "Cancel" button). We can't
+  // synchronously cancel chunk inserts mid-batch, but we can short-circuit
+  // between stages and stamp the registry row so the admin sees what
+  // happened.
+  const requestSignal: AbortSignal | undefined = request.signal;
+
   // Helper to send progress updates
   const sendProgress = async (data: IngestionProgress) => {
     await writer.write(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
   };
 
+  // B4: stamp ingestion_state at each lifecycle boundary.
+  async function markIngestionState(state: 'pending' | 'completed' | 'failed' | 'aborted') {
+    try {
+      const update: Record<string, unknown> = { ingestion_state: state };
+      if (state === 'pending') {
+        update.ingestion_started_at = new Date().toISOString();
+        update.ingestion_finished_at = null;
+      } else {
+        update.ingestion_finished_at = new Date().toISOString();
+      }
+      await bookkeepingSupabase.from('document_registry').update(update).eq('id', documentId);
+    } catch (markError) {
+      console.error('Failed to mark ingestion_state:', markError);
+    }
+  }
+
   // Start processing in background
   (async () => {
+    let pipelineSucceeded = false;
     try {
+      await markIngestionState('pending');
+
       // Send initial progress
       await sendProgress({
         stage: 'reading',
@@ -119,6 +149,12 @@ export async function POST(request: NextRequest) {
         total: 100,
         message: `Reading PDF for ${documentId}...`,
       });
+
+      // B4: early-abort check between stages. Throwing into the catch lets the
+      // finally block stamp ingestion_state=aborted and close the stream.
+      if (requestSignal?.aborted) {
+        throw new DOMException('Aborted by client', 'AbortError');
+      }
 
       // B5: when the caller asked to replace, clear prior chunks BEFORE the
       // pipeline starts inserting. We can't make this truly transactional
@@ -140,37 +176,59 @@ export async function POST(request: NextRequest) {
           .eq('document_name', documentId);
       }
 
-      // Run the centralized ingestion pipeline with document info
+      if (requestSignal?.aborted) {
+        throw new DOMException('Aborted by client', 'AbortError');
+      }
+
+      // Run the centralized ingestion pipeline with document info. We hook
+      // onProgress to also check the abort signal — that's the only natural
+      // re-entry point we have into the pipeline without rewriting it.
       const pipelineResult = await runIngestionPipeline({
         documentId,
         ...(pdfBuffer ? { pdfBuffer } : { pdfPath }),
-        onProgress: sendProgress,
+        onProgress: async (data) => {
+          if (requestSignal?.aborted) {
+            // Throw inside onProgress so the pipeline unwinds at the next
+            // await point instead of completing the current stage silently.
+            throw new DOMException('Aborted by client', 'AbortError');
+          }
+          await sendProgress(data);
+        },
       });
+
+      pipelineSucceeded = !!pipelineResult?.success;
 
       // B5: stamp last_ingested_pdf_hash so the next re-ingest can detect
       // whether the *content* changed (vs. the same file being re-ingested).
-      if (pipelineResult?.success && pdfHash) {
-        const adminSupabase = createAdminClient();
-        await adminSupabase
+      if (pipelineSucceeded && pdfHash) {
+        await bookkeepingSupabase
           .from('document_registry')
           .update({ last_ingested_pdf_hash: pdfHash })
           .eq('id', documentId);
       }
     } catch (error) {
-      console.error('Ingestion error:', error);
+      const isAbort = error instanceof DOMException && error.name === 'AbortError';
+      if (isAbort) {
+        console.warn('Ingestion aborted by client');
+      } else {
+        console.error('Ingestion error:', error);
+      }
       try {
         await sendProgress({
-          stage: 'error',
+          stage: isAbort ? 'aborted' : 'error',
           progress: 0,
           total: 100,
-          message: 'Ingestion failed',
+          message: isAbort ? 'Ingestion cancelled.' : 'Ingestion failed',
           done: true,
-          error: 'Ingestion pipeline encountered an error',
+          error: isAbort ? 'Aborted by client' : 'Ingestion pipeline encountered an error',
         });
       } catch { /* client disconnected */ }
+      await markIngestionState(isAbort ? 'aborted' : 'failed');
+      return;
     } finally {
       try { await writer.close(); } catch { /* client disconnected */ }
     }
+    await markIngestionState(pipelineSucceeded ? 'completed' : 'failed');
   })();
 
   return applySecurityHeaders(

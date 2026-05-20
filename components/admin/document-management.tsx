@@ -121,6 +121,9 @@ export function DocumentManagement() {
   const [ingestionStatus, setIngestionStatus] = useState<Record<string, IngestionStatus>>({});
   const [ingestionMessages, setIngestionMessages] = useState<Record<string, string>>({});
   const [activeProgress, setActiveProgress] = useState<Record<string, ProgressInfo>>({});
+  // B4: one AbortController per active ingestion so the user can cancel
+  // mid-run and so component unmount kills hung fetches.
+  const ingestionAbortersRef = useRef<Record<string, AbortController>>({});
 
   const [diagnostic, setDiagnostic] = useState<DiagnosticInfo>({
     dbConnected: false,
@@ -343,6 +346,13 @@ export function DocumentManagement() {
     setIngestionMessages(prev => ({ ...prev, [documentId]: 'Starting ingestion...' }));
     setActiveProgress(prev => ({ ...prev, [documentId]: { stage: 'starting', progress: 0, total: 100, message: 'Connecting...' } }));
 
+    // B4: bind an AbortController per ingestion so handleCancelIngestion below
+    // can interrupt the fetch. Any prior controller for this doc is aborted —
+    // shouldn't happen given the button disable, but defensive.
+    ingestionAbortersRef.current[documentId]?.abort();
+    const controller = new AbortController();
+    ingestionAbortersRef.current[documentId] = controller;
+
     try {
       const response = await fetch('/api/ingest', {
         method: 'POST',
@@ -351,6 +361,7 @@ export function DocumentManagement() {
           'x-csrf-token': csrfTokenRef.current || '',
         },
         body: JSON.stringify({ documentId, replaceChunks }),
+        signal: controller.signal,
       });
 
       if (!response.ok) throw new Error('Failed to start ingestion');
@@ -405,16 +416,33 @@ export function DocumentManagement() {
         }
       }
     } catch (error) {
-      setIngestionStatus(prev => ({ ...prev, [documentId]: 'error' }));
-      setIngestionMessages(prev => ({ ...prev, [documentId]: error instanceof Error ? error.message : 'Failed' }));
+      // B4: distinguish a user-initiated abort from a real network error so
+      // the UI doesn't shout "Failed" when the admin just clicked Cancel.
+      const isAbort = error instanceof DOMException && error.name === 'AbortError';
+      setIngestionStatus(prev => ({ ...prev, [documentId]: isAbort ? 'idle' : 'error' }));
+      setIngestionMessages(prev => ({
+        ...prev,
+        [documentId]: isAbort
+          ? 'Ingestion cancelled.'
+          : error instanceof Error ? error.message : 'Failed',
+      }));
       setActiveProgress(prev => {
         const next = { ...prev };
         delete next[documentId];
         return next;
       });
+    } finally {
+      delete ingestionAbortersRef.current[documentId];
     }
 
     runDiagnostics();
+  };
+
+  // B4: cancel an in-flight ingestion. Server route listens on request.signal
+  // between stages and stamps ingestion_state='aborted'.
+  const handleCancelIngestion = (documentId: string) => {
+    const aborter = ingestionAbortersRef.current[documentId];
+    if (aborter) aborter.abort();
   };
 
   const handleClearChunks = async (documentId: string, displayName: string) => {
@@ -772,10 +800,23 @@ export function DocumentManagement() {
                         )}
                       </Button>
 
-                      {isIngested && (
+                      {/* B4: surface a Cancel button only while an ingestion is
+                          actually streaming for this doc. */}
+                      {status === 'loading' && (
+                        <Button
+                          onClick={() => handleCancelIngestion(doc.id)}
+                          variant="outline"
+                          size="sm"
+                          title="Cancel ingestion"
+                        >
+                          <X className="mr-1.5 h-3 w-3" />
+                          Cancel
+                        </Button>
+                      )}
+
+                      {isIngested && status !== 'loading' && (
                         <Button
                           onClick={() => handleClearChunks(doc.id, doc.displayName)}
-                          disabled={status === 'loading'}
                           variant="outline"
                           size="sm"
                         >
