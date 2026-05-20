@@ -80,6 +80,9 @@ function createRequest(body: object, headers: Record<string, string> = {}): Next
     body: JSON.stringify(body),
     headers: {
       'Content-Type': 'application/json',
+      // C31H: chat stream now requires Origin or Referer to match the host.
+      // Provide a valid Origin by default; individual tests can override.
+      Origin: 'http://localhost:3000',
       ...headers,
     },
   });
@@ -152,6 +155,40 @@ describe('POST /api/chat/stream', () => {
     expect(response.status).toBe(403);
     const data = await response.json();
     expect(data.error).toBe('Access denied');
+  });
+
+  it('should return 403 when both Origin and Referer are missing (C31H)', async () => {
+    mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+
+    // Build a NextRequest that has neither Origin nor Referer.
+    const request = new NextRequest('http://localhost:3000/api/chat/stream', {
+      method: 'POST',
+      body: JSON.stringify({ message: 'Hello' }),
+      headers: { 'Content-Type': 'application/json', 'x-csrf-token': 'valid-token' },
+    });
+    const response = await POST(request);
+
+    expect(response.status).toBe(403);
+    const data = await response.json();
+    expect(data.error).toBe('Origin or Referer required');
+  });
+
+  it('should accept Referer when Origin is missing (C31H)', async () => {
+    mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+
+    const request = new NextRequest('http://localhost:3000/api/chat/stream', {
+      method: 'POST',
+      body: JSON.stringify({ message: 'Hello world' }),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-csrf-token': 'valid-token',
+        Referer: 'http://localhost:3000/some-page',
+      },
+    });
+    const response = await POST(request);
+
+    // Origin not allowed would be 403; valid Referer should let it through.
+    expect(response.status).toBe(200);
   });
 
   it('should return 403 on invalid CSRF token', async () => {

@@ -28,25 +28,35 @@ export async function POST(request: NextRequest) {
     }
 
     // =========================================================================
-    // SECURITY: Origin validation + CSRF (mandatory)
+    // SECURITY: Origin/Referer validation + CSRF (mandatory)
     // =========================================================================
+    // C31H/L13: previously the check was skipped entirely when Origin was
+    // absent (some legitimate clients drop it). Treat Referer as a fallback;
+    // reject only when BOTH are missing — this preserves the legitimate-client
+    // path while closing the silent-bypass.
     const origin = request.headers.get('origin');
-    if (origin) {
-      const allowedHost = request.nextUrl.host;
-      try {
-        const originHost = new URL(origin).host;
-        if (originHost !== allowedHost) {
-          return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
-            status: 403,
-            headers: { 'Content-Type': 'application/json' }
-          });
-        }
-      } catch {
-        return new Response(JSON.stringify({ error: 'Invalid origin' }), {
+    const referer = request.headers.get('referer');
+    const allowedHost = request.nextUrl.host;
+    const checkHost = origin ?? referer;
+    if (!checkHost) {
+      return new Response(JSON.stringify({ error: 'Origin or Referer required' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    try {
+      const sourceHost = new URL(checkHost).host;
+      if (sourceHost !== allowedHost) {
+        return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
           status: 403,
           headers: { 'Content-Type': 'application/json' }
         });
       }
+    } catch {
+      return new Response(JSON.stringify({ error: 'Invalid origin' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
     }
 
     const csrfToken = request.headers.get('x-csrf-token');
