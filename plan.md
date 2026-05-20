@@ -85,8 +85,8 @@ Risk legend: 🟢 LOW · 🟡 MEDIUM · 🔴 HIGH (touches hot path, needs manua
 - [x] **C12H — H22** Replace `as any` casts in `lib/transforms.ts`, `actions/permit-attachments.ts`, `actions/admin-permits.ts`, `actions/permits.ts` with explicit DB row types. 🟡 — `4d42b54`
 - [x] **C13H — M1 + M2** Always set `secure: true` and `sameSite: 'strict'` on session, CSRF, and `ef_blocked_reason` cookies. Document local-dev workaround via `NEXT_PUBLIC_DEV_INSECURE_COOKIES=1` env if needed. 🟢 — `052fe01`
 - [x] **C14H — M3 (scoped)** On `adminUpdateUserRole` and password change, bump a `token_version` column on `users`. Verify `token_version` in `middleware.ts` block-status fetch (same DB hop). Reject session if mismatched. 🟡 — `0c9226a` (covers role change, block/unblock, and all 4 password-change paths via shared bump_user_token_version RPC)
-- [ ] **C15H — M4** Persist code-attempt counter in DB (`users.verification_attempts` / `reset_attempts`) instead of in-memory Map. 🟡
-- [ ] **C16H — M5** In `submitPermit` / `revisePermit`, include `status` in the UPDATE WHERE clause to make it atomic. 🟢 (overlaps with B7 — if B7 lands first, mark this done.)
+- [x] **C15H — M4** Persist code-attempt counter in DB (`users.verification_attempts` / `reset_attempts`) instead of in-memory Map. 🟡 — `151096d` (used a separate code_attempts table + incr_code_attempt RPC rather than per-user columns; same semantics)
+- [x] **C16H — M5** In `submitPermit` / `revisePermit`, include `status` in the UPDATE WHERE clause to make it atomic. 🟢 (overlaps with B7 — if B7 lands first, mark this done.) — satisfied by B7 (`7c67404`); submit_permit_atomic / revise_permit_atomic guard status inside the transaction.
 - [ ] **C17H — M6** Wrap `createPermit + status_history`, `deleteDocument` chain, `reviewPermit + history + notification` in single RPCs that run in a transaction. (Overlaps with B7 — same RPC, different actions.) 🟡
 - [x] **C18H — M8** HTML-sanitize chat-session title with `isomorphic-dompurify` in `actions/chat-history.ts:378` (we already depend on it). 🟢 — `7e32ca4`
 - [x] **C19H — M9** Escape pipes/backticks in markdown export `app/api/chat/export/route.ts:66-74`. 🟢 — `4bf37c5`

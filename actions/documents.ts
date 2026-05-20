@@ -213,61 +213,43 @@ export async function deleteDocument(
   try {
     const supabase = createAdminClient();
 
-    // Soft delete
-    const { error } = await supabase.rpc('delete_document', { p_id: documentId });
-
-    if (error) {
-      // Fallback: direct update
-      const { error: directError } = await supabase
-        .from('document_registry')
-        .update({ is_active: false, updated_at: new Date().toISOString() })
-        .eq('id', documentId);
-
-      if (directError) {
-        return { success: false, error: directError.message };
-      }
-    }
-
-    // Optionally clear chunks
+    // Before the atomic delete, peek at storage_path so we can clean up the
+    // PDF object after the DB transaction commits (Storage isn't in the same
+    // transaction as Postgres — best-effort cleanup, leaves an orphan if it
+    // fails, never blocks the delete).
+    let storagePath: string | null = null;
     if (clearChunks) {
-      const { error: clearError } = await supabase.rpc('clear_document_chunks', {
-        target_document: documentId,
-      });
-
-      if (clearError) {
-        // Fallback
-        await supabase
-          .from('dubai_code_chunks')
-          .delete()
-          .eq('document_name', documentId);
-      }
-
-      // Also clear document tree
-      await supabase
-        .from('document_trees')
-        .delete()
-        .eq('document_name', documentId);
-
-      clearDocumentTreeCache(documentId);
-
-      // Delete PDF from Storage if exists
-      const { data: docRow, error: docError } = await supabase
+      const { data: docRow } = await supabase
         .from('document_registry')
         .select('storage_path')
         .eq('id', documentId)
         .single();
+      storagePath = (docRow?.storage_path as string | null) ?? null;
+    }
 
-      if (!docError && docRow?.storage_path) {
-        await supabase.storage
-          .from(DOCUMENT_PDF_LIMITS.storageBucket)
-          .remove([docRow.storage_path]);
+    // C17H/M6: single transactional RPC handles both flavors:
+    //   clearChunks=false → flip is_active=false (soft delete).
+    //   clearChunks=true  → cascade delete chunks/parent_chunks/trees/registry row.
+    const { error } = await supabase.rpc('delete_document_atomic', {
+      p_document_id: documentId,
+      p_clear_chunks: clearChunks,
+    });
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    if (clearChunks) {
+      clearDocumentTreeCache(documentId);
+      if (storagePath) {
+        try {
+          await supabase.storage
+            .from(DOCUMENT_PDF_LIMITS.storageBucket)
+            .remove([storagePath]);
+        } catch (storageErr) {
+          console.error('Storage cleanup failed (orphan left):', storageErr);
+        }
       }
-
-      // Hard delete the registry entry so it fully disappears
-      await supabase
-        .from('document_registry')
-        .delete()
-        .eq('id', documentId);
     }
 
     invalidateRegistryCache();

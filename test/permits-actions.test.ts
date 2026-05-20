@@ -114,15 +114,18 @@ describe('Permits Server Actions', () => {
 
   describe('createPermit', () => {
     it('should create a permit with valid data', async () => {
-      // Mock the insert → select → single chain to return a permit ID
+      // C17H: createPermit now calls create_permit_atomic RPC.
       const permitId = validUUID;
-      mockSingle.mockResolvedValueOnce({ data: { id: permitId }, error: null });
+      mockRpc.mockResolvedValueOnce({
+        data: [{ permit_id: permitId }],
+        error: null,
+      });
 
       const result = await createPermit(validPermitData, 'csrf-token');
 
       expect(result.success).toBe(true);
       expect(result.permitId).toBe(permitId);
-      expect(mockFrom).toHaveBeenCalledWith('permit_applications');
+      expect(mockRpc).toHaveBeenCalledWith('create_permit_atomic', expect.any(Object));
     });
 
     it('should return error when unauthenticated', async () => {
@@ -158,7 +161,7 @@ describe('Permits Server Actions', () => {
     });
 
     it('should validate CSRF token when provided', async () => {
-      mockSingle.mockResolvedValueOnce({ data: { id: validUUID }, error: null });
+      mockRpc.mockResolvedValueOnce({ data: [{ permit_id: validUUID }], error: null });
 
       await createPermit(validPermitData, 'csrf-token-123');
 

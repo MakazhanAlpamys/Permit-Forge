@@ -87,59 +87,39 @@ export async function reviewPermit(
 
     const supabase = createAdminClient();
 
-    // Verify permit exists and is reviewable
-    const { data: permit } = await supabase
-      .from('permit_applications')
-      .select('status, user_id, project_name')
-      .eq('id', permitId)
-      .single();
+    // C17H/M6: atomic UPDATE + permit_status_history INSERT. The RPC takes
+    // FOR UPDATE on the permit row internally and refuses to transition out
+    // of any non-reviewable status, so this replaces the previous SELECT-
+    // then-UPDATE-with-status-guard sequence.
+    const { data: rpcRows, error } = await supabase.rpc('review_permit_atomic', {
+      p_permit_id: permitId,
+      p_admin_id: authCheck.user.id,
+      p_new_status: newStatus,
+      p_comments: comments ?? null,
+    });
 
-    if (!permit) {
-      return { success: false, error: 'Permit not found' };
+    if (error) {
+      const msg = error.message ?? '';
+      if (msg.includes('PERMIT_NOT_FOUND')) {
+        return { success: false, error: 'Permit not found' };
+      }
+      throw error;
     }
 
-    if (permit.status !== 'submitted' && permit.status !== 'under_review') {
-      return { success: false, error: 'Permit is not in a reviewable state' };
-    }
+    const rpcResult = Array.isArray(rpcRows) ? rpcRows[0] : (rpcRows as {
+      status_changed?: boolean;
+      project_name?: string;
+      permit_user_id?: string;
+    } | null);
 
-    // Build update data
-    const updateData: {
-      status: string;
-      reviewed_by: string;
-      reviewed_at: string;
-      review_comments: string | null;
-      revision_notes?: string | null;
-    } = {
-      status: newStatus,
-      reviewed_by: authCheck.user.id,
-      reviewed_at: new Date().toISOString(),
-      review_comments: comments,
-    };
-
-    // For revision requests, also store revision notes
-    if (action === 'request_revision') {
-      updateData.revision_notes = comments;
-    }
-
-    const { data: updated, error } = await supabase
-      .from('permit_applications')
-      .update(updateData)
-      .eq('id', permitId)
-      .in('status', ['submitted', 'under_review'])
-      .select('id');
-
-    if (error) throw error;
-    if (!updated || updated.length === 0) {
+    if (!rpcResult?.status_changed) {
       return { success: false, error: 'Permit status has changed. Please refresh and try again.' };
     }
 
-    await supabase.from('permit_status_history').insert({
-      permit_id: permitId,
-      from_status: permit.status,
-      to_status: newStatus,
-      changed_by: authCheck.user.id,
-      comment: comments,
-    });
+    const permit = {
+      user_id: rpcResult.permit_user_id ?? '',
+      project_name: rpcResult.project_name ?? '',
+    };
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({

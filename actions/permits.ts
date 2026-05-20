@@ -60,41 +60,30 @@ export async function createPermit(
       return { success: false, error: validation.error.issues[0].message };
     }
 
+    // C17H/M6: atomic insert + status_history row.
     const supabase = createAdminClient();
-    const { data: permit, error } = await supabase
-      .from('permit_applications')
-      .insert({
-        user_id: authCheck.user.id,
-        status: 'draft',
-        project_name: validation.data.projectName,
-        project_type: validation.data.projectType,
-        project_address: validation.data.projectAddress,
-        plot_number: validation.data.plotNumber || null,
-        project_description: validation.data.projectDescription || null,
-      })
-      .select('id')
-      .single();
+    const { data: rpcRows, error } = await supabase.rpc('create_permit_atomic', {
+      p_user_id: authCheck.user.id,
+      p_project_name: validation.data.projectName,
+      p_project_type: validation.data.projectType,
+      p_project_address: validation.data.projectAddress,
+      p_plot_number: validation.data.plotNumber || null,
+      p_project_description: validation.data.projectDescription || null,
+    });
 
     if (error) throw error;
-
-    // Record status history
-    await supabase.from('permit_status_history').insert({
-      permit_id: permit.id,
-      from_status: null,
-      to_status: 'draft',
-      changed_by: authCheck.user.id,
-      comment: 'Permit application created',
-    });
+    const newId = Array.isArray(rpcRows) ? rpcRows[0]?.permit_id : (rpcRows as { permit_id?: string } | null)?.permit_id;
+    if (!newId) throw new Error('create_permit_atomic returned no id');
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({
       userId: authCheck.user.id,
       action: 'permit_created',
-      metadata: { permitId: permit.id, projectName: validation.data.projectName },
+      metadata: { permitId: newId, projectName: validation.data.projectName },
       ...metadata,
     });
 
-    return { success: true, permitId: permit.id };
+    return { success: true, permitId: newId };
   } catch (error) {
     console.error('createPermit error:', error);
     return {

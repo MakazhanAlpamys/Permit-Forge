@@ -224,19 +224,16 @@ describe('Admin Permits Server Actions', () => {
       comments: 'Please update floor plans.',
     };
 
-    function setupReviewPermitMocks(permitStatus: string) {
-      // Call 1: from('permit_applications').select(...).eq(...).single()
-      // mockSelect (1st call) -> returns chain with eq -> single
-      // mockSingle (1st call) -> returns permit data
-      mockSingle.mockResolvedValueOnce({
-        data: { status: permitStatus, user_id: 'user-123', project_name: 'Test Building' },
+    function setupReviewPermitMocks(_permitStatus: string) {
+      // C17H: reviewPermit now calls review_permit_atomic RPC.
+      mockRpc.mockResolvedValueOnce({
+        data: [{
+          status_changed: true,
+          prev_status: _permitStatus,
+          project_name: 'Test Building',
+          permit_user_id: 'user-123',
+        }],
         error: null,
-      });
-
-      // Call 2: from('permit_applications').update(...).eq(...).in(...).select('id')
-      // mockIn -> needs to return { select: fn that returns {data, error} }
-      mockIn.mockReturnValueOnce({
-        select: vi.fn().mockReturnValue({ data: [{ id: validUUID }], error: null }),
       });
     }
 
@@ -293,7 +290,7 @@ describe('Admin Permits Server Actions', () => {
     });
 
     it('should return error when permit not found', async () => {
-      mockSingle.mockResolvedValueOnce({ data: null, error: null });
+      mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'PERMIT_NOT_FOUND' } });
 
       const result = await reviewPermit(approveData, 'csrf-token');
 
@@ -302,15 +299,16 @@ describe('Admin Permits Server Actions', () => {
     });
 
     it('should reject permit not in reviewable state', async () => {
-      mockSingle.mockResolvedValueOnce({
-        data: { status: 'draft', user_id: 'user-123', project_name: 'Test' },
+      // RPC reports status_changed=false when status is outside ('submitted','under_review').
+      mockRpc.mockResolvedValueOnce({
+        data: [{ status_changed: false, prev_status: 'draft', project_name: 'Test', permit_user_id: 'user-123' }],
         error: null,
       });
 
       const result = await reviewPermit(approveData, 'csrf-token');
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Permit is not in a reviewable state');
+      expect(result.error).toContain('status has changed');
     });
 
     it('should log audit event on approval', async () => {
