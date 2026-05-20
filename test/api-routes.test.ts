@@ -87,29 +87,24 @@ describe('GET /api/health', () => {
     resetMockChain();
   });
 
-  it('should return 200 with status ok when healthy', async () => {
+  it('should return 200 { ok: true } when healthy', async () => {
     mockLimit.mockResolvedValue({ data: [{ id: '1' }], error: null });
 
     const response = await healthGET();
     const data = await response.json();
 
     expect(response.status).toBe(200);
-    expect(data.status).toBe('ok');
-    expect(data.checks.env.status).toBe('ok');
-    expect(data.checks.database.status).toBe('ok');
-    expect(data.timestamp).toBeDefined();
+    expect(data).toEqual({ ok: true });
   });
 
-  it('should return 503 when DB query fails', async () => {
+  it('should return 503 { ok: false } when DB query fails', async () => {
     mockLimit.mockResolvedValue({ data: null, error: { message: 'connection refused' } });
 
     const response = await healthGET();
     const data = await response.json();
 
     expect(response.status).toBe(503);
-    expect(data.status).toBe('degraded');
-    expect(data.checks.database.status).toBe('fail');
-    expect(data.checks.database.message).toBe('Database connection failed');
+    expect(data).toEqual({ ok: false });
   });
 });
 
