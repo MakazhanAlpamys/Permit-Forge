@@ -1409,7 +1409,9 @@ CREATE OR REPLACE FUNCTION get_all_users_admin(
   p_admin_id UUID,
   p_limit INT DEFAULT 50,
   p_offset INT DEFAULT 0,
-  p_search TEXT DEFAULT NULL
+  p_search TEXT DEFAULT NULL,
+  p_after_created_at TIMESTAMPTZ DEFAULT NULL,
+  p_after_id UUID DEFAULT NULL
 )
 RETURNS TABLE (
   id UUID,
@@ -1429,12 +1431,15 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_admin_role TEXT;
+  v_use_keyset BOOLEAN := (p_after_created_at IS NOT NULL AND p_after_id IS NOT NULL);
 BEGIN
   SELECT users.role INTO v_admin_role FROM users WHERE users.id = p_admin_id;
   IF v_admin_role != 'admin' THEN RAISE EXCEPTION 'Unauthorized: Admin role required'; END IF;
 
   -- D1/H14: replace two correlated subqueries per row with a single
   -- pre-aggregated session_stats CTE joined once.
+  -- D12/M21: keyset pagination on (created_at DESC, id DESC). p_offset is
+  -- still honored when no cursor is supplied for backward compat.
   RETURN QUERY
   WITH session_stats AS (
     SELECT cs.user_id,
@@ -1452,8 +1457,10 @@ BEGIN
   FROM users u
   LEFT JOIN session_stats s ON s.user_id = u.id
   WHERE (p_search IS NULL OR u.username ILIKE '%' || p_search || '%' OR u.full_name ILIKE '%' || p_search || '%')
-  ORDER BY u.created_at DESC
-  LIMIT LEAST(p_limit, 100) OFFSET p_offset;
+    AND (NOT v_use_keyset OR (u.created_at, u.id) < (p_after_created_at, p_after_id))
+  ORDER BY u.created_at DESC, u.id DESC
+  LIMIT LEAST(p_limit, 100)
+  OFFSET CASE WHEN v_use_keyset THEN 0 ELSE GREATEST(p_offset, 0) END;
 END;
 $$;
 

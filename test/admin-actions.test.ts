@@ -240,6 +240,8 @@ describe('Admin Server Actions', () => {
         p_limit: 25,
         p_offset: 10,
         p_search: 'john',
+        p_after_created_at: null,
+        p_after_id: null,
       });
     });
 
@@ -250,6 +252,20 @@ describe('Admin Server Actions', () => {
 
       expect(mockRpc).toHaveBeenCalledWith('get_all_users_admin', expect.objectContaining({
         p_limit: 100,
+      }));
+    });
+
+    it('should pass keyset cursor params when supplied (D12)', async () => {
+      mockRpc.mockResolvedValueOnce({ data: [], error: null });
+
+      await getAllUsers(50, 0, undefined, {
+        createdAt: '2026-04-30T12:00:00Z',
+        id: '00000000-0000-0000-0000-000000000001',
+      });
+
+      expect(mockRpc).toHaveBeenCalledWith('get_all_users_admin', expect.objectContaining({
+        p_after_created_at: '2026-04-30T12:00:00Z',
+        p_after_id: '00000000-0000-0000-0000-000000000001',
       }));
     });
 

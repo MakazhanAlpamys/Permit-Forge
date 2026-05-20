@@ -115,23 +115,37 @@ export interface AdminUser {
   messageCount: number;
 }
 
+export interface UserPageCursor {
+  createdAt: string;
+  id: string;
+}
+
 export async function getAllUsers(
   limit: number = 50,
   offset: number = 0,
-  search?: string
+  search?: string,
+  /**
+   * D12/M21: optional keyset cursor (last row of previous page). When
+   * supplied, OFFSET is bypassed and the RPC seeks via
+   * (created_at DESC, id DESC). Backward compatible: existing callers
+   * that omit it keep offset-based pagination.
+   */
+  cursor?: UserPageCursor | null
 ): Promise<{ data: AdminUser[]; error?: string }> {
   try {
     const authCheck = await requireAdmin();
     if (!authCheck.success || !authCheck.user) {
       return { data: [], error: authCheck.error };
     }
-    
+
     const supabase = createAdminClient();
     const { data, error } = await supabase.rpc('get_all_users_admin', {
       p_admin_id: authCheck.user.id,
       p_limit: Math.max(1, Math.min(limit, 100)),
       p_offset: Math.max(0, offset),
       p_search: search || null,
+      p_after_created_at: cursor?.createdAt ?? null,
+      p_after_id: cursor?.id ?? null,
     });
     
     if (error) {
