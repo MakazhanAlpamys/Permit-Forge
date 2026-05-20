@@ -8,7 +8,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { logAuditWithMeta, hashPassword } from '@/lib/auth';
 import { invalidateBlockStatus } from '@/lib/block-status-cache';
 import { uuidSchema, createUserSchema, validatePassword } from '@/lib/validations';
-import { requireAdmin, requireCSRF } from '@/lib/security';
+import { requireAdmin, requireCSRF, requireActionRateLimit } from '@/lib/security';
 
 // -----------------------------------------------------------------------------
 // RPC Response Types (matching Supabase functions)
@@ -181,6 +181,9 @@ export async function blockUser(
     const csrf = await requireCSRF(csrfToken);
     if (!csrf.valid) return { success: false, error: csrf.error };
 
+    const rl = await requireActionRateLimit(authCheck.user.id, 'blockUser');
+    if (!rl.allowed) return { success: false, error: rl.error };
+
     // Validate userId
     const validation = uuidSchema.safeParse(userId);
     if (!validation.success) {
@@ -238,13 +241,16 @@ export async function updateUserRole(
 
     const csrf = await requireCSRF(csrfToken);
     if (!csrf.valid) return { success: false, error: csrf.error };
-    
+
+    const rl = await requireActionRateLimit(authCheck.user.id, 'updateUserRole');
+    if (!rl.allowed) return { success: false, error: rl.error };
+
     // Validate userId
     const validation = uuidSchema.safeParse(userId);
     if (!validation.success) {
       return { success: false, error: 'Invalid user ID' };
     }
-    
+
     const supabase = createAdminClient();
     const { error } = await supabase.rpc('admin_update_user_role', {
       p_admin_id: authCheck.user.id,
@@ -290,6 +296,9 @@ export async function adminCreateUser(data: {
 
     const csrf = await requireCSRF(csrfToken);
     if (!csrf.valid) return { success: false, error: csrf.error };
+
+    const rl = await requireActionRateLimit(authCheck.user.id, 'adminCreateUser');
+    if (!rl.allowed) return { success: false, error: rl.error };
 
     // Validate input
     const validation = createUserSchema.safeParse(data);
@@ -369,13 +378,16 @@ export async function adminDeleteUser(userId: string, csrfToken?: string): Promi
 
     const csrf = await requireCSRF(csrfToken);
     if (!csrf.valid) return { success: false, error: csrf.error };
-    
+
+    const rl = await requireActionRateLimit(authCheck.user.id, 'adminDeleteUser');
+    if (!rl.allowed) return { success: false, error: rl.error };
+
     // Validate userId
     const validation = uuidSchema.safeParse(userId);
     if (!validation.success) {
       return { success: false, error: 'Invalid user ID' };
     }
-    
+
     // Prevent self-deletion
     if (userId === authCheck.user.id) {
       return { success: false, error: 'Cannot delete yourself' };
@@ -433,13 +445,16 @@ export async function adminResetPassword(
 
     const csrf = await requireCSRF(csrfToken);
     if (!csrf.valid) return { success: false, error: csrf.error };
-    
+
+    const rl = await requireActionRateLimit(authCheck.user.id, 'adminResetPassword');
+    if (!rl.allowed) return { success: false, error: rl.error };
+
     // Validate userId
     const validation = uuidSchema.safeParse(userId);
     if (!validation.success) {
       return { success: false, error: 'Invalid user ID' };
     }
-    
+
     // Validate password with complexity requirements
     const passwordValidation = validatePassword(newPassword);
     if (!passwordValidation.valid) {

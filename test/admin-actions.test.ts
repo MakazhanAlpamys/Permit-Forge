@@ -11,6 +11,7 @@ vi.mock('@/lib/security', () => ({
   requireAuth: vi.fn(),
   requireAdmin: (...args: unknown[]) => mockRequireAdmin(...args),
   requireCSRF: (...args: unknown[]) => mockRequireCSRF(...args),
+  requireActionRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
 }));
 
 // Mock auth
@@ -81,6 +82,7 @@ vi.mock('@/lib/supabase-server', () => ({
     from: (...args: unknown[]) => mockFrom(...args),
     rpc: (...args: unknown[]) => mockRpc(...args),
   })),
+  checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
 }));
 
 // Mock notifications

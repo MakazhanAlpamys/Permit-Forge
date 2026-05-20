@@ -6,7 +6,7 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
-import { requireAdmin, requireCSRF } from '@/lib/security';
+import { requireAdmin, requireCSRF, requireActionRateLimit } from '@/lib/security';
 import { uuidSchema, reviewPermitSchema, type ReviewPermitInput } from '@/lib/validations';
 import type { PermitApplication, PermitStats } from '@/types';
 import { transformPermit } from '@/lib/transforms';
@@ -69,6 +69,9 @@ export async function reviewPermit(
 
     const csrf = await requireCSRF(csrfToken);
     if (!csrf.valid) return { success: false, error: csrf.error };
+
+    const rl = await requireActionRateLimit(authCheck.user.id, 'reviewPermit');
+    if (!rl.allowed) return { success: false, error: rl.error };
 
     const validation = reviewPermitSchema.safeParse(data);
     if (!validation.success) {
@@ -193,6 +196,9 @@ export async function setPermitUnderReview(
 
     const csrf = await requireCSRF(csrfToken);
     if (!csrf.valid) return { success: false, error: csrf.error };
+
+    const rl = await requireActionRateLimit(authCheck.user.id, 'setPermitUnderReview');
+    if (!rl.allowed) return { success: false, error: rl.error };
 
     const idValidation = uuidSchema.safeParse(permitId);
     if (!idValidation.success) {

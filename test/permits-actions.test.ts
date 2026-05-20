@@ -72,6 +72,7 @@ vi.mock('@/lib/supabase-server', () => ({
     from: (...args: unknown[]) => mockFrom(...args),
     rpc: (...args: unknown[]) => mockRpc(...args),
   })),
+  checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
 }));
 
 // Mock notifications

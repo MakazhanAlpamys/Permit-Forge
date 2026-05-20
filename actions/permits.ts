@@ -6,7 +6,7 @@
 
 import { createAdminClient, createUserContextClient } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
-import { requireAuth, requireCSRF, verifyOwnership } from '@/lib/security';
+import { requireAuth, requireCSRF, verifyOwnership, requireActionRateLimit } from '@/lib/security';
 import {
   uuidSchema,
   createPermitSchema,
@@ -51,6 +51,9 @@ export async function createPermit(
 
     const csrf = await requireCSRF(csrfToken);
     if (!csrf.valid) return { success: false, error: csrf.error };
+
+    const rl = await requireActionRateLimit(authCheck.user.id, 'createPermit');
+    if (!rl.allowed) return { success: false, error: rl.error };
 
     const validation = createPermitSchema.safeParse(data);
     if (!validation.success) {
@@ -118,6 +121,9 @@ export async function updatePermitBuildingDetails(
     const csrf = await requireCSRF(csrfToken);
     if (!csrf.valid) return { success: false, error: csrf.error };
 
+    const rl = await requireActionRateLimit(authCheck.user.id, 'updatePermitBuildingDetails');
+    if (!rl.allowed) return { success: false, error: rl.error };
+
     const validation = updateBuildingDetailsSchema.safeParse(data);
     if (!validation.success) {
       return { success: false, error: validation.error.issues[0].message };
@@ -180,6 +186,9 @@ export async function updatePermitComplianceRequirements(
 
     const csrf = await requireCSRF(csrfToken);
     if (!csrf.valid) return { success: false, error: csrf.error };
+
+    const rl = await requireActionRateLimit(authCheck.user.id, 'updatePermitComplianceRequirements');
+    if (!rl.allowed) return { success: false, error: rl.error };
 
     const validation = updateComplianceRequirementsSchema.safeParse(data);
     if (!validation.success) {
@@ -570,6 +579,9 @@ export async function runComplianceCheck(
 
     const csrf = await requireCSRF(csrfToken);
     if (!csrf.valid) return { success: false, error: csrf.error };
+
+    const rl = await requireActionRateLimit(authCheck.user.id, 'runComplianceCheck');
+    if (!rl.allowed) return { success: false, error: rl.error };
 
     const idValidation = uuidSchema.safeParse(permitId);
     if (!idValidation.success) {
