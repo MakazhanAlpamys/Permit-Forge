@@ -105,28 +105,17 @@ export async function classifyTopic(userQuery: string): Promise<TopicClassificat
 
 export type QueryType = 'exact' | 'semantic' | 'hybrid';
 
+/**
+ * Single source of truth for "does this query name a specific code reference"
+ * (section, table, chapter, article, clause, requirement, page, or a dotted
+ * numeric like 5.4.2). Used here by detectQueryType and by lib/rag.ts to gate
+ * the exact-search branch. (F14 / Simplify #14)
+ */
+export const EXACT_REFERENCE_REGEX =
+  /\bsection\s+[\d.]+|\btable\s+[\d-]+|\bchapter\s+\d+|\barticle\s+\d+|\bclause\s+[\d.]+|\brequirement\s+[\d.]+|\bpage\s+\d+|\b\d+\.\d+\.\d+\b/i;
+
 export function detectQueryType(query: string): QueryType {
-  const exactPatterns = [
-    /section\s+[\d.]+/i,
-    /table\s+[\d-]+/i,
-    /chapter\s+\d+/i,
-    /article\s+\d+/i,
-    /clause\s+[\d.]+/i,
-    /requirement\s+[\d.]+/i,
-    /page\s+\d+/i,
-    /\b\d+\.\d+\.\d+\b/,
-  ];
-
-  for (const pattern of exactPatterns) {
-    if (pattern.test(query)) {
-      return 'exact';
-    }
-  }
-
-  if (query.split(/\s+/).length <= 3) {
-    return 'hybrid';
-  }
-
+  if (EXACT_REFERENCE_REGEX.test(query)) return 'exact';
   return 'hybrid';
 }
 

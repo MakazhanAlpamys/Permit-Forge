@@ -7,6 +7,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { embeddingsModel } from '@/lib/gemini';
 import { getDocumentByIdSync } from '@/lib/document-registry';
 import { KEYWORD_WEIGHT, VECTOR_WEIGHT } from '@/lib/constants';
+import { EXACT_REFERENCE_REGEX } from '@/lib/agents';
 import type { MatchedChunk, RAGQuery, RAGResult, ChunkMetadata, HybridSearchResult } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -144,7 +145,7 @@ export async function queryBuildingCode(
   const { query, matchCount = DEFAULT_MATCH_COUNT } = params;
 
   // Detect if query needs exact search
-  const needsExactSearch = /\b\d+\.\d+(\.\d+)?\b|section\s+\d+|table\s+\d+/i.test(query);
+  const needsExactSearch = EXACT_REFERENCE_REGEX.test(query);
 
   let chunks: MatchedChunk[] = [];
 
@@ -329,7 +330,7 @@ export async function queryBuildingCodeFiltered(
 ): Promise<RAGResult> {
   const { query, pageRanges, matchCount = DEFAULT_MATCH_COUNT } = params;
 
-  const needsExactSearch = /\b\d+\.\d+(\.\d+)?\b|section\s+\d+|table\s+\d+/i.test(query);
+  const needsExactSearch = EXACT_REFERENCE_REGEX.test(query);
 
   let chunks: MatchedChunk[] = [];
 
