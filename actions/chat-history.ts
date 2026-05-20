@@ -6,27 +6,16 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent } from '@/lib/auth';
-import { requireAuth, requireCSRF } from '@/lib/security';
+import { requireAuth, requireCSRF, verifyOwnership } from '@/lib/security';
 import { uuidSchema, paginationSchema, citationsArraySchema } from '@/lib/validations';
 import type { ChatSession, ChatMessage, Citation } from '@/types';
 
 // -----------------------------------------------------------------------------
-// Helper: Verify Session Ownership
+// Helper: Verify Session Ownership — wraps the generic helper (F6).
 // -----------------------------------------------------------------------------
 
 async function verifySessionOwnership(sessionId: string, userId: string): Promise<boolean> {
-  const validation = uuidSchema.safeParse(sessionId);
-  if (!validation.success) return false;
-  
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from('chat_sessions')
-    .select('user_id')
-    .eq('id', sessionId)
-    .single();
-  
-  if (error || !data) return false;
-  return data.user_id === userId;
+  return verifyOwnership('chat_sessions', 'id', sessionId, userId);
 }
 
 // -----------------------------------------------------------------------------

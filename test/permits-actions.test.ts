@@ -7,10 +7,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock auth
 const mockRequireAuth = vi.fn();
 const mockRequireCSRF = vi.fn();
-vi.mock('@/lib/security', () => ({
-  requireAuth: (...args: unknown[]) => mockRequireAuth(...args),
-  requireCSRF: (...args: unknown[]) => mockRequireCSRF(...args),
-}));
+vi.mock('@/lib/security', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/security')>('@/lib/security');
+  return {
+    ...actual,
+    requireAuth: (...args: unknown[]) => mockRequireAuth(...args),
+    requireCSRF: (...args: unknown[]) => mockRequireCSRF(...args),
+  };
+});
 
 const mockGetQuickSession = vi.fn();
 const mockLogAuditEvent = vi.fn().mockResolvedValue(undefined);

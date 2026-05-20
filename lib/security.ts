@@ -116,6 +116,42 @@ export async function requireAdmin(): Promise<SecurityCheckResult> {
 // CSRF Validation
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// Ownership check
+// -----------------------------------------------------------------------------
+
+/**
+ * Generic "does row {table}({idColumn}={recordId}) belong to {userId}?" check.
+ * Used to gate server actions on per-row ownership when the row also carries a
+ * `user_id` FK. Returns false for any error (validation, DB, missing row) so
+ * callers can fall through to a generic "access denied" path without leaking
+ * which case fired. (F6 / Simplify #6)
+ *
+ * Skips records where the `idColumn` value isn't a valid UUID — callers should
+ * not be passing arbitrary strings here, and a regex check up front is cheaper
+ * than a roundtrip to Postgres that would also reject the value.
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function verifyOwnership(
+  table: string,
+  idColumn: string,
+  recordId: string,
+  userId: string,
+): Promise<boolean> {
+  if (!UUID_RE.test(recordId)) return false;
+
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from(table)
+    .select('user_id')
+    .eq(idColumn, recordId)
+    .single();
+
+  if (error || !data) return false;
+  return (data as { user_id: string }).user_id === userId;
+}
+
 /**
  * Validate CSRF token from client.
  * Returns { valid: true } or { valid: false, error: string }

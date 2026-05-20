@@ -7,10 +7,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // Mock auth
 const mockRequireAuth = vi.fn();
 const mockRequireCSRF = vi.fn();
-vi.mock('@/lib/security', () => ({
-  requireAuth: (...args: unknown[]) => mockRequireAuth(...args),
-  requireCSRF: (...args: unknown[]) => mockRequireCSRF(...args),
-}));
+// verifyOwnership stays as the real implementation so the existing supabase
+// chain mocks continue to drive the "is this user the owner" decision per
+// test (set via mockSingle.mockResolvedValueOnce). Only the entry-point
+// guards are swapped out.
+vi.mock('@/lib/security', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/security')>('@/lib/security');
+  return {
+    ...actual,
+    requireAuth: (...args: unknown[]) => mockRequireAuth(...args),
+    requireCSRF: (...args: unknown[]) => mockRequireCSRF(...args),
+  };
+});
 
 const mockGetQuickSession = vi.fn();
 const mockLogAuditEvent = vi.fn().mockResolvedValue(undefined);

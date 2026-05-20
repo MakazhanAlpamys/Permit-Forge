@@ -6,7 +6,7 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
-import { requireAuth, requireCSRF } from '@/lib/security';
+import { requireAuth, requireCSRF, verifyOwnership } from '@/lib/security';
 import {
   uuidSchema,
   createPermitSchema,
@@ -27,22 +27,12 @@ import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
 export type { CreatePermitInput, UpdateBuildingDetailsInput, UpdateComplianceRequirementsInput };
 
 // -----------------------------------------------------------------------------
-// Helper: Verify Permit Ownership
+// Helper: Verify Permit Ownership — thin wrapper around the generic helper so
+// existing callers stay readable. (F6 collapsed the body into lib/security.ts.)
 // -----------------------------------------------------------------------------
 
 async function verifyPermitOwnership(permitId: string, userId: string): Promise<boolean> {
-  const validation = uuidSchema.safeParse(permitId);
-  if (!validation.success) return false;
-
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from('permit_applications')
-    .select('user_id')
-    .eq('id', permitId)
-    .single();
-
-  if (error || !data) return false;
-  return data.user_id === userId;
+  return verifyOwnership('permit_applications', 'id', permitId, userId);
 }
 
 // -----------------------------------------------------------------------------
