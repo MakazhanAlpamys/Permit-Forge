@@ -4,7 +4,7 @@
 // New Permit Application — Multi-Step Form
 // ============================================================================
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Header } from '@/components/dashboard';
 import { PermitFormStepper, PermitFormStep1, PermitFormStep2, PermitFormStep3, ComplianceCheckPanel, FileUploadZone } from '@/components/permits';
@@ -70,7 +70,19 @@ function applyPermitToFormState(
   setStep3({ ...EMPTY_COMPLIANCE, ...(permit.complianceRequirements || {}) });
 }
 
+// B9 fixup: useSearchParams forces dynamic rendering and Next 15 demands a
+// Suspense boundary above any component that calls it, otherwise the static
+// prerender step bails out. Wrap the real form in <Suspense> via the default
+// export below and keep the implementation in NewPermitPageInner.
 export default function NewPermitPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewPermitPageInner />
+    </Suspense>
+  );
+}
+
+function NewPermitPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlPermitId = searchParams.get('id');
