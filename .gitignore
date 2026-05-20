@@ -49,3 +49,6 @@ phase2-clickpath.md
 phase2-coverage.md
 phase2-simplify.md
 
+# Claude Code runtime state
+.claude/
+

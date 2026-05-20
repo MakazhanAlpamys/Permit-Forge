@@ -1,13 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Raise Server Action body size limit to allow PDF uploads up to 100 MB.
-  // Default is 1 MB which causes 400 errors for any realistic PDF file.
-  experimental: {
-    serverActions: {
-      bodySizeLimit: '100mb',
-    },
-  },
+  // C5H/H6: large PDF uploads now go through the /api/admin/documents/upload
+  // API route, which is not bound by serverActions.bodySizeLimit. Restoring
+  // the Next default (1MB) for every other server action shrinks the blast
+  // radius of any future server-action endpoint that forgot to validate body
+  // size itself.
 
   // Force Vercel to include pdfjs-dist worker file in Lambda deployments
   outputFileTracingIncludes: {

@@ -11,6 +11,7 @@ import { clearDocumentTreeCache } from '@/lib/tree-cache';
 import { invalidateRegistryCache } from '@/lib/document-registry';
 import { invalidateProfileCache } from '@/lib/document-selector';
 import { DOCUMENT_PDF_LIMITS } from '@/lib/constants';
+import { uploadDocumentPdfShared } from '@/lib/document-pdf-upload';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -409,6 +410,12 @@ export async function checkPdfReingest(
 // Upload Document PDF to Supabase Storage
 // -----------------------------------------------------------------------------
 
+/**
+ * @deprecated C5H/H6: prefer POST /api/admin/documents/upload — this server
+ * action remains as a thin shim so existing tests and any direct callers keep
+ * working, but the UI uses the API route to avoid pinning the global server-
+ * actions body limit to 100MB.
+ */
 export async function uploadDocumentPDF(
   documentId: string,
   formData: FormData,
@@ -417,10 +424,6 @@ export async function uploadDocumentPDF(
   success: boolean;
   storagePath?: string;
   error?: string;
-  /**
-   * B5: SHA-256 of the bytes that were uploaded. The client compares this to
-   * the previous pdf_hash to decide whether re-ingesting will drop chunks.
-   */
   pdfHash?: string;
   previousPdfHash?: string | null;
 }> {
@@ -432,86 +435,20 @@ export async function uploadDocumentPDF(
   const csrf = await requireCSRF(csrfToken);
   if (!csrf.valid) return { success: false, error: csrf.error };
 
-  // C21H/M11: same slug check on the upload path (documentId becomes part of
-  // the Storage path below; a malformed id could escape the storage prefix).
-  if (!documentId || !/^[a-z0-9-]{1,100}$/.test(documentId)) {
-    return { success: false, error: 'Invalid documentId' };
-  }
-
   const file = formData.get('file') as File | null;
   if (!file || !(file instanceof File)) {
     return { success: false, error: 'No file provided' };
   }
 
-  // Validate file type
-  if (!DOCUMENT_PDF_LIMITS.allowedMimeTypes.includes(file.type as 'application/pdf')) {
-    return { success: false, error: 'Only PDF files are allowed' };
-  }
-
-  // Validate file size
-  if (file.size > DOCUMENT_PDF_LIMITS.maxSizeBytes) {
-    return { success: false, error: `File too large. Maximum size is ${DOCUMENT_PDF_LIMITS.maxSizeMB}MB` };
-  }
-
   try {
-    const supabase = createAdminClient();
-
-    // B5: read the previous hash before overwriting it so we can return both
-    // to the client. The client compares them to decide whether to prompt
-    // "Replace existing N chunks?" before re-ingestion.
-    const { data: priorRow } = await supabase
-      .from('document_registry')
-      .select('pdf_hash')
-      .eq('id', documentId)
-      .single();
-    const previousPdfHash = (priorRow?.pdf_hash as string | null) ?? null;
-
-    // Sanitize filename
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-    const storagePath = `documents/${documentId}/${safeName}`;
-
-    // Upload to Supabase Storage
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = new Uint8Array(arrayBuffer);
-    const pdfHash = await sha256Hex(buffer);
-
-    const { error: uploadError } = await supabase.storage
-      .from(DOCUMENT_PDF_LIMITS.storageBucket)
-      .upload(storagePath, buffer, {
-        contentType: 'application/pdf',
-        upsert: true,
-      });
-
-    if (uploadError) {
-      return { success: false, error: `Upload failed: ${uploadError.message}` };
-    }
-
-    // Update document_registry with storage_path, file_name, and pdf_hash.
-    const { error: updateError } = await supabase
-      .from('document_registry')
-      .update({
-        storage_path: storagePath,
-        file_name: file.name,
-        pdf_hash: pdfHash,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', documentId);
-
-    if (updateError) {
-      return { success: false, error: `DB update failed: ${updateError.message}` };
-    }
-
-    invalidateRegistryCache();
-
     const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'pdf_ingested',
-      metadata: { stage: 'pdf_uploaded', documentId, fileName: file.name, fileSize: file.size, pdfHash },
-      ...metadata,
+    return await uploadDocumentPdfShared({
+      documentId,
+      file,
+      uploadedByUserId: authCheck.user.id,
+      ipAddress: metadata.ipAddress,
+      userAgent: metadata.userAgent,
     });
-
-    return { success: true, storagePath, pdfHash, previousPdfHash };
   } catch (error) {
     return {
       success: false,
@@ -545,20 +482,3 @@ function mapDbRow(row: Record<string, unknown>): DocumentRecord {
   };
 }
 
-// B5: SHA-256 of an arbitrary buffer, hex-encoded. Used to fingerprint the
-// uploaded PDF so the admin UI can detect a true content change vs. just a
-// "re-ingest" click on the same file.
-async function sha256Hex(buffer: Uint8Array | ArrayBuffer): Promise<string> {
-  // crypto.subtle.digest insists on a plain ArrayBuffer (not SharedArrayBuffer).
-  // Copy into a fresh ArrayBuffer to satisfy the type checker and stay safe.
-  const source = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
-  const ab = new ArrayBuffer(source.byteLength);
-  new Uint8Array(ab).set(source);
-  const digest = await crypto.subtle.digest('SHA-256', ab);
-  const bytes = new Uint8Array(digest);
-  let hex = '';
-  for (let i = 0; i < bytes.length; i++) {
-    hex += bytes[i].toString(16).padStart(2, '0');
-  }
-  return hex;
-}

@@ -9,7 +9,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getAllRegisteredDocuments,
   upsertDocument,
-  uploadDocumentPDF,
   deleteDocument,
   restoreDocument,
   checkPdfReingest,
@@ -243,15 +242,27 @@ export function DocumentManagement() {
         return;
       }
 
-      // Step 2: Upload PDF if selected
+      // Step 2: Upload PDF if selected.
+      // C5H/H6: uploads go through /api/admin/documents/upload (an API route)
+      // instead of the uploadDocumentPDF server action, so we don't need a
+      // 100MB body cap on every server action.
       if (pdfFile) {
         setUploading(true);
         const uploadData = new FormData();
+        uploadData.append('documentId', docId);
         uploadData.append('file', pdfFile);
 
         let uploadResult: { success: boolean; error?: string };
         try {
-          uploadResult = await uploadDocumentPDF(docId, uploadData, csrfTokenRef.current || '');
+          const resp = await fetch('/api/admin/documents/upload', {
+            method: 'POST',
+            headers: { 'x-csrf-token': csrfTokenRef.current || '' },
+            body: uploadData,
+          });
+          uploadResult = await resp.json().catch(() => ({
+            success: false,
+            error: `Upload failed: HTTP ${resp.status}`,
+          }));
         } finally {
           setUploading(false);
         }
