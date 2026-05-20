@@ -20,7 +20,7 @@ import type {
   PermitApplication,
   PermitStatusHistoryEntry,
 } from '@/types';
-import { transformPermit } from '@/lib/transforms';
+import { transformPermit, type PermitRow } from '@/lib/transforms';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
 
 // Re-export input types for components
@@ -365,7 +365,7 @@ export async function getMyPermits(): Promise<{ data: PermitApplication[]; error
 
     if (error) throw error;
 
-    return { data: (data || []).map(transformPermit) };
+    return { data: ((data || []) as unknown as PermitRow[]).map(transformPermit) };
   } catch (error) {
     console.error('getMyPermits error:', error);
     return {
@@ -420,7 +420,7 @@ export async function getPermitById(
       return { data: null, error: error?.message || 'Permit not found' };
     }
 
-    return { data: transformPermit(data) };
+    return { data: transformPermit(data as unknown as PermitRow) };
   } catch (error) {
     console.error('getPermitById error:', error);
     return {
@@ -465,8 +465,17 @@ export async function getPermitHistory(
 
     if (error) throw error;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return { data: (data || []).map((row: any) => ({
+    interface StatusHistoryRow {
+      id: string;
+      permit_id: string;
+      from_status: string | null;
+      to_status: string;
+      changed_by: string;
+      comment: string | null;
+      created_at: string;
+    }
+
+    return { data: (data || []).map((row: StatusHistoryRow) => ({
       id: row.id,
       permitId: row.permit_id,
       fromStatus: row.from_status,

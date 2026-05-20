@@ -9,7 +9,7 @@ import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { requireAdmin, requireCSRF, requireActionRateLimit } from '@/lib/security';
 import { uuidSchema, reviewPermitSchema, type ReviewPermitInput } from '@/lib/validations';
 import type { PermitApplication, PermitStats } from '@/types';
-import { transformPermit } from '@/lib/transforms';
+import { transformPermit, type PermitRow } from '@/lib/transforms';
 
 export type { ReviewPermitInput };
 
@@ -43,7 +43,7 @@ export async function getAdminPermits(
 
     if (error) throw error;
 
-    return { data: (data || []).map(transformPermit) };
+    return { data: ((data || []) as unknown as PermitRow[]).map(transformPermit) };
   } catch (error) {
     console.error('getAdminPermits error:', error);
     return {
@@ -103,8 +103,13 @@ export async function reviewPermit(
     }
 
     // Build update data
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const updateData: any = {
+    const updateData: {
+      status: string;
+      reviewed_by: string;
+      reviewed_at: string;
+      review_comments: string | null;
+      revision_notes?: string | null;
+    } = {
       status: newStatus,
       reviewed_by: authCheck.user.id,
       reviewed_at: new Date().toISOString(),

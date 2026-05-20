@@ -81,7 +81,7 @@ Risk legend: 🟢 LOW · 🟡 MEDIUM · 🔴 HIGH (touches hot path, needs manua
 - [x] **C8H — H11** Add rate limits to `runComplianceCheck`, `createPermit`, `updatePermit*`, admin permit-review actions, all `actions/admin.ts` mutators. Use existing `check_rate_limit` RPC. 🟡 — `459cec7`
 - [x] **C9H — H12** In `adminUpdateUserRole` and `blockUser`, block the transition if it would leave zero unblocked admins. Use `SELECT count(*) FROM users WHERE role='admin' AND blocked_at IS NULL FOR UPDATE`. 🟢 — `b8db47b`
 - [x] **C10H — H13** Convert `check_rate_limit` to a single atomic `INSERT ... ON CONFLICT DO UPDATE RETURNING request_count` so SELECT-CHECK-INSERT race goes away. 🟡 — `d55d07b` (used per-user pg_advisory_xact_lock instead — atomic via lock, no schema change needed)
-- [ ] **C11H — H21** Add rate limit to `/api/permits/[id]/certificate` (existing chat bucket is wrong — give it its own bucket). 🟢
+- [x] **C11H — H21** Add rate limit to `/api/permits/[id]/certificate` (existing chat bucket is wrong — give it its own bucket). 🟢 — `72f0036` (introduced per-endpoint buckets; cert gets endpoint='permit_certificate', 5/min)
 - [ ] **C12H — H22** Replace `as any` casts in `lib/transforms.ts`, `actions/permit-attachments.ts`, `actions/admin-permits.ts`, `actions/permits.ts` with explicit DB row types. 🟡
 - [ ] **C13H — M1 + M2** Always set `secure: true` and `sameSite: 'strict'` on session, CSRF, and `ef_blocked_reason` cookies. Document local-dev workaround via `NEXT_PUBLIC_DEV_INSECURE_COOKIES=1` env if needed. 🟢
 - [ ] **C14H — M3 (scoped)** On `adminUpdateUserRole` and password change, bump a `token_version` column on `users`. Verify `token_version` in `middleware.ts` block-status fetch (same DB hop). Reject session if mismatched. 🟡

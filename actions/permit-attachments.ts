@@ -12,8 +12,18 @@ import { validateFile, generateStoragePath } from '@/lib/file-upload';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
 import type { PermitAttachment } from '@/types';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function transformAttachment(row: any): PermitAttachment {
+interface AttachmentRow {
+  id: string;
+  permit_id: string;
+  file_name: string;
+  file_size: number;
+  file_type: string;
+  storage_path: string;
+  uploaded_by: string;
+  uploaded_at: string;
+}
+
+function transformAttachment(row: AttachmentRow): PermitAttachment {
   return {
     id: row.id,
     permitId: row.permit_id,
