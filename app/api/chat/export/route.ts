@@ -7,6 +7,16 @@ import { getQuickSession } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase-server';
 import { uuidSchema } from '@/lib/validations';
 
+/**
+ * Escape characters that have special meaning inside a Markdown table cell.
+ * Pipes split cells, backticks open inline code, leading/trailing whitespace
+ * confuses some renderers. We only use this on attacker-controlled fields
+ * (document name, section, title) that flow into the citation list. (C19H/M9)
+ */
+function mdEscape(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/`/g, '\\`');
+}
+
 export async function GET(request: NextRequest) {
   try {
     const user = await getQuickSession();
@@ -67,8 +77,8 @@ export async function GET(request: NextRequest) {
         markdown += `<details>\n<summary>Sources (${msg.citations.length})</summary>\n\n`;
         for (const citation of msg.citations) {
           const page = citation.page || citation.startPage || '?';
-          const section = citation.section || '';
-          const doc = citation.documentName || '';
+          const section = mdEscape(String(citation.section || ''));
+          const doc = mdEscape(String(citation.documentName || ''));
           markdown += `- ${doc ? `[${doc}] ` : ''}Page ${page}${section ? `, Section ${section}` : ''}\n`;
         }
         markdown += `\n</details>\n\n`;
