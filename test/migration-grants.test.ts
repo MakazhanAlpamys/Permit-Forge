@@ -98,6 +98,30 @@ describe('migration grants — semantic cache RPCs (A4 / H19)', () => {
   });
 });
 
+describe('migration constraints — permit_status_history (D5 / M12)', () => {
+  // M12: permit_status_history.from_status / to_status are loose TEXT today,
+  // so a bad insert could write an unrecognized status (e.g. typo "approveed")
+  // that downstream code silently ignores. Bound them to the same enum used by
+  // permit_applications.status.
+  const VALUES = '(draft|submitted|under_review|approved|rejected|revision_requested)';
+
+  it('constrains to_status to the permit status enum', () => {
+    const pattern = new RegExp(
+      `to_status[\\s\\S]*?CHECK\\s*\\(\\s*to_status\\s+IN\\s*\\([^)]*?'${VALUES}'`,
+      'i',
+    );
+    expect(sql).toMatch(pattern);
+  });
+
+  it('constrains from_status to NULL or the permit status enum', () => {
+    const pattern = new RegExp(
+      `from_status[\\s\\S]*?CHECK\\s*\\(\\s*from_status\\s+IS\\s+NULL\\s+OR\\s+from_status\\s+IN`,
+      'i',
+    );
+    expect(sql).toMatch(pattern);
+  });
+});
+
 describe('migration search_path — SECURITY DEFINER analytics functions (A7 / M16)', () => {
   // M16: SECURITY DEFINER functions without a pinned search_path are vulnerable
   // to search-path-injection attacks. Pin each to (public, pg_temp).

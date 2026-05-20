@@ -245,8 +245,10 @@ CREATE INDEX permit_apps_project_type_idx ON permit_applications(project_type);
 CREATE TABLE permit_status_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   permit_id UUID NOT NULL REFERENCES permit_applications(id) ON DELETE CASCADE,
-  from_status TEXT,
-  to_status TEXT NOT NULL,
+  from_status TEXT
+    CHECK (from_status IS NULL OR from_status IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'revision_requested')),
+  to_status TEXT NOT NULL
+    CHECK (to_status IN ('draft', 'submitted', 'under_review', 'approved', 'rejected', 'revision_requested')),
   changed_by UUID REFERENCES users(id) ON DELETE SET NULL,
   comment TEXT,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
