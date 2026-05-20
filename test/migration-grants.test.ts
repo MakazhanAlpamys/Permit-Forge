@@ -98,6 +98,56 @@ describe('migration grants — semantic cache RPCs (A4 / H19)', () => {
   });
 });
 
+describe('migration RLS ownership policies (A1 / C3)', () => {
+  // C3: USING(true) on user-owned tables was masked by service_role today, but
+  // a single anon-key read with a JWT would expose everyone's data. Replace
+  // with ownership-based RLS that uses auth.uid().
+  it('does NOT leave USING (true) on any user-owned table for authenticated', () => {
+    const offending = [
+      'chat_sessions', 'chat_messages',
+      'permit_applications', 'permit_status_history', 'permit_attachments',
+      'notifications', 'permit_certificates',
+    ];
+    for (const table of offending) {
+      // Match a full CREATE POLICY statement on the table that targets
+      // authenticated with USING (true). Use a tighter window so other SQL
+      // (like information_schema lookups) doesn't get mis-matched.
+      const bad = new RegExp(
+        `CREATE\\s+POLICY[^;]*\\bON\\s+${table}\\b[^;]*FOR\\s+ALL\\s+TO\\s+authenticated[^;]*USING\\s*\\(\\s*true\\s*\\)[^;]*;`,
+        'i',
+      );
+      expect(sql, `${table} should not have USING(true) for authenticated`).not.toMatch(bad);
+    }
+  });
+
+  const OWN_USER_ID_TABLES = ['chat_sessions', 'permit_applications', 'notifications'];
+  for (const table of OWN_USER_ID_TABLES) {
+    it(`${table} has an ownership policy on user_id = auth.uid()`, () => {
+      const pattern = new RegExp(
+        `ON\\s+${table}[\\s\\S]{0,300}FOR\\s+ALL\\s+TO\\s+authenticated[\\s\\S]{0,300}user_id\\s*=\\s*\\(\\s*SELECT\\s+auth\\.uid\\(\\)\\s*\\)`,
+        'i',
+      );
+      expect(sql).toMatch(pattern);
+    });
+  }
+
+  const PARENT_OWN_TABLES = [
+    { table: 'chat_messages', parent: 'chat_sessions', col: 'session_id' },
+    { table: 'permit_status_history', parent: 'permit_applications', col: 'permit_id' },
+    { table: 'permit_attachments', parent: 'permit_applications', col: 'permit_id' },
+    { table: 'permit_certificates', parent: 'permit_applications', col: 'permit_id' },
+  ];
+  for (const { table, parent, col } of PARENT_OWN_TABLES) {
+    it(`${table} has an ownership policy via parent ${parent}.user_id`, () => {
+      const pattern = new RegExp(
+        `ON\\s+${table}[\\s\\S]{0,300}FOR\\s+ALL\\s+TO\\s+authenticated[\\s\\S]{0,500}EXISTS[\\s\\S]{0,200}FROM\\s+${parent}[\\s\\S]{0,200}id\\s*=\\s*${table}\\.${col}[\\s\\S]{0,200}user_id\\s*=\\s*\\(\\s*SELECT\\s+auth\\.uid\\(\\)\\s*\\)`,
+        'i',
+      );
+      expect(sql).toMatch(pattern);
+    });
+  }
+});
+
 describe('migration zero-admin guards (C9H / H12)', () => {
   // H12: blocking the only remaining unblocked admin, or demoting them to
   // 'user', would lock everyone out of admin functions. Static-check that

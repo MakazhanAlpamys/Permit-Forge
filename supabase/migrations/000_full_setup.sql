@@ -1528,13 +1528,35 @@ CREATE POLICY "Allow read document trees" ON document_trees
 CREATE POLICY "Service role full access to document trees" ON document_trees
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- chat_sessions: authenticated + service_role only (auth in app layer)
-CREATE POLICY "Allow all sessions operations" ON chat_sessions
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- ============================================================================
+-- Ownership-based policies (A1/C3). Service_role bypasses RLS by definition,
+-- so admin server actions (createAdminClient) keep their unrestricted access.
+-- The authenticated grants are tightened to "only your own rows" via auth.uid()
+-- — defense in depth in case a future read path moves to the user-context
+-- (anon-key + JWT) client introduced in A2.
+-- ============================================================================
 
--- chat_messages: authenticated + service_role only (auth in app layer)
-CREATE POLICY "Allow all messages operations" ON chat_messages
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- chat_sessions: own sessions only
+CREATE POLICY "Users access own chat_sessions" ON chat_sessions
+  FOR ALL TO authenticated
+  USING (user_id = (SELECT auth.uid()))
+  WITH CHECK (user_id = (SELECT auth.uid()));
+CREATE POLICY "Service role full access to chat_sessions" ON chat_sessions
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- chat_messages: ownership via parent chat_sessions
+CREATE POLICY "Users access own chat_messages" ON chat_messages
+  FOR ALL TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM chat_sessions cs WHERE cs.id = chat_messages.session_id
+            AND cs.user_id = (SELECT auth.uid()))
+  )
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM chat_sessions cs WHERE cs.id = chat_messages.session_id
+            AND cs.user_id = (SELECT auth.uid()))
+  );
+CREATE POLICY "Service role full access to chat_messages" ON chat_messages
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- audit_logs: service_role only (written by server actions)
 CREATE POLICY "Service role full access to audit_logs" ON audit_logs
@@ -1544,25 +1566,63 @@ CREATE POLICY "Service role full access to audit_logs" ON audit_logs
 CREATE POLICY "Service role full access to rate_limits" ON rate_limits
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- permit_applications: authenticated + service_role (auth in app layer)
-CREATE POLICY "Allow all permit_applications operations" ON permit_applications
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- permit_applications: own permits only
+CREATE POLICY "Users access own permit_applications" ON permit_applications
+  FOR ALL TO authenticated
+  USING (user_id = (SELECT auth.uid()))
+  WITH CHECK (user_id = (SELECT auth.uid()));
+CREATE POLICY "Service role full access to permit_applications" ON permit_applications
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- permit_status_history: authenticated + service_role
-CREATE POLICY "Allow all permit_status_history operations" ON permit_status_history
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- permit_status_history: ownership via parent permit
+CREATE POLICY "Users access own permit_status_history" ON permit_status_history
+  FOR ALL TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM permit_applications pa WHERE pa.id = permit_status_history.permit_id
+            AND pa.user_id = (SELECT auth.uid()))
+  )
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM permit_applications pa WHERE pa.id = permit_status_history.permit_id
+            AND pa.user_id = (SELECT auth.uid()))
+  );
+CREATE POLICY "Service role full access to permit_status_history" ON permit_status_history
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- permit_attachments: authenticated + service_role
-CREATE POLICY "Allow all permit_attachments operations" ON permit_attachments
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- permit_attachments: ownership via parent permit
+CREATE POLICY "Users access own permit_attachments" ON permit_attachments
+  FOR ALL TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM permit_applications pa WHERE pa.id = permit_attachments.permit_id
+            AND pa.user_id = (SELECT auth.uid()))
+  )
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM permit_applications pa WHERE pa.id = permit_attachments.permit_id
+            AND pa.user_id = (SELECT auth.uid()))
+  );
+CREATE POLICY "Service role full access to permit_attachments" ON permit_attachments
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- notifications: authenticated + service_role
-CREATE POLICY "Allow all notifications operations" ON notifications
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- notifications: own rows only
+CREATE POLICY "Users access own notifications" ON notifications
+  FOR ALL TO authenticated
+  USING (user_id = (SELECT auth.uid()))
+  WITH CHECK (user_id = (SELECT auth.uid()));
+CREATE POLICY "Service role full access to notifications" ON notifications
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- permit_certificates: authenticated + service_role
-CREATE POLICY "Allow all permit_certificates operations" ON permit_certificates
-  FOR ALL TO authenticated, service_role USING (true) WITH CHECK (true);
+-- permit_certificates: ownership via parent permit
+CREATE POLICY "Users access own permit_certificates" ON permit_certificates
+  FOR ALL TO authenticated
+  USING (
+    EXISTS (SELECT 1 FROM permit_applications pa WHERE pa.id = permit_certificates.permit_id
+            AND pa.user_id = (SELECT auth.uid()))
+  )
+  WITH CHECK (
+    EXISTS (SELECT 1 FROM permit_applications pa WHERE pa.id = permit_certificates.permit_id
+            AND pa.user_id = (SELECT auth.uid()))
+  );
+CREATE POLICY "Service role full access to permit_certificates" ON permit_certificates
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- parent_chunks: read for authenticated, full for service_role
 CREATE POLICY "Allow read parent_chunks" ON parent_chunks
