@@ -199,8 +199,12 @@ export async function deleteDocument(
   const csrf = await requireCSRF(csrfToken);
   if (!csrf.valid) return { success: false, error: csrf.error };
 
-  if (!documentId) {
-    return { success: false, error: 'Missing documentId' };
+  // C21H/M11: validate ID shape before reaching the RPC. document_registry.id
+  // is a slug (TEXT, not UUID), produced by the same sanitization on insert
+  // (lowercase a-z, 0-9, hyphen, max 100). Reject anything else so a bad call
+  // can't enter the RPC with a malformed identifier.
+  if (!documentId || !/^[a-z0-9-]{1,100}$/.test(documentId)) {
+    return { success: false, error: 'Invalid documentId' };
   }
 
   try {
@@ -340,8 +344,10 @@ export async function uploadDocumentPDF(
   const csrf = await requireCSRF(csrfToken);
   if (!csrf.valid) return { success: false, error: csrf.error };
 
-  if (!documentId) {
-    return { success: false, error: 'Missing documentId' };
+  // C21H/M11: same slug check on the upload path (documentId becomes part of
+  // the Storage path below; a malformed id could escape the storage prefix).
+  if (!documentId || !/^[a-z0-9-]{1,100}$/.test(documentId)) {
+    return { success: false, error: 'Invalid documentId' };
   }
 
   const file = formData.get('file') as File | null;

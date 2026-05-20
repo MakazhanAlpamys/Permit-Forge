@@ -289,7 +289,7 @@ describe('Document Registry Server Actions', () => {
       const result = await deleteDocument('', false, 'csrf-token');
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Missing documentId');
+      expect(result.error).toBe('Invalid documentId');
     });
 
     it('should clear chunks when requested', async () => {
@@ -392,7 +392,7 @@ describe('Document Registry Server Actions', () => {
       const result = await uploadDocumentPDF('', createPDFFormData(), 'csrf-token');
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Missing documentId');
+      expect(result.error).toBe('Invalid documentId');
     });
 
     it('should reject when no file provided', async () => {
