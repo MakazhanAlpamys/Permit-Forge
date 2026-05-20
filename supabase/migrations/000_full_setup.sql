@@ -126,6 +126,10 @@ CREATE INDEX dubai_code_chunks_metadata_idx
 CREATE INDEX idx_chunks_start_page  ON dubai_code_chunks ((metadata->>'startPage'));
 CREATE INDEX idx_chunks_end_page    ON dubai_code_chunks ((metadata->>'endPage'));
 CREATE INDEX idx_chunks_section     ON dubai_code_chunks ((metadata->>'section'));
+-- D8/M15: text_pattern_ops variant so find_chunks_by_section's
+-- LIKE 'section.%' predicates can pick the index under any collation.
+CREATE INDEX idx_chunks_section_pattern
+  ON dubai_code_chunks ((metadata->>'section') text_pattern_ops);
 CREATE INDEX idx_chunks_content_type ON dubai_code_chunks ((metadata->>'contentType'));
 CREATE INDEX idx_chunks_document_name ON dubai_code_chunks(document_name);
 CREATE INDEX idx_chunks_parent_id ON dubai_code_chunks(parent_id);

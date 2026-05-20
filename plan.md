@@ -114,7 +114,7 @@ Risk legend: 🟢 LOW · 🟡 MEDIUM · 🔴 HIGH (touches hot path, needs manua
 
 - [x] **D1 — H14** Replace correlated subqueries in `get_all_users_admin` with a single JOIN aggregation. Test admin user list on >100 rows. 🟡 — `4240bc9`
 - [x] **D2 — H15 + H16** Wire admin dashboard to read from `analytics_daily`. Refresh the materialized view on admin "Refresh" button OR after every audit-relevant mutation (post-commit trigger acceptable for diploma scope). 🟡 — `3f3fa6c`
-- [ ] **D3 — H17** Add expression index `CREATE INDEX dubai_code_chunks_content_lower_trgm_idx ON dubai_code_chunks USING gin (LOWER(content) gin_trgm_ops)` so `search_dubai_code_exact` stops seq-scanning. 🟡
+- [x] **D3 — H17** Add expression index `CREATE INDEX dubai_code_chunks_content_lower_trgm_idx ON dubai_code_chunks USING gin (LOWER(content) gin_trgm_ops)` so `search_dubai_code_exact` stops seq-scanning. 🟡 — `b1e141f`
 - [ ] **D4 — H18** Rewrite `match_dubai_code_hybrid_filtered` so the vector-search step is its own indexable subquery (no CTE materialization that hides HNSW). Add `EXPLAIN ANALYZE` sample to PR description. 🔴
 - [x] **D5 — M12** Add `CHECK (status IN ('draft','submitted','under_review','approved','rejected','revision_requested'))` on `permit_status_history.status`. 🟢 — `d1fce5d`
 - [x] **D6 — M13** Add B-tree index on `permit_status_history.changed_by`. 🟢 — `5dbecc2`
