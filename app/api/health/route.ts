@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase-server';
+import { applySecurityHeaders } from '@/lib/api-security-headers';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,12 +49,14 @@ export async function GET() {
     healthy = false;
   }
 
-  return Response.json(
-    {
-      status: healthy ? 'ok' : 'degraded',
-      timestamp: new Date().toISOString(),
-      checks,
-    },
-    { status: healthy ? 200 : 503 }
+  return applySecurityHeaders(
+    Response.json(
+      {
+        status: healthy ? 'ok' : 'degraded',
+        timestamp: new Date().toISOString(),
+        checks,
+      },
+      { status: healthy ? 200 : 503 }
+    )
   );
 }

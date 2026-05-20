@@ -7,6 +7,7 @@ import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { uuidSchema } from '@/lib/validations';
 import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 import { generateCertificateNumber, generateCertificatePDF, type CertificateData } from '@/lib/permit-certificate';
+import { applySecurityHeaders } from '@/lib/api-security-headers';
 
 export async function GET(
   request: NextRequest,
@@ -15,22 +16,24 @@ export async function GET(
   try {
     const user = await getQuickSession();
     if (!user) {
-      return Response.json({ error: 'Not authenticated' }, { status: 401 });
+      return applySecurityHeaders(Response.json({ error: 'Not authenticated' }, { status: 401 }));
     }
 
     // Rate limiting
     const rateLimitResult = await checkRateLimit(user.id);
     if (!rateLimitResult.allowed) {
-      return Response.json(
-        { error: 'Rate limited', retryAfter: rateLimitResult.retryAfterMs },
-        { status: 429 }
+      return applySecurityHeaders(
+        Response.json(
+          { error: 'Rate limited', retryAfter: rateLimitResult.retryAfterMs },
+          { status: 429 }
+        )
       );
     }
 
     const { id: permitId } = await params;
     const idValidation = uuidSchema.safeParse(permitId);
     if (!idValidation.success) {
-      return Response.json({ error: 'Invalid permit ID' }, { status: 400 });
+      return applySecurityHeaders(Response.json({ error: 'Invalid permit ID' }, { status: 400 }));
     }
 
     // Fetch permit data
@@ -47,11 +50,11 @@ export async function GET(
     const { data: permit, error: fetchError } = await query.single();
 
     if (fetchError || !permit) {
-      return Response.json({ error: 'Permit not found' }, { status: 404 });
+      return applySecurityHeaders(Response.json({ error: 'Permit not found' }, { status: 404 }));
     }
 
     if (permit.status !== 'approved') {
-      return Response.json({ error: 'Certificate only available for approved permits' }, { status: 400 });
+      return applySecurityHeaders(Response.json({ error: 'Certificate only available for approved permits' }, { status: 400 }));
     }
 
     // Check if certificate already exists
@@ -104,18 +107,19 @@ export async function GET(
       }
     }
 
-    return new Response(new Uint8Array(pdfBuffer), {
-      headers: {
-        'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="permit-certificate-${certNumber}.pdf"`,
-        'Cache-Control': 'no-cache',
-      },
-    });
+    return applySecurityHeaders(
+      new Response(new Uint8Array(pdfBuffer), {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="permit-certificate-${certNumber}.pdf"`,
+          'Cache-Control': 'no-cache',
+        },
+      })
+    );
   } catch (error) {
     console.error('Certificate generation error:', error);
-    return Response.json(
-      { error: 'Failed to generate certificate' },
-      { status: 500 }
+    return applySecurityHeaders(
+      Response.json({ error: 'Failed to generate certificate' }, { status: 500 })
     );
   }
 }

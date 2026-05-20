@@ -13,6 +13,19 @@ import {
   buildContext,
   CRAG_FAIL_RESPONSE,
 } from '@/lib/chat-pipeline';
+import { applySecurityHeaders } from '@/lib/api-security-headers';
+
+// A6: every Response leaving this route must carry the security headers from
+// applySecurityHeaders. jsonError() centralizes the boilerplate for the JSON
+// error responses; streaming success responses wrap their own Response below.
+function jsonError(payload: Record<string, unknown>, status: number): Response {
+  return applySecurityHeaders(
+    new Response(JSON.stringify(payload), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  );
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -21,10 +34,7 @@ export async function POST(request: NextRequest) {
     // =========================================================================
     const user = await getQuickSession();
     if (!user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return jsonError({ error: 'Unauthorized' }, 401);
     }
 
     // =========================================================================
@@ -39,39 +49,24 @@ export async function POST(request: NextRequest) {
     const allowedHost = request.nextUrl.host;
     const checkHost = origin ?? referer;
     if (!checkHost) {
-      return new Response(JSON.stringify({ error: 'Origin or Referer required' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return jsonError({ error: 'Origin or Referer required' }, 403);
     }
     try {
       const sourceHost = new URL(checkHost).host;
       if (sourceHost !== allowedHost) {
-        return new Response(JSON.stringify({ error: 'Origin not allowed' }), {
-          status: 403,
-          headers: { 'Content-Type': 'application/json' }
-        });
+        return jsonError({ error: 'Origin not allowed' }, 403);
       }
     } catch {
-      return new Response(JSON.stringify({ error: 'Invalid origin' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return jsonError({ error: 'Invalid origin' }, 403);
     }
 
     const csrfToken = request.headers.get('x-csrf-token');
     if (!csrfToken) {
-      return new Response(JSON.stringify({ error: 'CSRF token required' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return jsonError({ error: 'CSRF token required' }, 403);
     }
     const csrfValid = await validateCSRFToken(csrfToken);
     if (!csrfValid) {
-      return new Response(JSON.stringify({ error: 'Invalid CSRF token' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return jsonError({ error: 'Invalid CSRF token' }, 403);
     }
 
     // =========================================================================
@@ -79,13 +74,7 @@ export async function POST(request: NextRequest) {
     // =========================================================================
     const rateLimitResult = await checkRateLimit(user.id);
     if (!rateLimitResult.allowed) {
-      return new Response(JSON.stringify({
-        error: 'Rate limited',
-        retryAfter: rateLimitResult.retryAfterMs
-      }), {
-        status: 429,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return jsonError({ error: 'Rate limited', retryAfter: rateLimitResult.retryAfterMs }, 429);
     }
 
     // =========================================================================
@@ -95,13 +84,7 @@ export async function POST(request: NextRequest) {
     const validation = chatMessageSchema.safeParse(body);
 
     if (!validation.success) {
-      return new Response(JSON.stringify({
-        error: 'Invalid input',
-        details: validation.error.issues[0].message
-      }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
+      return jsonError({ error: 'Invalid input', details: validation.error.issues[0].message }, 400);
     }
 
     const { message, sessionId } = validation.data;
@@ -119,10 +102,7 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (error || !session || session.user_id !== user.id) {
-        return new Response(JSON.stringify({ error: 'Access denied' }), {
-          status: 403,
-          headers: { 'Content-Type': 'application/json' }
-        });
+        return jsonError({ error: 'Access denied' }, 403);
       }
     }
 
@@ -150,13 +130,15 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        return new Response(stream, {
-          headers: {
-            'Content-Type': 'text/plain; charset=utf-8',
-            'Transfer-Encoding': 'chunked',
-            'Cache-Control': 'no-cache',
-          },
-        });
+        return applySecurityHeaders(
+          new Response(stream, {
+            headers: {
+              'Content-Type': 'text/plain; charset=utf-8',
+              'Transfer-Encoding': 'chunked',
+              'Cache-Control': 'no-cache',
+            },
+          }),
+        );
       }
 
       // CRAG failed — no good results found
@@ -169,13 +151,15 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        return new Response(stream, {
-          headers: {
-            'Content-Type': 'text/plain; charset=utf-8',
-            'Transfer-Encoding': 'chunked',
-            'Cache-Control': 'no-cache',
-          },
-        });
+        return applySecurityHeaders(
+          new Response(stream, {
+            headers: {
+              'Content-Type': 'text/plain; charset=utf-8',
+              'Transfer-Encoding': 'chunked',
+              'Cache-Control': 'no-cache',
+            },
+          }),
+        );
       }
     }
 
@@ -266,21 +250,17 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Transfer-Encoding': 'chunked',
-        'Cache-Control': 'no-cache',
-      },
-    });
+    return applySecurityHeaders(
+      new Response(stream, {
+        headers: {
+          'Content-Type': 'text/plain; charset=utf-8',
+          'Transfer-Encoding': 'chunked',
+          'Cache-Control': 'no-cache',
+        },
+      }),
+    );
   } catch (error) {
     console.error('Chat stream error:', error);
-    return new Response(JSON.stringify({
-      error: 'Internal server error',
-      code: 'INTERNAL_ERROR',
-    }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return jsonError({ error: 'Internal server error', code: 'INTERNAL_ERROR' }, 500);
   }
 }

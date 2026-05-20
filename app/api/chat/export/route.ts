@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server';
 import { getQuickSession } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase-server';
 import { uuidSchema } from '@/lib/validations';
+import { applySecurityHeaders } from '@/lib/api-security-headers';
 
 /**
  * Escape characters that have special meaning inside a Markdown table cell.
@@ -21,12 +22,12 @@ export async function GET(request: NextRequest) {
   try {
     const user = await getQuickSession();
     if (!user) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+      return applySecurityHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }));
     }
 
     const sessionId = request.nextUrl.searchParams.get('sessionId');
     if (!sessionId || !uuidSchema.safeParse(sessionId).success) {
-      return Response.json({ error: 'Invalid session ID' }, { status: 400 });
+      return applySecurityHeaders(Response.json({ error: 'Invalid session ID' }, { status: 400 }));
     }
 
     const supabase = createAdminClient();
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
       .single();
 
     if (!session || session.user_id !== user.id) {
-      return Response.json({ error: 'Access denied' }, { status: 403 });
+      return applySecurityHeaders(Response.json({ error: 'Access denied' }, { status: 403 }));
     }
 
     // Fetch all messages
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: true });
 
     if (error) {
-      return Response.json({ error: 'Failed to fetch messages' }, { status: 500 });
+      return applySecurityHeaders(Response.json({ error: 'Failed to fetch messages' }, { status: 500 }));
     }
 
     // Build markdown
@@ -92,15 +93,17 @@ export async function GET(request: NextRequest) {
     // Sanitize title for filename
     const safeTitle = title.replace(/[^a-zA-Z0-9-_ ]/g, '').slice(0, 50).trim() || 'chat-export';
 
-    return new Response(markdown, {
-      headers: {
-        'Content-Type': 'text/markdown; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${safeTitle}.md"`,
-        'Cache-Control': 'no-cache',
-      },
-    });
+    return applySecurityHeaders(
+      new Response(markdown, {
+        headers: {
+          'Content-Type': 'text/markdown; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${safeTitle}.md"`,
+          'Cache-Control': 'no-cache',
+        },
+      })
+    );
   } catch (error) {
     console.error('Chat export error:', error);
-    return Response.json({ error: 'Export failed' }, { status: 500 });
+    return applySecurityHeaders(Response.json({ error: 'Export failed' }, { status: 500 }));
   }
 }
