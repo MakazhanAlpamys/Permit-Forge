@@ -10,6 +10,7 @@ import { getQuickSession, logAuditEvent } from '@/lib/auth';
 import { requireAuth, requireCSRF, verifyOwnership } from '@/lib/security';
 import { uuidSchema, paginationSchema, citationsArraySchema } from '@/lib/validations';
 import type { ChatSession, ChatMessage, Citation } from '@/types';
+import { signCursor, verifyCursor } from '@/lib/signed-cursor';
 
 // -----------------------------------------------------------------------------
 // Helper: Verify Session Ownership — wraps the generic helper (F6).
@@ -157,9 +158,15 @@ export async function getChatSessions(
       .order('updated_at', { ascending: false })
       .limit(validLimit + 1); // Fetch one extra to check if there are more
     
-    // Apply cursor if provided
+    // C27H/L2: verify the signature on the supplied cursor before trusting
+    // the value. Invalid sig → ignore (paginate from start). The cursor still
+    // contains only an ISO timestamp; signing prevents the client from
+    // rewriting it to an arbitrary value.
     if (cursor) {
-      query = query.lt('updated_at', cursor);
+      const verified = verifyCursor(cursor);
+      if (verified) {
+        query = query.lt('updated_at', verified);
+      }
     }
 
     const { data, error } = await query;
@@ -170,20 +177,20 @@ export async function getChatSessions(
 
     const sessions = data || [];
     const hasMore = sessions.length > validLimit;
-    
+
     // Remove the extra item we fetched for pagination check
     if (hasMore) {
       sessions.pop();
     }
 
-    const nextCursor = hasMore && sessions.length > 0 
-      ? sessions[sessions.length - 1].updated_at 
+    const nextCursor = hasMore && sessions.length > 0
+      ? signCursor(sessions[sessions.length - 1].updated_at as string)
       : undefined;
 
-    return { 
-      sessions: sessions as ChatSession[], 
+    return {
+      sessions: sessions as ChatSession[],
       nextCursor,
-      hasMore 
+      hasMore
     };
   } catch {
     return {

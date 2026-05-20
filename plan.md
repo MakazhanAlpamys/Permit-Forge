@@ -96,7 +96,7 @@ Risk legend: 🟢 LOW · 🟡 MEDIUM · 🔴 HIGH (touches hot path, needs manua
 - [x] **C23H — M22** Add JSON-size cap + Zod schema validation to LLM JSON output parsing in `lib/permit-compliance.ts:217`. Reject and re-prompt on schema mismatch. 🟡 — `bfc2370` (size cap 64KB + complianceCheckJsonSchema; references accept either object or string and normalize)
 - [x] **C24H — M23** Allow `BuildingDetails` to be `Partial` or nullable in `types/index.ts:289`; update consumers to handle the partial shape. 🟢 — `fc4ce31`
 - [~] **C25H — M24** Remove `Bash(rm -rf *)` and `Bash(git reset --hard *)` from `ask` list in `.claude/settings.json` (move to deny or delete). 🟢 — N/A (`.claude/settings.json` not present in repo)
-- [ ] **C26H — L1** Stop leaking service topology / env-var presence from `/api/health`. Return `{ ok: true }` only. 🟢
+- [x] **C26H — L1** Stop leaking service topology / env-var presence from `/api/health`. Return `{ ok: true }` only. 🟢 — `780edc1`
 - [ ] **C27H — L2** Hash or sign the pagination cursor in `actions/chat-history.ts:169-172`. 🟢
 - [ ] **C28H — L3** Log admin escalation attempts as `permission_denied` (or new event), not `login_failed`. 🟢
 - [ ] **C29H — L4** Add session rotation on privilege change (combine with C14H). 🟢
