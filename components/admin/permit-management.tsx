@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { PermitStatusBadge } from '@/components/permits/permit-status-badge';
-import { PROJECT_TYPES } from '@/lib/constants';
+import { PROJECT_TYPES, PERMIT_STATUS_FILTERS } from '@/lib/constants';
 import { reviewPermit, setPermitUnderReview } from '@/actions/admin-permits';
 import { getCSRFTokenAction } from '@/actions/auth';
 import {
@@ -34,16 +34,6 @@ interface PermitManagementProps {
   onRefresh: () => void;
   onFilterStatus: (status: string) => void;
 }
-
-const STATUS_FILTERS = [
-  { value: 'all', label: 'All' },
-  { value: 'submitted', label: 'Submitted' },
-  { value: 'under_review', label: 'Under Review' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' },
-  { value: 'revision_requested', label: 'Revision Requested' },
-  { value: 'draft', label: 'Drafts' },
-];
 
 export function PermitManagement({ permits, stats, loading, onRefresh, onFilterStatus }: PermitManagementProps) {
   const [activeFilter, setActiveFilter] = useState('all');
@@ -115,7 +105,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
 
       {/* Filter pills */}
       <div className="flex flex-wrap gap-2">
-        {STATUS_FILTERS.map(sf => (
+        {PERMIT_STATUS_FILTERS.map(sf => (
           <Button
             key={sf.value}
             variant={activeFilter === sf.value ? 'default' : 'outline'}

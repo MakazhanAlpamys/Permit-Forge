@@ -5,6 +5,7 @@ import { PermitCard } from './permit-card';
 import { Button } from '@/components/ui/button';
 import { ClipboardList } from 'lucide-react';
 import type { PermitApplication, PermitStatus } from '@/types';
+import { PERMIT_STATUS_FILTERS } from '@/lib/constants';
 
 interface PermitListProps {
   permits: PermitApplication[];
@@ -12,16 +13,6 @@ interface PermitListProps {
   onView: (id: string) => void;
   onDelete: (id: string) => void;
 }
-
-const STATUS_FILTERS: { value: PermitStatus | 'all'; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'draft', label: 'Drafts' },
-  { value: 'submitted', label: 'Submitted' },
-  { value: 'under_review', label: 'Under Review' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' },
-  { value: 'revision_requested', label: 'Revision Requested' },
-];
 
 export function PermitList({ permits, loading, onView, onDelete }: PermitListProps) {
   const [filter, setFilter] = useState<PermitStatus | 'all'>('all');
@@ -44,7 +35,7 @@ export function PermitList({ permits, loading, onView, onDelete }: PermitListPro
     <div>
       {/* Status filter pills */}
       <div className="flex flex-wrap gap-2 mb-4">
-        {STATUS_FILTERS.map(sf => (
+        {PERMIT_STATUS_FILTERS.map(sf => (
           <Button
             key={sf.value}
             variant={filter === sf.value ? 'default' : 'outline'}

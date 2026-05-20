@@ -150,6 +150,26 @@ export const permitStatusConfig: Record<PermitStatus, PermitStatusConfigItem> = 
   },
 };
 
+/**
+ * Filter pills used by both the user-facing permit list and the admin
+ * permit management screen. Order matters — it's the visual order of the
+ * filter row. (F25 / Simplify #25)
+ */
+export interface PermitStatusFilterItem {
+  value: PermitStatus | 'all';
+  label: string;
+}
+
+export const PERMIT_STATUS_FILTERS: PermitStatusFilterItem[] = [
+  { value: 'all', label: 'All' },
+  { value: 'draft', label: 'Drafts' },
+  { value: 'submitted', label: 'Submitted' },
+  { value: 'under_review', label: 'Under Review' },
+  { value: 'approved', label: 'Approved' },
+  { value: 'rejected', label: 'Rejected' },
+  { value: 'revision_requested', label: 'Revision Requested' },
+];
+
 export const PROJECT_TYPES = [
   { value: 'residential', label: 'Residential' },
   { value: 'commercial', label: 'Commercial' },
