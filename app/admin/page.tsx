@@ -86,6 +86,12 @@ export default function AdminPage() {
   // User dialog
   const [createUserOpen, setCreateUserOpen] = useState(false);
 
+  // CSRF token (needed for logout form per C20H)
+  const [csrfToken, setCsrfToken] = useState('');
+  useEffect(() => {
+    getCSRFTokenAction().then((t) => setCsrfToken(t ?? ''));
+  }, []);
+
   // Admin profile dialog
   const [profileOpen, setProfileOpen] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -233,6 +239,7 @@ export default function AdminPage() {
                 Profile
               </Button>
               <form action={logoutAction}>
+                <input type="hidden" name="csrfToken" value={csrfToken} />
                 <Button variant="ghost" size="sm" type="submit">
                   <LogOut className="h-4 w-4 mr-2" />
                   Logout

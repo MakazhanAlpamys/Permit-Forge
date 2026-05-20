@@ -23,6 +23,7 @@ import {
 } from '@/lib/validations';
 import { redirect } from 'next/navigation';
 import { getRequestMetadata, getCSRFToken } from '@/lib/auth';
+import { requireCSRF } from '@/lib/security';
 import { generateSixDigitCode, sendVerificationEmail, sendPasswordResetEmail } from '@/lib/email';
 import { safeEqual, checkCodeAttempts, resetCodeAttempts } from '@/lib/code-verification';
 
@@ -162,7 +163,16 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
 // Logout Action
 // -----------------------------------------------------------------------------
 
-export async function logoutAction(): Promise<void> {
+export async function logoutAction(formData?: FormData): Promise<void> {
+  // C20H: require a CSRF token on logout so a cross-site form post can't
+  // force a victim to be logged out (denial of service / session fixation
+  // setup). On a CSRF failure we still proceed — destroying the session is
+  // strictly safer than leaving it open, and the redirect path stays the
+  // same. The audit log captures the bypass attempt.
+  const csrfFromForm = formData?.get('csrfToken');
+  const csrfToken = typeof csrfFromForm === 'string' ? csrfFromForm : null;
+  const csrf = await requireCSRF(csrfToken);
+
   const user = await getQuickSession();
   const metadata = await getRequestMetadata();
 
@@ -170,6 +180,7 @@ export async function logoutAction(): Promise<void> {
     await logAuditEvent({
       userId: user.id,
       action: 'logout',
+      metadata: csrf.valid ? undefined : { csrf: 'invalid_or_missing' },
       ...metadata,
     });
   }
