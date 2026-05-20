@@ -115,7 +115,9 @@ CREATE TABLE dubai_code_chunks (
   content TEXT NOT NULL,
   metadata JSONB DEFAULT '{}',
   embedding VECTOR(768),
-  document_name TEXT NOT NULL DEFAULT 'unknown',
+  -- D11/M19 + D18: width matches document_registry.id (the FK target).
+  -- The FK constraint itself is added after document_registry exists.
+  document_name VARCHAR(64) NOT NULL DEFAULT 'unknown',
   parent_id BIGINT,  -- References parent_chunks for parent-child chunking (v2)
   fts tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -396,7 +398,21 @@ CREATE TABLE document_registry (
 
 CREATE INDEX idx_document_registry_active ON document_registry(is_active) WHERE is_active = TRUE;
 
--- No seed documents — documents are added dynamically via the admin panel.
+-- D18/P2-A8: real FK from chunks → registry. CASCADE so a hard-delete of
+-- the registry row cleans up orphaned chunks.
+ALTER TABLE dubai_code_chunks
+  ADD CONSTRAINT dubai_code_chunks_document_name_fkey
+  FOREIGN KEY (document_name) REFERENCES document_registry(id) ON DELETE CASCADE;
+
+-- D18: keep a single inactive 'unknown' stub so the dubai_code_chunks
+-- default value doesn't violate the FK if a future ingestion path ever
+-- forgets to supply document_name. is_active=false hides it from the
+-- selector / dashboard.
+INSERT INTO document_registry (id, display_name, short_name, file_name, is_active)
+VALUES ('unknown', 'Unknown (orphan chunks)', 'UNK', 'unknown.pdf', FALSE)
+ON CONFLICT (id) DO NOTHING;
+
+-- No other seed documents — documents are added dynamically via the admin panel.
 -- Example:
 -- INSERT INTO document_registry (id, display_name, short_name, file_name, authority, description, badge_color, keywords, categories)
 -- VALUES ('my-building-code', 'My Building Code', 'MBC', 'my-code.pdf', '', 'Description', 'bg-blue-500/20 text-blue-400 border-blue-500/30', '{}', '{}');
