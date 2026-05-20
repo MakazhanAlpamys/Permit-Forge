@@ -8,16 +8,14 @@ import { getQuickSession, logAuditEvent, getRequestMetadata, validateCSRFToken }
 import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 
 /**
- * Per-action rate-limit gate (C8H/H11). Wraps the existing user-keyed
- * checkRateLimit RPC. The `action` label is captured for telemetry / future
- * per-endpoint buckets (C22H) but is otherwise ignored today — every action
- * shares one user-keyed bucket, which is strictly safer than "no limit".
+ * Per-action rate-limit gate (C8H/H11). Each `action` gets its own bucket
+ * (C11H/C22H) so a heavy endpoint can't starve unrelated user actions.
  */
 export async function requireActionRateLimit(
   userId: string,
   action: string,
 ): Promise<{ allowed: boolean; error?: string }> {
-  const r = await checkRateLimit(userId);
+  const r = await checkRateLimit(userId, { endpoint: action });
   if (r.allowed) return { allowed: true };
   return {
     allowed: false,

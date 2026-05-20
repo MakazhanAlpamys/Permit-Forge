@@ -19,8 +19,15 @@ export async function GET(
       return applySecurityHeaders(Response.json({ error: 'Not authenticated' }, { status: 401 }));
     }
 
-    // Rate limiting
-    const rateLimitResult = await checkRateLimit(user.id);
+    // C11H/H21: dedicated bucket so certificate downloads don't share the
+    // chat / mutation rate-limit budget. Tight cap because cert PDFs are
+    // expensive to regenerate and the typical user only needs the file once.
+    const rateLimitResult = await checkRateLimit(user.id, {
+      endpoint: 'permit_certificate',
+      windowSeconds: 60,
+      maxRequests: 5,
+      minIntervalMs: 1000,
+    });
     if (!rateLimitResult.allowed) {
       return applySecurityHeaders(
         Response.json(

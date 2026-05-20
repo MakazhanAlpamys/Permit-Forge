@@ -160,16 +160,28 @@ interface RateLimitResult {
 
 // Rate limit constants imported from @/lib/constants
 
-export async function checkRateLimit(userId: string): Promise<RateLimitResult> {
+export interface RateLimitOptions {
+  /** Endpoint label — gives this caller its own bucket (C11H/C22H). */
+  endpoint?: string;
+  windowSeconds?: number;
+  maxRequests?: number;
+  minIntervalMs?: number;
+}
+
+export async function checkRateLimit(
+  userId: string,
+  options: RateLimitOptions = {},
+): Promise<RateLimitResult> {
   try {
     // Use admin client to bypass RLS for rate limit check
     const supabase = createAdminClient();
 
     const { data, error } = await supabase.rpc('check_rate_limit', {
       p_user_id: userId,
-      p_window_seconds: RATE_LIMIT_WINDOW_SECONDS,
-      p_max_requests: MAX_REQUESTS_PER_WINDOW,
-      p_min_interval_ms: MIN_REQUEST_INTERVAL_MS,
+      p_endpoint: options.endpoint ?? 'default',
+      p_window_seconds: options.windowSeconds ?? RATE_LIMIT_WINDOW_SECONDS,
+      p_max_requests: options.maxRequests ?? MAX_REQUESTS_PER_WINDOW,
+      p_min_interval_ms: options.minIntervalMs ?? MIN_REQUEST_INTERVAL_MS,
     });
 
     if (error) {

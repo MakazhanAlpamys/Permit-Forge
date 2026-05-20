@@ -80,7 +80,7 @@ Risk legend: 🟢 LOW · 🟡 MEDIUM · 🔴 HIGH (touches hot path, needs manua
 - [x] **C7H — H10** Add magic-byte content sniffing to `lib/file-upload.ts`. Reject when `file.type` disagrees with detected magic. Same for `actions/documents.ts:353-360`. 🟡 — `ac501f3` (PDF check applied via shared lib/document-pdf-upload.ts, since the action delegates there)
 - [x] **C8H — H11** Add rate limits to `runComplianceCheck`, `createPermit`, `updatePermit*`, admin permit-review actions, all `actions/admin.ts` mutators. Use existing `check_rate_limit` RPC. 🟡 — `459cec7`
 - [x] **C9H — H12** In `adminUpdateUserRole` and `blockUser`, block the transition if it would leave zero unblocked admins. Use `SELECT count(*) FROM users WHERE role='admin' AND blocked_at IS NULL FOR UPDATE`. 🟢 — `b8db47b`
-- [ ] **C10H — H13** Convert `check_rate_limit` to a single atomic `INSERT ... ON CONFLICT DO UPDATE RETURNING request_count` so SELECT-CHECK-INSERT race goes away. 🟡
+- [x] **C10H — H13** Convert `check_rate_limit` to a single atomic `INSERT ... ON CONFLICT DO UPDATE RETURNING request_count` so SELECT-CHECK-INSERT race goes away. 🟡 — `d55d07b` (used per-user pg_advisory_xact_lock instead — atomic via lock, no schema change needed)
 - [ ] **C11H — H21** Add rate limit to `/api/permits/[id]/certificate` (existing chat bucket is wrong — give it its own bucket). 🟢
 - [ ] **C12H — H22** Replace `as any` casts in `lib/transforms.ts`, `actions/permit-attachments.ts`, `actions/admin-permits.ts`, `actions/permits.ts` with explicit DB row types. 🟡
 - [ ] **C13H — M1 + M2** Always set `secure: true` and `sameSite: 'strict'` on session, CSRF, and `ef_blocked_reason` cookies. Document local-dev workaround via `NEXT_PUBLIC_DEV_INSECURE_COOKIES=1` env if needed. 🟢
