@@ -15,6 +15,8 @@ interface PermitFormStep3Props {
   loading: boolean;
   checkLoading: boolean;
   error: string;
+  /** ISO timestamp from the last AI compliance check, if any. (B11) */
+  lastCheckAt?: string | null;
 }
 
 const COMPLIANCE_FIELDS: { key: keyof Omit<ComplianceRequirements, 'additionalNotes'>; label: string; description: string }[] = [
@@ -36,12 +38,24 @@ export function PermitFormStep3({
   loading,
   checkLoading,
   error,
+  lastCheckAt,
 }: PermitFormStep3Props) {
   const toggleField = (key: keyof Omit<ComplianceRequirements, 'additionalNotes'>) => {
     onChange({ ...data, [key]: !data[key] });
   };
 
   const hasAnySelected = COMPLIANCE_FIELDS.some(f => data[f.key]);
+
+  // B11/H3-clickpath + H11: the AI check result is invalidated by any
+  // building_details / compliance_requirements edit (server-side; see B16),
+  // so a result existing means the inputs are still the same as when the
+  // check ran. The only remaining freshness signal is the check's age —
+  // disable for one hour after the check completes to nudge the user back
+  // to "Save Draft" / "Submit" instead of re-running the same analysis.
+  const FRESH_WINDOW_MS = 60 * 60 * 1000;
+  const isCheckFresh =
+    !!lastCheckAt && Date.now() - new Date(lastCheckAt).getTime() < FRESH_WINDOW_MS;
+  const checkButtonDisabled = loading || checkLoading || isCheckFresh;
 
   return (
     <Card>
@@ -111,13 +125,16 @@ export function PermitFormStep3({
               variant="outline"
               size="sm"
               onClick={onRunCheck}
-              disabled={loading || checkLoading}
+              disabled={checkButtonDisabled}
+              title={isCheckFresh ? 'Recent AI check still valid (<1h). Edit details to re-run.' : undefined}
             >
               {checkLoading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Analyzing...
                 </>
+              ) : isCheckFresh ? (
+                'AI Check Up-to-date'
               ) : (
                 'Run AI Check'
               )}

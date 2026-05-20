@@ -242,6 +242,7 @@ export default function NewPermitPage() {
               loading={loading}
               checkLoading={checkLoading}
               error={error}
+              lastCheckAt={complianceResult?.checkedAt}
             />
 
             {complianceResult && (
