@@ -1,14 +1,11 @@
 // ============================================================================
 // lib/code-verification — extracted from actions/auth + actions/profile (F2)
+// C15H: attempt counter is now DB-backed via incr_code_attempt RPC.
 // ============================================================================
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  safeEqual,
-  checkCodeAttempts,
-  resetCodeAttempts,
-  _clearAllCodeAttempts,
-} from '@/lib/code-verification';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { safeEqual, checkCodeAttempts, resetCodeAttempts } from '@/lib/code-verification';
+import { createAdminClient } from '@/lib/supabase-server';
 
 describe('safeEqual', () => {
   it('returns true for equal strings', () => {
@@ -29,33 +26,62 @@ describe('safeEqual', () => {
   });
 });
 
-describe('checkCodeAttempts / resetCodeAttempts', () => {
+describe('checkCodeAttempts / resetCodeAttempts (DB-backed)', () => {
   beforeEach(() => {
-    _clearAllCodeAttempts();
+    vi.clearAllMocks();
   });
 
-  it('allows up to 5 attempts before locking', () => {
-    const key = 'verify:user-1';
-    for (let i = 0; i < 5; i++) {
-      expect(checkCodeAttempts(key)).toBe(true);
-    }
-    expect(checkCodeAttempts(key)).toBe(false);
+  it('returns true when the RPC reports allowed', async () => {
+    const mockRpc = vi.fn().mockResolvedValue({
+      data: [{ allowed: true, current_count: 1 }],
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValueOnce({
+      rpc: mockRpc,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    expect(await checkCodeAttempts('verify:user-1')).toBe(true);
+    expect(mockRpc).toHaveBeenCalledWith(
+      'incr_code_attempt',
+      expect.objectContaining({ p_key: 'verify:user-1' }),
+    );
   });
 
-  it('resets the counter when the key is reset', () => {
-    const key = 'verify:user-2';
-    for (let i = 0; i < 5; i++) checkCodeAttempts(key);
-    expect(checkCodeAttempts(key)).toBe(false);
-    resetCodeAttempts(key);
-    expect(checkCodeAttempts(key)).toBe(true);
+  it('returns false when the RPC reports !allowed', async () => {
+    const mockRpc = vi.fn().mockResolvedValue({
+      data: [{ allowed: false, current_count: 6 }],
+      error: null,
+    });
+    vi.mocked(createAdminClient).mockReturnValueOnce({
+      rpc: mockRpc,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    expect(await checkCodeAttempts('verify:user-2')).toBe(false);
   });
 
-  it('isolates counters between keys', () => {
-    const a = 'verify:user-a';
-    const b = 'verify:user-b';
-    for (let i = 0; i < 5; i++) checkCodeAttempts(a);
-    expect(checkCodeAttempts(a)).toBe(false);
-    // user-b is unaffected
-    expect(checkCodeAttempts(b)).toBe(true);
+  it('fails open on DB error', async () => {
+    const mockRpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: { message: 'connection refused' },
+    });
+    vi.mocked(createAdminClient).mockReturnValueOnce({
+      rpc: mockRpc,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    expect(await checkCodeAttempts('verify:user-3')).toBe(true);
+  });
+
+  it('resetCodeAttempts calls clear_code_attempt RPC', async () => {
+    const mockRpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    vi.mocked(createAdminClient).mockReturnValueOnce({
+      rpc: mockRpc,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+
+    await resetCodeAttempts('verify:user-4');
+    expect(mockRpc).toHaveBeenCalledWith('clear_code_attempt', { p_key: 'verify:user-4' });
   });
 });

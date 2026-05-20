@@ -360,7 +360,7 @@ export async function verifyEmailAction(
 
     // Brute-force protection: max 5 attempts per email within the code TTL window
     const attemptKey = `verify:${validation.data.email}`;
-    if (!checkCodeAttempts(attemptKey)) {
+    if (!(await checkCodeAttempts(attemptKey))) {
       // Invalidate the code so attacker must trigger a new one
       await supabase
         .from('users')
@@ -386,7 +386,7 @@ export async function verifyEmailAction(
       return { error: 'Verification failed. Please try again.' };
     }
 
-    resetCodeAttempts(attemptKey);
+    await resetCodeAttempts(attemptKey);
     return { success: true };
   } catch (error) {
     console.error('Email verification error:', error);
@@ -483,7 +483,7 @@ export async function resetPasswordAction(
 
     // Brute-force protection: max 5 attempts per email within the code TTL window
     const resetAttemptKey = `reset:${validation.data.email}`;
-    if (!checkCodeAttempts(resetAttemptKey)) {
+    if (!(await checkCodeAttempts(resetAttemptKey))) {
       // Invalidate the reset code so attacker must request a new one
       await supabase
         .from('users')
@@ -515,7 +515,7 @@ export async function resetPasswordAction(
     // logged out at its next middleware hop.
     await supabase.rpc('bump_user_token_version', { p_user_id: user.id });
 
-    resetCodeAttempts(resetAttemptKey);
+    await resetCodeAttempts(resetAttemptKey);
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({
