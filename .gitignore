@@ -43,3 +43,9 @@ next-env.d.ts
 # local-only architecture notes (see A9 / L14)
 LOCAL_NOTES.md
 
+# local-only audit reports — contain quoted secrets, never commit
+phase1-report.md
+phase2-clickpath.md
+phase2-coverage.md
+phase2-simplify.md
+
