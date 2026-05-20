@@ -140,9 +140,15 @@ export async function updatePermitBuildingDetails(
       return { success: false, error: 'Can only edit draft permits' };
     }
 
+    // B16: any change to building_details invalidates the prior compliance
+    // result (the AI evaluated the old shape). Clear it so the UI doesn't show
+    // stale "compliant"/"non_compliant" verdicts after an edit.
     const { error } = await supabase
       .from('permit_applications')
-      .update({ building_details: validation.data.buildingDetails })
+      .update({
+        building_details: validation.data.buildingDetails,
+        compliance_check_result: null,
+      })
       .eq('id', validation.data.permitId)
       .eq('user_id', authCheck.user.id);
 
@@ -196,9 +202,14 @@ export async function updatePermitComplianceRequirements(
       return { success: false, error: 'Can only edit draft permits' };
     }
 
+    // B16: compliance requirement changes also invalidate the prior result
+    // (the AI checked against the old requirements set).
     const { error } = await supabase
       .from('permit_applications')
-      .update({ compliance_requirements: validation.data.complianceRequirements })
+      .update({
+        compliance_requirements: validation.data.complianceRequirements,
+        compliance_check_result: null,
+      })
       .eq('id', validation.data.permitId)
       .eq('user_id', authCheck.user.id);
 
