@@ -139,8 +139,31 @@ export async function POST(request: NextRequest) {
   // Start processing in background
   (async () => {
     let pipelineSucceeded = false;
+    let claimedSlot = false;
     try {
-      await markIngestionState('pending');
+      // D19/P2-A9: try_start_ingestion atomically claims the in-flight
+      // slot under a per-document advisory lock. If another request is
+      // already mid-ingestion for this document, refuse rather than run
+      // a duplicate pipeline that would produce duplicate chunks.
+      const { data: claimed, error: claimError } = await bookkeepingSupabase.rpc(
+        'try_start_ingestion',
+        { p_document_id: documentId }
+      );
+      if (claimError) {
+        throw new Error(`Failed to claim ingestion slot: ${claimError.message}`);
+      }
+      if (claimed !== true) {
+        await sendProgress({
+          stage: 'error',
+          progress: 0,
+          total: 100,
+          message: 'Another ingestion is already in progress for this document.',
+          done: true,
+          error: 'INGESTION_IN_PROGRESS',
+        });
+        return;
+      }
+      claimedSlot = true;
 
       // Send initial progress
       await sendProgress({
@@ -223,12 +246,18 @@ export async function POST(request: NextRequest) {
           error: isAbort ? 'Aborted by client' : 'Ingestion pipeline encountered an error',
         });
       } catch { /* client disconnected */ }
-      await markIngestionState(isAbort ? 'aborted' : 'failed');
+      // D19: only flip state if WE owned the slot. Otherwise we'd
+      // clobber the in-progress run that legitimately holds it.
+      if (claimedSlot) {
+        await markIngestionState(isAbort ? 'aborted' : 'failed');
+      }
       return;
     } finally {
       try { await writer.close(); } catch { /* client disconnected */ }
     }
-    await markIngestionState(pipelineSucceeded ? 'completed' : 'failed');
+    if (claimedSlot) {
+      await markIngestionState(pipelineSucceeded ? 'completed' : 'failed');
+    }
   })();
 
   return applySecurityHeaders(

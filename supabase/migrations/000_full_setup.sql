@@ -1925,6 +1925,47 @@ GRANT EXECUTE ON FUNCTION delete_document TO service_role;
 REVOKE EXECUTE ON FUNCTION upsert_document FROM anon, authenticated;
 REVOKE EXECUTE ON FUNCTION delete_document FROM anon, authenticated;
 
+-- D19/P2-A9: atomic ingestion claim guarded by a per-document advisory
+-- lock. Returns FALSE if another run is already 'pending' so /api/ingest
+-- can refuse a second parallel call instead of inserting duplicate chunks.
+CREATE OR REPLACE FUNCTION try_start_ingestion(p_document_id TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_current_state TEXT;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_document_id, 0));
+
+  SELECT ingestion_state INTO v_current_state
+    FROM document_registry
+   WHERE id = p_document_id
+   FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  IF v_current_state = 'pending' THEN
+    RETURN FALSE;
+  END IF;
+
+  UPDATE document_registry
+     SET ingestion_state = 'pending',
+         ingestion_started_at = NOW(),
+         ingestion_finished_at = NULL,
+         updated_at = NOW()
+   WHERE id = p_document_id;
+
+  RETURN TRUE;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION try_start_ingestion(TEXT) TO service_role;
+REVOKE EXECUTE ON FUNCTION try_start_ingestion(TEXT) FROM anon, authenticated;
+
 REVOKE ALL ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) FROM public, anon;
 GRANT EXECUTE ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) TO authenticated;
 -- A4/H19: insert/cleanup mutate the cache; app calls them via service_role only.
