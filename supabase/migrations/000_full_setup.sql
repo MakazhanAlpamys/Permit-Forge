@@ -1297,10 +1297,28 @@ SET search_path = public
 AS $$
 DECLARE
   v_admin_role TEXT;
+  v_target_role TEXT;
+  v_unblocked_admin_count INT;
 BEGIN
   SELECT role INTO v_admin_role FROM users WHERE id = p_admin_id;
   IF v_admin_role != 'admin' THEN RAISE EXCEPTION 'Unauthorized: Admin role required'; END IF;
   IF p_admin_id = p_target_user_id THEN RAISE EXCEPTION 'Cannot block yourself'; END IF;
+
+  -- C9H/H12: if blocking the only remaining unblocked admin, refuse.
+  -- FOR UPDATE prevents two concurrent blocks from both seeing count=2 and
+  -- both proceeding (leaving zero admins).
+  IF p_blocked THEN
+    SELECT role INTO v_target_role FROM users WHERE id = p_target_user_id;
+    IF v_target_role = 'admin' THEN
+      SELECT count(*) INTO v_unblocked_admin_count
+      FROM users
+      WHERE role = 'admin' AND blocked = FALSE
+      FOR UPDATE;
+      IF v_unblocked_admin_count <= 1 THEN
+        RAISE EXCEPTION 'Cannot block the only remaining unblocked admin';
+      END IF;
+    END IF;
+  END IF;
 
   UPDATE users SET
     blocked = p_blocked,
@@ -1325,10 +1343,29 @@ SET search_path = public
 AS $$
 DECLARE
   v_admin_role TEXT;
+  v_target_current_role TEXT;
+  v_target_blocked BOOLEAN;
+  v_unblocked_admin_count INT;
 BEGIN
   IF p_new_role NOT IN ('admin', 'user') THEN RAISE EXCEPTION 'Invalid role'; END IF;
   SELECT role INTO v_admin_role FROM users WHERE id = p_admin_id;
   IF v_admin_role != 'admin' THEN RAISE EXCEPTION 'Unauthorized: Admin role required'; END IF;
+
+  -- C9H/H12: demoting the only remaining unblocked admin would lock the
+  -- system out. Same pattern as admin_block_user: SELECT FOR UPDATE to
+  -- serialize concurrent demotions.
+  SELECT role, blocked INTO v_target_current_role, v_target_blocked
+  FROM users WHERE id = p_target_user_id;
+
+  IF v_target_current_role = 'admin' AND p_new_role = 'user' AND v_target_blocked = FALSE THEN
+    SELECT count(*) INTO v_unblocked_admin_count
+    FROM users
+    WHERE role = 'admin' AND blocked = FALSE
+    FOR UPDATE;
+    IF v_unblocked_admin_count <= 1 THEN
+      RAISE EXCEPTION 'Cannot demote the only remaining unblocked admin';
+    END IF;
+  END IF;
 
   UPDATE users SET role = p_new_role WHERE id = p_target_user_id;
   RETURN TRUE;

@@ -98,6 +98,29 @@ describe('migration grants — semantic cache RPCs (A4 / H19)', () => {
   });
 });
 
+describe('migration zero-admin guards (C9H / H12)', () => {
+  // H12: blocking the only remaining unblocked admin, or demoting them to
+  // 'user', would lock everyone out of admin functions. Static-check that
+  // both RPC bodies contain the count(*) + SELECT FOR UPDATE pattern.
+  it('admin_block_user guards against zero unblocked admins', () => {
+    const body = sql.match(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+admin_block_user\b[\s\S]*?\$\$;/i,
+    );
+    expect(body, 'admin_block_user not found').not.toBeNull();
+    expect(body![0]).toMatch(/role\s*=\s*'admin'\s+AND\s+blocked\s*=\s*FALSE[\s\S]*?FOR\s+UPDATE/i);
+    expect(body![0]).toMatch(/v_unblocked_admin_count\s*<=\s*1/i);
+  });
+
+  it('admin_update_user_role guards against demoting the last unblocked admin', () => {
+    const body = sql.match(
+      /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+admin_update_user_role\b[\s\S]*?\$\$;/i,
+    );
+    expect(body, 'admin_update_user_role not found').not.toBeNull();
+    expect(body![0]).toMatch(/role\s*=\s*'admin'\s+AND\s+blocked\s*=\s*FALSE[\s\S]*?FOR\s+UPDATE/i);
+    expect(body![0]).toMatch(/v_unblocked_admin_count\s*<=\s*1/i);
+  });
+});
+
 describe('migration constraints — permit_status_history (D5 / M12)', () => {
   // M12: permit_status_history.from_status / to_status are loose TEXT today,
   // so a bad insert could write an unrecognized status (e.g. typo "approveed")
