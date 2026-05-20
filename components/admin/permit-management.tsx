@@ -4,7 +4,7 @@
 // Admin Permit Management Component
 // ============================================================================
 
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { PermitStatusBadge } from '@/components/permits/permit-status-badge';
 import { PROJECT_TYPES, PERMIT_STATUS_FILTERS } from '@/lib/constants';
 import { reviewPermit, setPermitUnderReview } from '@/actions/admin-permits';
-import { getCSRFTokenAction } from '@/actions/auth';
+import { useCsrfAction } from '@/hooks/use-csrf-action';
 import {
   ClipboardCheck,
   Eye,
@@ -46,10 +46,9 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
   // Show the warning inline next to the error banner; auto-clears after 6s.
   const [warning, setWarning] = useState('');
 
-  const csrfTokenRef = useRef<string | null>(null);
-  useEffect(() => {
-    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
-  }, []);
+  // B12: useCsrfAction handles initial fetch + refetch-and-retry-once when
+  // the action layer rejects a stale token.
+  const { runWithCsrf } = useCsrfAction();
 
   const handleFilter = (status: string) => {
     setActiveFilter(status);
@@ -64,7 +63,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
   const handleStartReview = async (permit: PermitApplication) => {
     if (permit.status !== 'submitted') return;
     setActionLoading(permit.id);
-    const result = await setPermitUnderReview(permit.id, csrfTokenRef.current || undefined);
+    const result = await runWithCsrf(token => setPermitUnderReview(permit.id, token));
     setActionLoading(null);
     if (result.success) {
       if (result.warning) flashWarning(result.warning);
@@ -79,11 +78,13 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
     setActionLoading(reviewDialog.permit.id);
     setError('');
 
-    const result = await reviewPermit({
-      permitId: reviewDialog.permit.id,
-      action: reviewDialog.action,
-      comments: reviewComments,
-    }, csrfTokenRef.current || undefined);
+    const result = await runWithCsrf(token =>
+      reviewPermit({
+        permitId: reviewDialog.permit.id,
+        action: reviewDialog.action,
+        comments: reviewComments,
+      }, token),
+    );
 
     setActionLoading(null);
 
