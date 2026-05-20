@@ -9,6 +9,7 @@ import crypto from 'crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import { jwtPayloadSchema, type JWTPayload } from './validations';
 import { SESSION_COOKIE_NAME, CSRF_COOKIE_NAME, SESSION_MAX_AGE, getJWTSecret } from './constants';
+import { getClientIp } from './client-ip';
 
 // -----------------------------------------------------------------------------
 // Configuration
@@ -306,9 +307,11 @@ export async function logAuditEvent(entry: AuditLogEntry): Promise<void> {
 export async function getRequestMetadata() {
   const headersList = await headers();
   return {
-    // Take only the first IP in x-forwarded-for (leftmost = client IP) to prevent
-    // header spoofing where an attacker injects extra IPs into the header.
-    ipAddress: (headersList.get('x-forwarded-for')?.split(',')[0]?.trim()) || headersList.get('x-real-ip') || 'unknown',
+    // C2H/H3: Only trust X-Forwarded-For when the deployment terminates it
+    // (Vercel, localhost dev, or operator-allow-listed proxy hosts). Otherwise
+    // an attacker can spoof the header to escape per-IP rate limits or poison
+    // audit logs with arbitrary IPs.
+    ipAddress: getClientIp(headersList),
     userAgent: headersList.get('user-agent') || 'unknown',
   };
 }
