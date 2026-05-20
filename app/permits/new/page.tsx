@@ -4,7 +4,7 @@
 // New Permit Application — Multi-Step Form
 // ============================================================================
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Header } from '@/components/dashboard';
 import { PermitFormStepper, PermitFormStep1, PermitFormStep2, PermitFormStep3, ComplianceCheckPanel, FileUploadZone } from '@/components/permits';
@@ -263,35 +263,44 @@ function NewPermitPageInner() {
     }
   };
 
+  // B7: ref-based in-flight guard so a double-click can't fire submit twice
+  // while the action is still in flight.
+  const submitInFlightRef = useRef(false);
+
   const handleSubmit = async () => {
     if (!permitId) return;
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
     setError('');
     setLoading(true);
 
-    // Save compliance requirements first
-    const saveResult = await updatePermitComplianceRequirements({
-      permitId,
-      complianceRequirements: step3Data,
-    }, csrfToken || '');
+    try {
+      // Save compliance requirements first
+      const saveResult = await updatePermitComplianceRequirements({
+        permitId,
+        complianceRequirements: step3Data,
+      }, csrfToken || '');
 
-    if (!saveResult.success) {
-      setLoading(false);
-      setError(saveResult.error || 'Failed to save compliance requirements');
-      return;
-    }
-
-    // Then submit
-    const submitResult = await submitPermit(permitId, csrfToken || '');
-    setLoading(false);
-
-    if (submitResult.success) {
-      // B8: surface notification-dispatch failure as a flash on the detail page.
-      if (submitResult.warning && typeof window !== 'undefined') {
-        window.sessionStorage.setItem(`permit-warning-${permitId}`, submitResult.warning);
+      if (!saveResult.success) {
+        setError(saveResult.error || 'Failed to save compliance requirements');
+        return;
       }
-      router.push(`/permits/${permitId}`);
-    } else {
-      setError(submitResult.error || 'Failed to submit');
+
+      // Then submit
+      const submitResult = await submitPermit(permitId, csrfToken || '');
+
+      if (submitResult.success) {
+        // B8: surface notification-dispatch failure as a flash on the detail page.
+        if (submitResult.warning && typeof window !== 'undefined') {
+          window.sessionStorage.setItem(`permit-warning-${permitId}`, submitResult.warning);
+        }
+        router.push(`/permits/${permitId}`);
+      } else {
+        setError(submitResult.error || 'Failed to submit');
+      }
+    } finally {
+      setLoading(false);
+      submitInFlightRef.current = false;
     }
   };
 

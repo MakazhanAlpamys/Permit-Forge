@@ -36,6 +36,8 @@ const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
 const mockOrder = vi.fn();
 const mockFrom = vi.fn();
+// B7: revise path now uses an RPC instead of select/update/insert.
+const mockRpc = vi.fn();
 
 function resetChainMocks() {
   mockSingle.mockResolvedValue({ data: null, error: null });
@@ -54,14 +56,17 @@ function resetChainMocks() {
     single: mockSingle,
     order: mockOrder,
   });
+  mockRpc.mockResolvedValue({ data: null, error: null });
 }
 
 vi.mock('@/lib/supabase-server', () => ({
   createServerClient: vi.fn(() => ({
     from: (...args: unknown[]) => mockFrom(...args),
+    rpc: (...args: unknown[]) => mockRpc(...args),
   })),
   createAdminClient: vi.fn(() => ({
     from: (...args: unknown[]) => mockFrom(...args),
+    rpc: (...args: unknown[]) => mockRpc(...args),
     storage: { from: vi.fn().mockReturnValue({ remove: vi.fn().mockResolvedValue({}) }) },
   })),
 }));
@@ -454,13 +459,19 @@ describe('Permits Server Actions Extended', () => {
 
   describe('revisePermit', () => {
     it('should revise a permit with revision_requested status', async () => {
-      mockSingle
-        .mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null })
-        .mockResolvedValueOnce({ data: { status: 'revision_requested' }, error: null });
+      mockSingle.mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null });
+      mockRpc.mockResolvedValueOnce({
+        data: [{ status_changed: true, prev_status: 'revision_requested' }],
+        error: null,
+      });
 
       const result = await revisePermit(validUUID, 'csrf-token');
 
       expect(result.success).toBe(true);
+      expect(mockRpc).toHaveBeenCalledWith('revise_permit_atomic', {
+        p_permit_id: validUUID,
+        p_user_id: testUser.id,
+      });
     });
 
     it('should return error when unauthenticated', async () => {
@@ -489,9 +500,11 @@ describe('Permits Server Actions Extended', () => {
     });
 
     it('should reject permits not in revision_requested status', async () => {
-      mockSingle
-        .mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null })
-        .mockResolvedValueOnce({ data: { status: 'draft' }, error: null });
+      mockSingle.mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null });
+      mockRpc.mockResolvedValueOnce({
+        data: [{ status_changed: false, prev_status: 'draft' }],
+        error: null,
+      });
 
       const result = await revisePermit(validUUID, 'csrf-token');
 
@@ -500,9 +513,11 @@ describe('Permits Server Actions Extended', () => {
     });
 
     it('should return error when permit not found', async () => {
-      mockSingle
-        .mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null })
-        .mockResolvedValueOnce({ data: null, error: null });
+      mockSingle.mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null });
+      mockRpc.mockResolvedValueOnce({
+        data: null,
+        error: { code: 'P0001', message: 'PERMIT_NOT_FOUND' },
+      });
 
       const result = await revisePermit(validUUID, 'csrf-token');
 

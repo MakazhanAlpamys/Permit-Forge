@@ -4,7 +4,7 @@
 // Permit Application Detail View
 // ============================================================================
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Header } from '@/components/dashboard';
 import {
@@ -91,17 +91,29 @@ export default function PermitDetailPage() {
     }
   };
 
+  // B7: ref-based in-flight guard. React state updates trail user clicks by a
+  // render, so a fast double-tap on Submit can dispatch two server actions
+  // before `actionLoading` flips. The ref short-circuits the second call
+  // synchronously.
+  const submitInFlightRef = useRef(false);
+  const reviseInFlightRef = useRef(false);
+
   const handleSubmit = async () => {
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
     setActionLoading('submit');
     setError('');
-    const result = await submitPermit(permitId, csrfToken || '');
-    setActionLoading(null);
-
-    if (result.success) {
-      if (result.warning) flashWarning(result.warning);
-      await loadPermit();
-    } else {
-      setError(result.error || 'Failed to submit');
+    try {
+      const result = await submitPermit(permitId, csrfToken || '');
+      if (result.success) {
+        if (result.warning) flashWarning(result.warning);
+        await loadPermit();
+      } else {
+        setError(result.error || 'Failed to submit');
+      }
+    } finally {
+      setActionLoading(null);
+      submitInFlightRef.current = false;
     }
   };
 
@@ -116,15 +128,20 @@ export default function PermitDetailPage() {
   };
 
   const handleRevise = async () => {
+    if (reviseInFlightRef.current) return;
+    reviseInFlightRef.current = true;
     setActionLoading('revise');
     setError('');
-    const result = await revisePermit(permitId, csrfToken || '');
-    setActionLoading(null);
-
-    if (result.success) {
-      await loadPermit();
-    } else {
-      setError(result.error || 'Failed to start revision');
+    try {
+      const result = await revisePermit(permitId, csrfToken || '');
+      if (result.success) {
+        await loadPermit();
+      } else {
+        setError(result.error || 'Failed to start revision');
+      }
+    } finally {
+      setActionLoading(null);
+      reviseInFlightRef.current = false;
     }
   };
 

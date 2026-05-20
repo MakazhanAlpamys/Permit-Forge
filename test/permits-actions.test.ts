@@ -34,6 +34,8 @@ const mockUpdate = vi.fn();
 const mockDelete = vi.fn();
 const mockOrder = vi.fn();
 const mockFrom = vi.fn();
+// B7: submit + revise paths now hit RPCs instead of the chain builder.
+const mockRpc = vi.fn();
 
 function resetChainMocks() {
   mockSingle.mockResolvedValue({ data: null, error: null });
@@ -52,19 +54,23 @@ function resetChainMocks() {
     single: mockSingle,
     order: mockOrder,
   });
+  mockRpc.mockResolvedValue({ data: null, error: null });
 }
 
 vi.mock('@/lib/supabase-server', () => ({
   createServerClient: vi.fn(() => ({
     from: (...args: unknown[]) => mockFrom(...args),
+    rpc: (...args: unknown[]) => mockRpc(...args),
   })),
   createAdminClient: vi.fn(() => ({
     from: (...args: unknown[]) => mockFrom(...args),
+    rpc: (...args: unknown[]) => mockRpc(...args),
     storage: { from: vi.fn().mockReturnValue({ remove: vi.fn().mockResolvedValue({}) }) },
   })),
   // A2: user-context client returns the same chainable mock.
   createUserContextClient: vi.fn(async () => ({
     from: (...args: unknown[]) => mockFrom(...args),
+    rpc: (...args: unknown[]) => mockRpc(...args),
   })),
 }));
 
@@ -173,29 +179,31 @@ describe('Permits Server Actions', () => {
   // ---------------------------------------------------------------------------
 
   describe('submitPermit', () => {
+    // B7: helper to seed ownership + the atomic-submit RPC response.
+    function mockSubmitRpcSuccess(isResub = false, projectName = 'Test Building') {
+      mockSingle.mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null }); // ownership
+      mockRpc.mockResolvedValueOnce({
+        data: [{
+          status_changed: true,
+          is_resubmission: isResub,
+          project_name: projectName,
+          prev_status: isResub ? 'revision_requested' : 'draft',
+          new_status: 'submitted',
+        }],
+        error: null,
+      });
+    }
+
     it('should submit a draft permit with complete building details', async () => {
-      // Mock ownership check: verifyPermitOwnership returns true
-      mockSingle
-        .mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null }) // ownership
-        .mockResolvedValueOnce({
-          data: {
-            status: 'draft',
-            building_details: {
-              numberOfFloors: 5,
-              totalBuiltUpArea: 2000,
-              plotArea: 1000,
-              buildingHeight: 20,
-            },
-            compliance_requirements: { fireSafety: true },
-            project_name: 'Test Building',
-            revision_count: 0,
-          },
-          error: null,
-        }); // permit data
+      mockSubmitRpcSuccess();
 
       const result = await submitPermit(validUUID, 'csrf-token');
 
       expect(result.success).toBe(true);
+      expect(mockRpc).toHaveBeenCalledWith('submit_permit_atomic', {
+        p_permit_id: validUUID,
+        p_user_id: testUser.id,
+      });
     });
 
     it('should return error when unauthenticated', async () => {
@@ -227,27 +235,44 @@ describe('Permits Server Actions', () => {
       expect(result.error).toBe('Access denied');
     });
 
+    // B7: RPC reports status_changed=false when another tab beat us.
+    it('reports "Can only submit draft or revision permits" when the row already transitioned', async () => {
+      mockSingle.mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null });
+      mockRpc.mockResolvedValueOnce({
+        data: [{
+          status_changed: false,
+          is_resubmission: false,
+          project_name: 'Test',
+          prev_status: 'submitted',
+          new_status: 'submitted',
+        }],
+        error: null,
+      });
+
+      const result = await submitPermit(validUUID, 'csrf-token');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/draft or revision/i);
+    });
+
+    // B7: maps the RPC's BUILDING_DETAILS_INCOMPLETE Postgres exception.
+    it('reports incomplete building details when the RPC rejects with P0002', async () => {
+      mockSingle.mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null });
+      mockRpc.mockResolvedValueOnce({
+        data: null,
+        error: { code: 'P0002', message: 'BUILDING_DETAILS_INCOMPLETE' },
+      });
+
+      const result = await submitPermit(validUUID, 'csrf-token');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/building details/i);
+    });
+
     // B8: notification dispatch failure must not roll back submit, but it
     // must surface a warning so the client can flash it.
     it('should still succeed but surface a warning when notification dispatch fails', async () => {
-      mockSingle
-        .mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null })
-        .mockResolvedValueOnce({
-          data: {
-            status: 'draft',
-            building_details: {
-              numberOfFloors: 5,
-              totalBuiltUpArea: 2000,
-              plotArea: 1000,
-              buildingHeight: 20,
-            },
-            compliance_requirements: { fireSafety: true },
-            project_name: 'Test Building',
-            revision_count: 0,
-          },
-          error: null,
-        });
-
+      mockSubmitRpcSuccess();
       mockCreateNotification.mockRejectedValueOnce(new Error('SMTP outage'));
 
       const result = await submitPermit(validUUID, 'csrf-token');

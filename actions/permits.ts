@@ -252,49 +252,40 @@ export async function submitPermit(
       return { success: false, error: 'Access denied' };
     }
 
+    // B7: collapse the multi-statement submit into a single transactional RPC.
+    // The RPC locks the row FOR UPDATE so two concurrent submit clicks can't
+    // both observe status='draft' and both insert status_history rows.
     const supabase = createAdminClient();
-    const { data: permit } = await supabase
-      .from('permit_applications')
-      .select('status, building_details, compliance_requirements, project_name, revision_count')
-      .eq('id', permitId)
-      .single();
+    const { data: rpcRows, error: rpcError } = await supabase.rpc('submit_permit_atomic', {
+      p_permit_id: permitId,
+      p_user_id: authCheck.user.id,
+    });
 
-    if (!permit) {
-      return { success: false, error: 'Permit not found' };
+    if (rpcError) {
+      // Postgres custom codes from the RPC body.
+      if (rpcError.code === 'P0001' || rpcError.message?.includes('PERMIT_NOT_FOUND')) {
+        return { success: false, error: 'Permit not found' };
+      }
+      if (rpcError.code === 'P0002' || rpcError.message?.includes('BUILDING_DETAILS_INCOMPLETE')) {
+        return { success: false, error: 'Please complete building details before submitting' };
+      }
+      console.error('submit_permit_atomic failed:', rpcError);
+      return { success: false, error: 'Failed to submit permit' };
     }
 
-    if (permit.status !== 'draft' && permit.status !== 'revision_requested') {
+    const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    if (!row) {
+      return { success: false, error: 'Failed to submit permit' };
+    }
+
+    if (!row.status_changed) {
+      // The lock observed a non-draft status — typically because another tab
+      // already submitted. Don't pretend it succeeded.
       return { success: false, error: 'Can only submit draft or revision permits' };
     }
 
-    // Check that building details and compliance requirements are filled
-    const bd = permit.building_details;
-    if (!bd || !bd.numberOfFloors || !bd.totalBuiltUpArea || !bd.plotArea || !bd.buildingHeight) {
-      return { success: false, error: 'Please complete building details before submitting' };
-    }
-
-    const isResubmission = permit.status === 'revision_requested';
-
-    const { error } = await supabase
-      .from('permit_applications')
-      .update({
-        status: 'submitted',
-        submitted_at: new Date().toISOString(),
-        revision_count: isResubmission ? (permit.revision_count || 0) + 1 : permit.revision_count || 0,
-        revision_notes: isResubmission ? null : undefined,
-      })
-      .eq('id', permitId)
-      .eq('user_id', authCheck.user.id);
-
-    if (error) throw error;
-
-    await supabase.from('permit_status_history').insert({
-      permit_id: permitId,
-      from_status: permit.status,
-      to_status: 'submitted',
-      changed_by: authCheck.user.id,
-      comment: isResubmission ? 'Application resubmitted after revision' : 'Application submitted for review',
-    });
+    const isResubmission: boolean = !!row.is_resubmission;
+    const projectName: string = row.project_name;
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({
@@ -311,12 +302,12 @@ export async function submitPermit(
     let notificationWarning: string | undefined;
     try {
       const { createNotification, getNotificationContent } = await import('@/lib/notifications');
-      const content = getNotificationContent('permit_submitted', permit.project_name);
+      const content = getNotificationContent('permit_submitted', projectName);
       await createNotification({
         userId: authCheck.user.id,
         type: 'permit_submitted',
         ...content,
-        data: { permitId, permitName: permit.project_name },
+        data: { permitId, permitName: projectName },
       });
     } catch (notifyError) {
       console.error('submitPermit notification failed:', notifyError);
@@ -701,45 +692,35 @@ export async function revisePermit(
       return { success: false, error: 'Access denied' };
     }
 
+    // B7: atomic revise — same transactional pattern as submit_permit_atomic.
     const supabase = createAdminClient();
-    const { data: permit } = await supabase
-      .from('permit_applications')
-      .select('status')
-      .eq('id', permitId)
-      .single();
+    const { data: rpcRows, error: rpcError } = await supabase.rpc('revise_permit_atomic', {
+      p_permit_id: permitId,
+      p_user_id: authCheck.user.id,
+    });
 
-    if (!permit) {
-      return { success: false, error: 'Permit not found' };
+    if (rpcError) {
+      if (rpcError.code === 'P0001' || rpcError.message?.includes('PERMIT_NOT_FOUND')) {
+        return { success: false, error: 'Permit not found' };
+      }
+      console.error('revise_permit_atomic failed:', rpcError);
+      return { success: false, error: 'Failed to start revision' };
     }
 
-    if (permit.status !== 'revision_requested') {
+    const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    if (!row) {
+      return { success: false, error: 'Failed to start revision' };
+    }
+
+    if (!row.status_changed) {
       return { success: false, error: 'Can only revise permits with revision requested' };
     }
-
-    const { error } = await supabase
-      .from('permit_applications')
-      .update({
-        status: 'draft',
-        compliance_check_result: null,
-      })
-      .eq('id', permitId)
-      .eq('user_id', authCheck.user.id);
-
-    if (error) throw error;
-
-    await supabase.from('permit_status_history').insert({
-      permit_id: permitId,
-      from_status: permit.status,
-      to_status: 'draft',
-      changed_by: authCheck.user.id,
-      comment: 'Started revision',
-    });
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({
       userId: authCheck.user.id,
       action: 'permit_revised',
-      metadata: { permitId, previousStatus: permit.status },
+      metadata: { permitId, previousStatus: row.prev_status },
       ...metadata,
     });
 
