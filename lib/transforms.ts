@@ -10,6 +10,37 @@ import type {
 } from '@/types';
 
 /**
+ * Coerce a Postgres-numeric / nullable count to a finite number (or 0).
+ * RPCs return `total_users` etc. as numeric strings or null; chart code only
+ * ever wants a number. Replaces the `Number(x) || 0` ritual scattered across
+ * the analytics actions.
+ */
+export function numOrZero(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Shallow snake_case → camelCase mapper for flat DB rows. Intended for the
+ * 80% case (audit log, analytics rows, document registry). Deeply nested or
+ * computed-field shapes (permits) should keep their hand-written mapper.
+ *
+ * `T` is the camelCase output shape — the caller asserts the row's keys
+ * line up with `T`'s keys via the generic. Values are passed through as-is
+ * with no coercion; combine with `numOrZero` for count fields.
+ */
+export function snakeToCamel<T extends Record<string, unknown>>(
+  row: Record<string, unknown>,
+): T {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(row)) {
+    const camel = key.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
+    out[camel] = row[key];
+  }
+  return out as T;
+}
+
+/**
  * Shape of a permit_applications row as returned by Supabase. Snake_case to
  * mirror the DB column names. Optional join `users` carries the username when
  * the query includes the FK relation (admin permit list).

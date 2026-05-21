@@ -7,6 +7,7 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { requireAdmin } from '@/lib/security';
 import { getAllDocuments } from '@/lib/document-registry';
+import { numOrZero } from '@/lib/transforms';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -79,16 +80,16 @@ export async function getAnalyticsDashboardStats(): Promise<{
 
     return {
       data: {
-        totalUsers: Number(row.total_users) || 0,
-        activeUsersToday: Number(row.active_users_today) || 0,
-        activeUsersYesterday: Number(row.active_users_yesterday) || 0,
-        messagesToday: Number(row.messages_today) || 0,
-        messagesYesterday: Number(row.messages_yesterday) || 0,
-        permitsToday: Number(row.permits_today) || 0,
-        permitsYesterday: Number(row.permits_yesterday) || 0,
-        newUsersToday: Number(row.new_users_today) || 0,
-        newUsersYesterday: Number(row.new_users_yesterday) || 0,
-        totalChunks: Number(row.total_chunks) || 0,
+        totalUsers: numOrZero(row.total_users),
+        activeUsersToday: numOrZero(row.active_users_today),
+        activeUsersYesterday: numOrZero(row.active_users_yesterday),
+        messagesToday: numOrZero(row.messages_today),
+        messagesYesterday: numOrZero(row.messages_yesterday),
+        permitsToday: numOrZero(row.permits_today),
+        permitsYesterday: numOrZero(row.permits_yesterday),
+        newUsersToday: numOrZero(row.new_users_today),
+        newUsersYesterday: numOrZero(row.new_users_yesterday),
+        totalChunks: numOrZero(row.total_chunks),
       },
     };
   } catch (error) {
@@ -125,10 +126,10 @@ export async function getMessageActivity30d(): Promise<{
     return {
       data: (data || []).map((row: { day: string; user_count: number; assistant_count: number; total_count: number; active_users: number }) => ({
         day: row.day,
-        userCount: Number(row.user_count) || 0,
-        assistantCount: Number(row.assistant_count) || 0,
-        totalCount: Number(row.total_count) || 0,
-        activeUsers: Number(row.active_users) || 0,
+        userCount: numOrZero(row.user_count),
+        assistantCount: numOrZero(row.assistant_count),
+        totalCount: numOrZero(row.total_count),
+        activeUsers: numOrZero(row.active_users),
       })),
     };
   } catch (error) {
@@ -198,9 +199,9 @@ export async function getDocumentUsageStats(): Promise<{
       data: (data || []).map((row: { document_name: string; chunk_count: number; min_page: number; max_page: number }) => ({
         documentName: row.document_name,
         displayName: nameMap.get(row.document_name) || row.document_name,
-        chunkCount: Number(row.chunk_count) || 0,
-        minPage: Number(row.min_page) || 0,
-        maxPage: Number(row.max_page) || 0,
+        chunkCount: numOrZero(row.chunk_count),
+        minPage: numOrZero(row.min_page),
+        maxPage: numOrZero(row.max_page),
       })),
     };
   } catch (error) {
@@ -248,13 +249,13 @@ export async function getPermitStatusBreakdown(): Promise<{
 
     return {
       data: {
-        total: Number(stats.total_permits) || 0,
-        draft: Number(stats.draft_count) || 0,
-        submitted: Number(stats.submitted_count) || 0,
-        underReview: Number(stats.under_review_count) || 0,
-        approved: Number(stats.approved_count) || 0,
-        rejected: Number(stats.rejected_count) || 0,
-        revisionRequested: Number(stats.revision_requested_count) || 0,
+        total: numOrZero(stats.total_permits),
+        draft: numOrZero(stats.draft_count),
+        submitted: numOrZero(stats.submitted_count),
+        underReview: numOrZero(stats.under_review_count),
+        approved: numOrZero(stats.approved_count),
+        rejected: numOrZero(stats.rejected_count),
+        revisionRequested: numOrZero(stats.revision_requested_count),
       },
     };
   } catch (error) {
@@ -334,7 +335,7 @@ export async function getTopActiveUsers(
         userId: row.user_id,
         username: row.username,
         fullName: row.full_name,
-        messageCount: Number(row.message_count) || 0,
+        messageCount: numOrZero(row.message_count),
         lastActive: row.last_active,
       })),
     };

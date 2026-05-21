@@ -149,7 +149,7 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 - [x] **E7** Extend `test/document-registry` tests — cache HIT, DB-error empty caching is removed (overlap with B2), `refreshPromise` dedup, `getDocumentByIdSync` cold/warm. 🟡 — `d73cf23`
 - [x] **E8** `test/semantic-cache.test.ts` — search hit/miss/error; store error swallow; empty cache. 🟢 — `413f9fd`
 - [x] **E9** `test/supabase-server.test.ts` + `test/tree-cache.test.ts` — singleton; missing env throw; L1/L2 hit/miss. 🟡 — `1b0eae1`
-- [x] **E10** `test/pdf-ingestion.test.ts` — resume skip path; child→parent linking; quota error mid-run; advisory-lock collision (overlap with D19); empty PDF. 🔴 — (pending commit)
+- [x] **E10** `test/pdf-ingestion.test.ts` — resume skip path; child→parent linking; quota error mid-run; advisory-lock collision (overlap with D19); empty PDF. 🔴 — `2eaa385`
 - [x] **E11** `test/pdf-parser.test.ts` — TOC extraction, no-TOC fallback, malformed PDF. 🟡 — `77b3fe1`
 - [x] **E12** `test/permit-certificate.test.ts` — cert number format, all fields present in buffer, optional null fields. 🟢 — `a362019`
 - [x] **E13** `test/notifications.test.ts` — in-app + email; email failure swallow; both transports off. 🟢 — `3d8e0a2`
@@ -169,7 +169,7 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 - [x] **F2 — Simplify #2** Move `safeEqual`, `checkCodeAttempts`, `resetCodeAttempts` to `lib/code-verification.ts`. 🟢 — `41be019`
 - [x] **F3 — Simplify #3** Replace dynamic `import('@/lib/validations')` in `actions/admin.ts:448` with static import. 🟢 — `503fee0`
 - [x] **F4 — Simplify #4** Helper `logAuditWithMeta(userId, action, metadata)` in `lib/auth.ts`. 🟢 — `14612f2`
-- [ ] **F5 — Simplify #5** Generic `snakeToCamel<T>` + `numOrZero` in `lib/transforms.ts`. 🟡
+- [x] **F5 — Simplify #5** Generic `snakeToCamel<T>` + `numOrZero` in `lib/transforms.ts`. 🟡 — (pending commit)
 - [x] **F6 — Simplify #6** Generic `verifyOwnership(table, idColumn, recordId, userId)` in `lib/security.ts`. 🟢 — `702fee2`
 - [ ] **F7 — Simplify #7** Drop in-memory aggregation fallback in `actions/ingest-pdf.ts:330-366` (RPC always exists post-migration). 🟢
 - [ ] **F8 — Simplify #8** Drop RPC fallbacks in `actions/documents.ts:66-86, 125-162, 210-222`. 🟡
