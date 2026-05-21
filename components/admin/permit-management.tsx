@@ -4,7 +4,8 @@
 // Admin Permit Management Component
 // ============================================================================
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -36,7 +37,15 @@ interface PermitManagementProps {
 }
 
 export function PermitManagement({ permits, stats, loading, onRefresh, onFilterStatus }: PermitManagementProps) {
-  const [activeFilter, setActiveFilter] = useState('all');
+  // X2: persist permit-status filter in the URL (?status=approved) so refresh
+  // / share-link / browser-back keeps the same view. Falls back to 'all' when
+  // the query param is absent.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const initialFilter = searchParams?.get('status') || 'all';
+
+  const [activeFilter, setActiveFilter] = useState(initialFilter);
   const [expandedPermit, setExpandedPermit] = useState<string | null>(null);
   const [reviewDialog, setReviewDialog] = useState<{ permit: PermitApplication; action: 'approve' | 'reject' | 'request_revision' } | null>(null);
   const [reviewComments, setReviewComments] = useState('');
@@ -50,9 +59,30 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
   // the action layer rejects a stale token.
   const { runWithCsrf } = useCsrfAction();
 
+  // X2: notify the parent of the initial filter so the underlying permit
+  // query starts in sync with the URL on first mount.
+  useEffect(() => {
+    if (initialFilter !== 'all') {
+      onFilterStatus(initialFilter);
+    }
+    // Only on mount — subsequent changes go through handleFilter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleFilter = (status: string) => {
     setActiveFilter(status);
     onFilterStatus(status);
+
+    // X2: mirror to URL. Use replace + scroll:false to keep the scroll position
+    // and avoid stacking history entries on quick filter taps.
+    const params = new URLSearchParams(searchParams?.toString() || '');
+    if (status === 'all') {
+      params.delete('status');
+    } else {
+      params.set('status', status);
+    }
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   };
 
   const flashWarning = (msg: string) => {
