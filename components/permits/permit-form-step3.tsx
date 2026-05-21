@@ -17,6 +17,13 @@ interface PermitFormStep3Props {
   error: string;
   /** ISO timestamp from the last AI compliance check, if any. (B11) */
   lastCheckAt?: string | null;
+  /**
+   * X14: whether step 2 (building details) has been filled in. The server
+   * already enforces this — without it the compliance check has nothing to
+   * analyze and the action returns an error. Blocking the button client-side
+   * gives the user a faster, clearer signal.
+   */
+  hasBuildingDetails?: boolean;
 }
 
 const COMPLIANCE_FIELDS: { key: keyof Omit<ComplianceRequirements, 'additionalNotes'>; label: string; description: string }[] = [
@@ -39,6 +46,7 @@ export function PermitFormStep3({
   checkLoading,
   error,
   lastCheckAt,
+  hasBuildingDetails = true,
 }: PermitFormStep3Props) {
   const toggleField = (key: keyof Omit<ComplianceRequirements, 'additionalNotes'>) => {
     onChange({ ...data, [key]: !data[key] });
@@ -55,7 +63,8 @@ export function PermitFormStep3({
   const FRESH_WINDOW_MS = 60 * 60 * 1000;
   const isCheckFresh =
     !!lastCheckAt && Date.now() - new Date(lastCheckAt).getTime() < FRESH_WINDOW_MS;
-  const checkButtonDisabled = loading || checkLoading || isCheckFresh;
+  // X14: gate on building-details presence in addition to the freshness check.
+  const checkButtonDisabled = loading || checkLoading || isCheckFresh || !hasBuildingDetails;
 
   return (
     <Card>
@@ -126,7 +135,13 @@ export function PermitFormStep3({
               size="sm"
               onClick={onRunCheck}
               disabled={checkButtonDisabled}
-              title={isCheckFresh ? 'Recent AI check still valid (<1h). Edit details to re-run.' : undefined}
+              title={
+                !hasBuildingDetails
+                  ? 'Fill in building details (step 2) before running the AI check.'
+                  : isCheckFresh
+                    ? 'Recent AI check still valid (<1h). Edit details to re-run.'
+                    : undefined
+              }
             >
               {checkLoading ? (
                 <>

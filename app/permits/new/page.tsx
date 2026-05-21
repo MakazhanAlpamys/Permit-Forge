@@ -393,6 +393,16 @@ function NewPermitPageInner() {
               checkLoading={checkLoading}
               error={error}
               lastCheckAt={complianceResult?.checkedAt}
+              // X14: AI check needs numeric building details. We treat "at
+              // least one positive numeric field + occupancy + construction"
+              // as the minimum signal so the button stays disabled when
+              // step 2 was skipped or left at defaults.
+              hasBuildingDetails={
+                Boolean(step2Data.occupancyType && step2Data.constructionType) &&
+                [step2Data.numberOfFloors, step2Data.totalBuiltUpArea, step2Data.plotArea].some(
+                  (v) => Number(v) > 0,
+                )
+              }
             />
 
             {/* B10: file uploads belong on step 3 because they're optional and

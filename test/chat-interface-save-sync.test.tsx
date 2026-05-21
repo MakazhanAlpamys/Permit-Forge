@@ -65,6 +65,13 @@ describe('ChatInterface assistant-message save sync (B17)', () => {
     // ResizeObserver is required by Radix ScrollArea.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (globalThis as any).ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
+    // X13: chat-interface persists `lastSentAt` in sessionStorage to enforce
+    // its 2s send-throttle across reloads. jsdom keeps storage between tests
+    // in the same file, so the second test would see a fresh-enough timestamp
+    // and the click would be rate-limited before the save runs.
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.clear();
+    }
   });
 
   afterEach(() => {
