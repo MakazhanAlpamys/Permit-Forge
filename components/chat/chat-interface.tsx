@@ -461,13 +461,26 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
                 Clear Chat
               </Button>
               {currentSessionId && (
+                // X10: Export pulls messages from the DB. If clicked while the
+                // very first message is still being saved (or while a stream
+                // is in flight), the user gets a partial export. Gate the
+                // button on streaming state + on having at least one finalised
+                // message in the transcript.
                 <Button
                   variant="ghost"
                   size="sm"
+                  disabled={isLoading || isStreaming || messages.length === 0}
                   onClick={() => {
                     window.open(`/api/chat/export?sessionId=${currentSessionId}`, '_blank');
                   }}
                   className="text-xs text-muted-foreground"
+                  title={
+                    isLoading || isStreaming
+                      ? 'Wait for the current response to finish'
+                      : messages.length === 0
+                        ? 'Send at least one message to export'
+                        : undefined
+                  }
                 >
                   <Download className="h-3 w-3 mr-1" />
                   Export
