@@ -8,6 +8,7 @@ import { uuidSchema } from '@/lib/validations';
 import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 import { generateCertificateNumber, generateCertificatePDF, type CertificateData } from '@/lib/permit-certificate';
 import { applySecurityHeaders } from '@/lib/api-security-headers';
+import { canPerformOperation, type PermitStatus } from '@/lib/permit-state-machine';
 
 export async function GET(
   request: NextRequest,
@@ -60,8 +61,9 @@ export async function GET(
       return applySecurityHeaders(Response.json({ error: 'Permit not found' }, { status: 404 }));
     }
 
-    if (permit.status !== 'approved') {
-      return applySecurityHeaders(Response.json({ error: 'Certificate only available for approved permits' }, { status: 400 }));
+    const certCheck = canPerformOperation(permit.status as PermitStatus, 'download_cert');
+    if (!certCheck.allowed) {
+      return applySecurityHeaders(Response.json({ error: certCheck.reason }, { status: 400 }));
     }
 
     // X4 / M8: cached-cert path. If we already produced this PDF and stashed

@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ArrowLeft, Send, ShieldCheck, Trash2, Loader2, Download, RotateCcw } from 'lucide-react';
 import type { PermitApplication, PermitStatusHistoryEntry, PermitAttachment } from '@/types';
+import { isOperationAllowed, type PermitStatus } from '@/lib/permit-state-machine';
 
 export default function PermitDetailPage() {
   const params = useParams();
@@ -202,8 +203,12 @@ export default function PermitDetailPage() {
     );
   }
 
-  const isDraft = permit.status === 'draft';
-  const canRevise = permit.status === 'rejected' || permit.status === 'revision_requested';
+  // X16: route status checks through the state-machine so the rules live in
+  // one place (lib/permit-state-machine.ts). `isDraft` was used as a coarse
+  // "can edit / can delete" gate; it lines up exactly with the `edit` op.
+  const status = permit.status as PermitStatus;
+  const isDraft = isOperationAllowed(status, 'edit');
+  const canRevise = isOperationAllowed(status, 'revise');
 
   return (
     <div className="min-h-screen bg-background">

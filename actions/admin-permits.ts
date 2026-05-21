@@ -11,6 +11,7 @@ import { requireAdmin, requireCSRF, requireActionRateLimit } from '@/lib/securit
 import { uuidSchema, reviewPermitSchema, type ReviewPermitInput } from '@/lib/validations';
 import type { PermitApplication, PermitStats } from '@/types';
 import { transformPermit, type PermitRow } from '@/lib/transforms';
+import { canPerformOperation, type PermitStatus } from '@/lib/permit-state-machine';
 
 export type { ReviewPermitInput };
 
@@ -209,8 +210,9 @@ export async function setPermitUnderReview(
       return { success: false, error: 'Permit not found' };
     }
 
-    if (permit.status !== 'submitted') {
-      return { success: false, error: 'Can only review submitted permits' };
+    const startCheck = canPerformOperation(permit.status as PermitStatus, 'start_review');
+    if (!startCheck.allowed) {
+      return { success: false, error: startCheck.reason };
     }
 
     const { data: updated, error } = await supabase

@@ -434,7 +434,8 @@ describe('Admin Permits Server Actions', () => {
       const result = await setPermitUnderReview(validUUID, 'csrf-token');
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Can only review submitted permits');
+      // X16: error message now comes from lib/permit-state-machine.ts
+      expect(result.error).toMatch(/Cannot review a permit/);
     });
 
     it('should handle race condition (status changed)', async () => {

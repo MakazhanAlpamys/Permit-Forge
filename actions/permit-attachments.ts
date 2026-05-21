@@ -10,6 +10,7 @@ import { requireAuth, requireCSRF } from '@/lib/security';
 import { uuidSchema } from '@/lib/validations';
 import { validateFile, generateStoragePath } from '@/lib/file-upload';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
+import { canPerformOperation, type PermitStatus } from '@/lib/permit-state-machine';
 import type { PermitAttachment } from '@/types';
 
 interface AttachmentRow {
@@ -77,8 +78,9 @@ export async function uploadPermitAttachment(
       return { success: false, error: 'Access denied' };
     }
 
-    if (permit.status !== 'draft') {
-      return { success: false, error: 'Can only upload attachments to draft permits' };
+    const uploadCheck = canPerformOperation(permit.status as PermitStatus, 'upload_attachment');
+    if (!uploadCheck.allowed) {
+      return { success: false, error: uploadCheck.reason };
     }
 
     // Get file from FormData
@@ -206,8 +208,12 @@ export async function deletePermitAttachment(
       return { success: false, error: 'Access denied' };
     }
 
-    if (attachment.permit_applications.status !== 'draft') {
-      return { success: false, error: 'Can only delete attachments from draft permits' };
+    const deleteCheck = canPerformOperation(
+      attachment.permit_applications.status as PermitStatus,
+      'delete_attachment',
+    );
+    if (!deleteCheck.allowed) {
+      return { success: false, error: deleteCheck.reason };
     }
 
     // Delete DB record first (reversible orphan in storage is safer than

@@ -22,6 +22,7 @@ import type {
 } from '@/types';
 import { transformPermit, type PermitRow } from '@/lib/transforms';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
+import { canPerformOperation, type PermitStatus } from '@/lib/permit-state-machine';
 
 // Re-export input types for components
 export type { CreatePermitInput, UpdateBuildingDetailsInput, UpdateComplianceRequirementsInput };
@@ -131,8 +132,9 @@ export async function updatePermitBuildingDetails(
       .eq('id', validation.data.permitId)
       .single();
 
-    if (permit?.status !== 'draft') {
-      return { success: false, error: 'Can only edit draft permits' };
+    const editCheck = canPerformOperation(permit?.status as PermitStatus, 'edit');
+    if (!editCheck.allowed) {
+      return { success: false, error: editCheck.reason };
     }
 
     // B16: any change to building_details invalidates the prior compliance
@@ -196,8 +198,9 @@ export async function updatePermitComplianceRequirements(
       .eq('id', validation.data.permitId)
       .single();
 
-    if (permit?.status !== 'draft') {
-      return { success: false, error: 'Can only edit draft permits' };
+    const editCheck = canPerformOperation(permit?.status as PermitStatus, 'edit');
+    if (!editCheck.allowed) {
+      return { success: false, error: editCheck.reason };
     }
 
     // B16: compliance requirement changes also invalidate the prior result
@@ -516,8 +519,9 @@ export async function deletePermit(
       .eq('id', permitId)
       .single();
 
-    if (permit?.status !== 'draft') {
-      return { success: false, error: 'Can only delete draft permits' };
+    const deleteCheck = canPerformOperation(permit?.status as PermitStatus, 'delete');
+    if (!deleteCheck.allowed) {
+      return { success: false, error: deleteCheck.reason };
     }
 
     // Fetch attachment paths before deleting (needed for storage cleanup after DB delete)
@@ -602,8 +606,9 @@ export async function runComplianceCheck(
       return { success: false, error: 'Permit not found' };
     }
 
-    if (permit.status !== 'draft' && permit.status !== 'revision_requested') {
-      return { success: false, error: 'Can only run compliance check on draft or revision-requested permits' };
+    const runCheck = canPerformOperation(permit.status as PermitStatus, 'run_compliance');
+    if (!runCheck.allowed) {
+      return { success: false, error: runCheck.reason };
     }
 
     const bd = permit.building_details;
@@ -644,7 +649,7 @@ export async function runComplianceCheck(
       .eq('id', permitId)
       .eq('user_id', authCheck.user.id)
       .single();
-    if (!stillDraft || (stillDraft.status !== 'draft' && stillDraft.status !== 'revision_requested')) {
+    if (!stillDraft || !canPerformOperation(stillDraft.status as PermitStatus, 'run_compliance').allowed) {
       return { success: false, error: 'Permit state changed during analysis — result discarded.' };
     }
 
