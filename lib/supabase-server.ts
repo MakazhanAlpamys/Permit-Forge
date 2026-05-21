@@ -127,7 +127,30 @@ async function mintSupabaseUserJWT(userId: string): Promise<string | null> {
 }
 
 export async function createUserContextClient(userId: string): Promise<SupabaseClient> {
-  const userJwt = await mintSupabaseUserJWT(userId);
+  // A2 is opt-in via ENABLE_USER_CONTEXT_RLS=1. Without it we always return
+  // the service_role admin client — same behavior as pre-A2. The flag exists
+  // so we can re-enable defense-in-depth once SUPABASE_JWT_SECRET is verified
+  // to match the project's actual JWT secret in every environment. Until
+  // then a misconfigured secret would silently 500 every "read your own X"
+  // server action, which we already paid for once on production.
+  if (process.env.ENABLE_USER_CONTEXT_RLS !== '1') {
+    return createAdminClient();
+  }
+
+  let userJwt: string | null = null;
+  try {
+    userJwt = await mintSupabaseUserJWT(userId);
+  } catch (err) {
+    if (!_missingSupabaseJwtSecretWarned) {
+      _missingSupabaseJwtSecretWarned = true;
+      console.warn(
+        '[supabase] createUserContextClient: JWT signing failed, falling back to ' +
+          'service_role for this and subsequent calls. Error:',
+        err instanceof Error ? err.message : err,
+      );
+    }
+    return createAdminClient();
+  }
   if (!userJwt) {
     if (!_missingSupabaseJwtSecretWarned) {
       _missingSupabaseJwtSecretWarned = true;
