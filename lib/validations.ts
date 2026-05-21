@@ -266,6 +266,9 @@ export type CreatePermitInput = z.infer<typeof createPermitSchema>;
 export const updateBuildingDetailsSchema = z.object({
   permitId: uuidSchema,
   buildingDetails: buildingDetailsPartialSchema,
+  // X17: optimistic-locking version captured at load time. Optional for back-
+  // compat with the existing callers that haven't been wired through yet.
+  expectedVersion: z.number().int().nonnegative().optional(),
 });
 
 export type UpdateBuildingDetailsInput = z.infer<typeof updateBuildingDetailsSchema>;
@@ -273,6 +276,7 @@ export type UpdateBuildingDetailsInput = z.infer<typeof updateBuildingDetailsSch
 export const updateComplianceRequirementsSchema = z.object({
   permitId: uuidSchema,
   complianceRequirements: complianceRequirementsSchema,
+  expectedVersion: z.number().int().nonnegative().optional(),
 });
 
 export type UpdateComplianceRequirementsInput = z.infer<typeof updateComplianceRequirementsSchema>;

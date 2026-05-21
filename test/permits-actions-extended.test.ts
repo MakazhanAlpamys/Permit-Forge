@@ -214,6 +214,54 @@ describe('Permits Server Actions Extended', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBeDefined();
     });
+
+    // X17: optimistic-locking — when expectedVersion is supplied, the update
+    // must include it in the WHERE clause and surface a "changed in another
+    // tab" error if no row was affected.
+    //
+    // The action makes 3 select-style calls: ownership (`select('user_id')`),
+    // status (`select('status')`), and finally the awaited `select('id')`
+    // after update. We intercept `select` by column so the first two return
+    // the normal chainable object and `select('id')` resolves to a Promise.
+    function mockUpdateSelectResult(rows: Array<{ id: string }>) {
+      mockSelect.mockImplementation((col: string) => {
+        if (col === 'id') {
+          return Promise.resolve({ data: rows, error: null });
+        }
+        return { eq: mockEq, single: mockSingle, order: mockOrder };
+      });
+    }
+
+    it('passes expectedVersion through to the update WHERE clause', async () => {
+      mockSingle
+        .mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null })
+        .mockResolvedValueOnce({ data: { status: 'draft' }, error: null });
+      mockUpdateSelectResult([{ id: validUUID }]);
+
+      const result = await updatePermitBuildingDetails(
+        { ...validBuildingDetails, expectedVersion: 3 },
+        'csrf-token',
+      );
+
+      expect(result.success).toBe(true);
+      // The chained .eq('version', 3) call must have happened.
+      expect(mockEq).toHaveBeenCalledWith('version', 3);
+    });
+
+    it('returns a "changed in another tab" error when version mismatch', async () => {
+      mockSingle
+        .mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null })
+        .mockResolvedValueOnce({ data: { status: 'draft' }, error: null });
+      mockUpdateSelectResult([]);
+
+      const result = await updatePermitBuildingDetails(
+        { ...validBuildingDetails, expectedVersion: 3 },
+        'csrf-token',
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/another tab/i);
+    });
   });
 
   // ---------------------------------------------------------------------------

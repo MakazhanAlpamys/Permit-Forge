@@ -65,6 +65,7 @@ export interface PermitRow {
   revision_notes?: string | null;
   created_at: string;
   updated_at: string;
+  version?: number | null;
   users?: { username?: string | null } | null;
 }
 
@@ -89,6 +90,7 @@ export function transformPermit(row: PermitRow): PermitApplication & { username?
     revisionNotes: row.revision_notes || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    version: row.version ?? 0,
     username: row.users?.username || undefined,
   };
 }

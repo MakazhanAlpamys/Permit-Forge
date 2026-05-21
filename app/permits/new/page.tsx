@@ -95,6 +95,10 @@ function NewPermitPageInner() {
   const [permitId, setPermitId] = useState<string | null>(urlPermitId);
   const [complianceResult, setComplianceResult] = useState<ComplianceCheckResult | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
+  // X17: cached permit version so we can include `expectedVersion` in
+  // every update. Bumped locally after a successful update so subsequent
+  // updates in the same form lifetime keep working.
+  const [permitVersion, setPermitVersion] = useState<number | undefined>(undefined);
   // B9: gate the form render while we resolve "latest open draft" so we don't
   // briefly flash step 1 before redirecting into an existing draft.
   const [bootstrapping, setBootstrapping] = useState(true);
@@ -160,6 +164,7 @@ function NewPermitPageInner() {
         if (cancelled) return;
         if (result.data && (result.data.status === 'draft' || result.data.status === 'revision_requested')) {
           setPermitId(result.data.id);
+          setPermitVersion(result.data.version);
           applyPermitToFormState(result.data, setStep1Data, setStep2Data, setStep3Data);
           setCurrentStep(urlStep);
         } else {
@@ -176,6 +181,7 @@ function NewPermitPageInner() {
       const latestDraft = my.data.find(p => p.status === 'draft' || p.status === 'revision_requested');
       if (latestDraft) {
         setPermitId(latestDraft.id);
+        setPermitVersion(latestDraft.version);
         applyPermitToFormState(latestDraft, setStep1Data, setStep2Data, setStep3Data);
         // Resume on step 2 if building details exist, step 3 if compliance
         // requirements exist — otherwise step 1 is the natural entry point.
@@ -232,11 +238,15 @@ function NewPermitPageInner() {
     const result = await updatePermitBuildingDetails({
       permitId,
       buildingDetails: step2Data,
+      expectedVersion: permitVersion,
     }, csrfToken || '');
 
     setLoading(false);
 
     if (result.success) {
+      // X17: bump local version so subsequent saves in this form lifetime
+      // stay coherent with the DB without a re-fetch.
+      if (typeof permitVersion === 'number') setPermitVersion(permitVersion + 1);
       goToStep(3);
     } else {
       setError(result.error || 'Failed to save building details');
@@ -252,11 +262,13 @@ function NewPermitPageInner() {
     const result = await updatePermitComplianceRequirements({
       permitId,
       complianceRequirements: step3Data,
+      expectedVersion: permitVersion,
     }, csrfToken || '');
 
     setLoading(false);
 
     if (result.success) {
+      if (typeof permitVersion === 'number') setPermitVersion(permitVersion + 1);
       router.push('/permits');
     } else {
       setError(result.error || 'Failed to save');
@@ -279,12 +291,14 @@ function NewPermitPageInner() {
       const saveResult = await updatePermitComplianceRequirements({
         permitId,
         complianceRequirements: step3Data,
+        expectedVersion: permitVersion,
       }, csrfToken || '');
 
       if (!saveResult.success) {
         setError(saveResult.error || 'Failed to save compliance requirements');
         return;
       }
+      if (typeof permitVersion === 'number') setPermitVersion(permitVersion + 1);
 
       // Then submit
       const submitResult = await submitPermit(permitId, csrfToken || '');
@@ -313,6 +327,7 @@ function NewPermitPageInner() {
     const saveResult = await updatePermitComplianceRequirements({
       permitId,
       complianceRequirements: step3Data,
+      expectedVersion: permitVersion,
     }, csrfToken || '');
 
     if (!saveResult.success) {
@@ -320,6 +335,7 @@ function NewPermitPageInner() {
       setError(saveResult.error || 'Failed to save compliance requirements');
       return;
     }
+    if (typeof permitVersion === 'number') setPermitVersion(permitVersion + 1);
 
     const result = await runComplianceCheck(permitId, csrfToken || '');
     setCheckLoading(false);

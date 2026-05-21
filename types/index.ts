@@ -307,6 +307,13 @@ export interface PermitApplication {
   revisionNotes?: string | null;
   createdAt: string;
   updatedAt: string;
+  /**
+   * X17 / P2-A5: monotonically-increasing version used for optimistic
+   * locking on user-initiated UPDATEs. Read on load, bumped on each
+   * successful write, included in the UPDATE WHERE clause to detect
+   * concurrent edits from another tab.
+   */
+  version?: number;
 }
 
 export interface PermitStatusHistoryEntry {

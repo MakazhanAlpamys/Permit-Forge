@@ -138,18 +138,32 @@ export async function updatePermitBuildingDetails(
     }
 
     // B16: any change to building_details invalidates the prior compliance
-    // result (the AI evaluated the old shape). Clear it so the UI doesn't show
-    // stale "compliant"/"non_compliant" verdicts after an edit.
-    const { error } = await supabase
+    // result (the AI evaluated the old shape).
+    // X17: optimistic-locking — when the client supplied an expectedVersion,
+    // include it in the WHERE clause and bump version on success. Zero rows
+    // affected → the row was edited in another tab.
+    const { expectedVersion } = validation.data;
+    let updateBuilder = supabase
       .from('permit_applications')
       .update({
         building_details: validation.data.buildingDetails,
         compliance_check_result: null,
+        version: typeof expectedVersion === 'number' ? expectedVersion + 1 : undefined,
       })
       .eq('id', validation.data.permitId)
       .eq('user_id', authCheck.user.id);
+    if (typeof expectedVersion === 'number') {
+      updateBuilder = updateBuilder.eq('version', expectedVersion);
+    }
+    const { data: updated, error } = await updateBuilder.select('id');
 
     if (error) throw error;
+    if (typeof expectedVersion === 'number' && (!updated || updated.length === 0)) {
+      return {
+        success: false,
+        error: 'This permit was changed in another tab. Reload the page to see the latest version.',
+      };
+    }
 
     return { success: true };
   } catch (error) {
@@ -203,18 +217,30 @@ export async function updatePermitComplianceRequirements(
       return { success: false, error: editCheck.reason };
     }
 
-    // B16: compliance requirement changes also invalidate the prior result
-    // (the AI checked against the old requirements set).
-    const { error } = await supabase
+    // B16: compliance requirement changes also invalidate the prior result.
+    // X17: same optimistic-locking pattern as updatePermitBuildingDetails.
+    const { expectedVersion } = validation.data;
+    let updateBuilder = supabase
       .from('permit_applications')
       .update({
         compliance_requirements: validation.data.complianceRequirements,
         compliance_check_result: null,
+        version: typeof expectedVersion === 'number' ? expectedVersion + 1 : undefined,
       })
       .eq('id', validation.data.permitId)
       .eq('user_id', authCheck.user.id);
+    if (typeof expectedVersion === 'number') {
+      updateBuilder = updateBuilder.eq('version', expectedVersion);
+    }
+    const { data: updated, error } = await updateBuilder.select('id');
 
     if (error) throw error;
+    if (typeof expectedVersion === 'number' && (!updated || updated.length === 0)) {
+      return {
+        success: false,
+        error: 'This permit was changed in another tab. Reload the page to see the latest version.',
+      };
+    }
 
     return { success: true };
   } catch (error) {
