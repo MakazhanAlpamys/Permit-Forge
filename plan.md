@@ -169,9 +169,9 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 - [x] **F2 — Simplify #2** Move `safeEqual`, `checkCodeAttempts`, `resetCodeAttempts` to `lib/code-verification.ts`. 🟢 — `41be019`
 - [x] **F3 — Simplify #3** Replace dynamic `import('@/lib/validations')` in `actions/admin.ts:448` with static import. 🟢 — `503fee0`
 - [x] **F4 — Simplify #4** Helper `logAuditWithMeta(userId, action, metadata)` in `lib/auth.ts`. 🟢 — `14612f2`
-- [x] **F5 — Simplify #5** Generic `snakeToCamel<T>` + `numOrZero` in `lib/transforms.ts`. 🟡 — (pending commit)
+- [x] **F5 — Simplify #5** Generic `snakeToCamel<T>` + `numOrZero` in `lib/transforms.ts`. 🟡 — `11fe6b2`
 - [x] **F6 — Simplify #6** Generic `verifyOwnership(table, idColumn, recordId, userId)` in `lib/security.ts`. 🟢 — `702fee2`
-- [ ] **F7 — Simplify #7** Drop in-memory aggregation fallback in `actions/ingest-pdf.ts:330-366` (RPC always exists post-migration). 🟢
+- [x] **F7 — Simplify #7** Drop in-memory aggregation fallback in `actions/ingest-pdf.ts:330-366` (RPC always exists post-migration). 🟢 — (pending commit)
 - [ ] **F8 — Simplify #8** Drop RPC fallbacks in `actions/documents.ts:66-86, 125-162, 210-222`. 🟡
 - [ ] **F9 — Simplify #9** `paginateByCursor` helper. 🟢
 - [ ] **F10 — Simplify #10** Merge `queryBuildingCode` / `queryBuildingCodeFiltered` in `lib/rag.ts`. 🟡

@@ -338,51 +338,25 @@ export async function getIngestionStatus(): Promise<{
       };
     }
 
-    // Try to get per-document stats via RPC
-    let documentStats: { document_name: string; chunk_count: number; min_page: number; max_page: number }[] = [];
-
+    // F7: The get_document_stats RPC is seeded in 000_full_setup.sql, so we
+    // trust it to exist in any environment where the rest of the app boots.
+    // (Previously we kept an in-memory aggregation fallback; that branch was
+    // dead in production and was hiding the real error when the RPC misfired.)
     const { data: statsData, error: statsError } = await supabase.rpc('get_document_stats');
 
-    if (!statsError && statsData) {
-      documentStats = (statsData as { document_name: string; chunk_count: number; min_page: number; max_page: number }[]);
-    } else if (statsError) {
-      // Fallback: basic aggregation via direct query
-      console.warn('get_document_stats RPC not available:', statsError.message);
-
-      // Get unique document names and counts manually
-      if (count && count > 0) {
-        const { data: sampleData } = await supabase
-          .from('dubai_code_chunks')
-          .select('metadata')
-          .limit(500);
-
-        if (sampleData) {
-          const docMap = new Map<string, { count: number; minPage: number; maxPage: number }>();
-
-          for (const row of sampleData) {
-            const meta = row.metadata as ChunkMetadata;
-            const docName = meta?.documentName || 'unknown';
-            const page = meta?.page || 0;
-
-            const existing = docMap.get(docName);
-            if (existing) {
-              existing.count++;
-              existing.minPage = Math.min(existing.minPage, page);
-              existing.maxPage = Math.max(existing.maxPage, page);
-            } else {
-              docMap.set(docName, { count: 1, minPage: page, maxPage: page });
-            }
-          }
-
-          documentStats = Array.from(docMap.entries()).map(([name, stats]) => ({
-            document_name: name,
-            chunk_count: stats.count,
-            min_page: stats.minPage,
-            max_page: stats.maxPage,
-          }));
-        }
-      }
+    if (statsError) {
+      console.error('get_document_stats RPC error:', statsError.message);
+      return {
+        hasChunks: (count || 0) > 0,
+        chunkCount: count || 0,
+        documentStats: [],
+        dbConnected: true,
+        error: `Per-document stats unavailable: ${statsError.message}`,
+      };
     }
+
+    const documentStats =
+      (statsData as { document_name: string; chunk_count: number; min_page: number; max_page: number }[]) || [];
 
     return {
       hasChunks: (count || 0) > 0,
