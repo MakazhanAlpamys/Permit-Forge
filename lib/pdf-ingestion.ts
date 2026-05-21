@@ -767,7 +767,9 @@ function findParentId(
 }
 
 /**
- * Save document tree to database
+ * Save document tree to database. The save_document_tree RPC is seeded by
+ * the migration; we trust it to exist and surface errors instead of silently
+ * falling back to a direct upsert (F15).
  */
 async function saveDocumentTree(
   supabase: ReturnType<typeof createAdminClient>,
@@ -783,45 +785,12 @@ async function saveDocumentTree(
     });
 
     if (error) {
-      // If RPC doesn't exist, try direct insert/upsert
-      if (error.message.includes('does not exist')) {
-        console.warn('save_document_tree RPC not found, using direct insert');
-        await saveDocumentTreeDirect(supabase, documentName, totalPages, treeNodes);
-      } else {
-        console.error('Error saving document tree:', error);
-      }
+      console.error('Error saving document tree:', error);
     } else {
       console.log(`✅ Saved document tree with ${treeNodes.length} nodes`);
     }
   } catch (err) {
     console.error('Failed to save document tree:', err);
-  }
-}
-
-/**
- * Direct insert/upsert for document tree (fallback)
- */
-async function saveDocumentTreeDirect(
-  supabase: ReturnType<typeof createAdminClient>,
-  documentName: string,
-  totalPages: number,
-  treeNodes: TreeNode[]
-): Promise<void> {
-  const { error } = await supabase
-    .from('document_trees')
-    .upsert({
-      document_name: documentName,
-      total_pages: totalPages,
-      tree_data: treeNodes,
-      updated_at: new Date().toISOString(),
-    }, {
-      onConflict: 'document_name',
-    });
-
-  if (error) {
-    console.error('Direct save document tree error:', error);
-  } else {
-    console.log(`✅ Saved document tree directly with ${treeNodes.length} nodes`);
   }
 }
 
