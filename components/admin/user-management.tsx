@@ -70,11 +70,27 @@ export function UserManagement({
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>({ type: null, user: null });
   const csrfTokenRef = useRef<string | null>(null);
-  
+  // X3: monotonically-increasing token so a slow response from a previous
+  // action (e.g. rapid Block → Unblock → Block) can't overwrite the state
+  // produced by a later one. The handlers capture the token at call time
+  // and drop their result when a newer action has already fired.
+  const actionTokenRef = useRef(0);
+
   // Fetch CSRF token on mount
   useEffect(() => {
     getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
   }, []);
+
+  /**
+   * Returns a checker that resolves to true if the action that captured this
+   * token is still the most-recent. Use after every `await` before mutating
+   * state so stale callbacks become no-ops.
+   */
+  const beginAction = () => {
+    actionTokenRef.current += 1;
+    const token = actionTokenRef.current;
+    return () => token === actionTokenRef.current;
+  };
   
   // Form states for modals
   const [blockReason, setBlockReason] = useState('');
@@ -104,16 +120,18 @@ export function UserManagement({
 
   const handleBlockConfirm = async () => {
     if (!modal.user) return;
-    
+
+    const isCurrent = beginAction();
     setActionLoading(modal.user.id);
     const result = await blockUser(
-      modal.user.id, 
-      !modal.user.blocked, 
+      modal.user.id,
+      !modal.user.blocked,
       blockReason || undefined,
       csrfTokenRef.current || undefined
     );
+    if (!isCurrent()) return;
     setActionLoading(null);
-    
+
     if (result.success) {
       closeModal();
       onRefresh();
@@ -129,13 +147,15 @@ export function UserManagement({
 
   const handleRoleConfirm = async () => {
     if (!modal.user) return;
-    
+
     const newRole = modal.user.role === 'admin' ? 'user' : 'admin';
-    
+
+    const isCurrent = beginAction();
     setActionLoading(modal.user.id);
     const result = await updateUserRole(modal.user.id, newRole, csrfTokenRef.current || undefined);
+    if (!isCurrent()) return;
     setActionLoading(null);
-    
+
     if (result.success) {
       closeModal();
       onRefresh();
@@ -164,17 +184,19 @@ export function UserManagement({
 
   const handlePasswordConfirm = async () => {
     if (!modal.user) return;
-    
+
     const error = validatePassword(newPassword);
     if (error) {
       setPasswordError(error);
       return;
     }
-    
+
+    const isCurrent = beginAction();
     setActionLoading(modal.user.id);
     const result = await adminResetPassword(modal.user.id, newPassword, csrfTokenRef.current || undefined);
+    if (!isCurrent()) return;
     setActionLoading(null);
-    
+
     if (result.success) {
       setModal({ type: 'success', user: null, message: 'Password reset successfully' });
     } else {
@@ -189,11 +211,13 @@ export function UserManagement({
 
   const handleDeleteConfirm = async () => {
     if (!modal.user) return;
-    
+
+    const isCurrent = beginAction();
     setActionLoading(modal.user.id);
     const result = await adminDeleteUser(modal.user.id, csrfTokenRef.current || undefined);
+    if (!isCurrent()) return;
     setActionLoading(null);
-    
+
     if (result.success) {
       closeModal();
       onRefresh();
