@@ -171,7 +171,7 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 - [x] **F4 — Simplify #4** Helper `logAuditWithMeta(userId, action, metadata)` in `lib/auth.ts`. 🟢 — `14612f2`
 - [x] **F5 — Simplify #5** Generic `snakeToCamel<T>` + `numOrZero` in `lib/transforms.ts`. 🟡 — `11fe6b2`
 - [x] **F6 — Simplify #6** Generic `verifyOwnership(table, idColumn, recordId, userId)` in `lib/security.ts`. 🟢 — `702fee2`
-- [x] **F7 — Simplify #7** Drop in-memory aggregation fallback in `actions/ingest-pdf.ts:330-366` (RPC always exists post-migration). 🟢 — (pending commit)
+- [x] **F7 — Simplify #7** Drop in-memory aggregation fallback in `actions/ingest-pdf.ts:330-366` (RPC always exists post-migration). 🟢 — `c2dd7fc`
 - [ ] **F8 — Simplify #8** Drop RPC fallbacks in `actions/documents.ts:66-86, 125-162, 210-222`. 🟡
 - [ ] **F9 — Simplify #9** `paginateByCursor` helper. 🟢
 - [ ] **F10 — Simplify #10** Merge `queryBuildingCode` / `queryBuildingCodeFiltered` in `lib/rag.ts`. 🟡
@@ -186,7 +186,7 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 - [ ] **F19 — Simplify #19** Extract `useChatStream()` hook with event-typed SSE protocol. Touches `chat-interface.tsx` AND `app/api/chat/stream/route.ts`. Coordinate with Track B if still open. 🔴
 - [ ] **F20 — Simplify #20** Split `DocumentManagement` into list + form. `useReducer` for form state. Move `BADGE_COLORS` to `lib/constants.ts`. 🟡
 - [x] **F21 — Dead code** Delete `lib/logger.ts` (zero imports). 🟢 — `72768e8`
-- [ ] **F22 — Dead code** `npm uninstall @google/generative-ai isomorphic-dompurify @types/dompurify supabase` (verify `isomorphic-dompurify` is truly unused after C18H lands — keep it if C18H uses it). 🟢
+- [x] **F22 — Dead code** `npm uninstall @google/generative-ai isomorphic-dompurify @types/dompurify supabase` (verify `isomorphic-dompurify` is truly unused after C18H lands — keep it if C18H uses it). 🟢 — (pending commit) — kept `isomorphic-dompurify` (used by C18H + message-bubble.tsx); removed `@google/generative-ai` (replaced by @google/genai), `@types/dompurify` (isomorphic-dompurify ships own types), and `supabase` CLI (devDep — no runtime impact).
 - [x] **F23 — Dead code** Remove unused exports: `CRAG_THRESHOLD`, `citationSchema`, `permitStatusSchema`, `DialogTrigger`, `ScrollBar`. 🟢 — `6fbf2af`
 - [ ] **F24 — Dead code** Remove unused functions: `getSession`, `resetTransporter`, `generateChatResponse`, `_getCacheState`, `_seedCache`, `loadDocumentTree`. Verify test mocks first. 🟡
 - [x] **F25 — Dedupe** Consolidate the 3 permit-status configs (constants vs chart vs filter list) into one. 🟢 — `e43fbc2`
