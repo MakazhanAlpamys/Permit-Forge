@@ -74,15 +74,26 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragOver(false);
+    // X5: ignore drops while a previous upload is still in flight so the user
+    // can't queue up overlapping requests. Server already rejects via TOCTOU
+    // guard, but client-side gating prevents the inflight-spinner UX confusion.
+    if (uploading) return;
     const file = e.dataTransfer.files[0];
     if (file) handleUpload(file);
-  }, [handleUpload]);
+  }, [handleUpload, uploading]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) handleUpload(file);
     if (inputRef.current) inputRef.current.value = '';
   };
+
+  // X5: dropzone click triggers the hidden <input>. Gate it on `uploading`
+  // so a second click during upload doesn't reopen the picker.
+  const handleZoneClick = useCallback(() => {
+    if (uploading) return;
+    inputRef.current?.click();
+  }, [uploading]);
 
   const accept = FILE_UPLOAD_LIMITS.allowedExtensions.join(',');
   const isMaxed = attachments.length >= FILE_UPLOAD_LIMITS.maxFilesPerPermit;
@@ -98,15 +109,21 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
       {/* Drop Zone */}
       {!disabled && !isMaxed && (
         <div
-          className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors cursor-pointer ${
-            dragOver
-              ? 'border-primary bg-primary/5'
-              : 'border-muted-foreground/25 hover:border-muted-foreground/50'
+          className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+            uploading
+              ? 'cursor-not-allowed opacity-60 border-muted-foreground/25'
+              : dragOver
+                ? 'cursor-pointer border-primary bg-primary/5'
+                : 'cursor-pointer border-muted-foreground/25 hover:border-muted-foreground/50'
           }`}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!uploading) setDragOver(true);
+          }}
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
-          onClick={() => inputRef.current?.click()}
+          onClick={handleZoneClick}
+          aria-disabled={uploading || undefined}
         >
           <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
