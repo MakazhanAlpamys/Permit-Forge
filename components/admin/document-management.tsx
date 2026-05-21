@@ -20,7 +20,6 @@ import { useIngestionStream } from '@/hooks/use-ingestion-stream';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import {
   Upload,
   Trash2,
@@ -38,6 +37,7 @@ import {
   Archive,
   X,
 } from 'lucide-react';
+import { DocumentForm, type DocumentFormValues } from './document-form';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -52,44 +52,6 @@ interface DiagnosticInfo {
   error?: string;
 }
 
-interface DocumentFormData {
-  id: string;
-  displayName: string;
-  shortName: string;
-  fileName: string;
-  sourceUrl: string;
-  authority: string;
-  description: string;
-  badgeColor: string;
-  keywords: string;
-  categories: string;
-}
-
-const EMPTY_FORM: DocumentFormData = {
-  id: '',
-  displayName: '',
-  shortName: '',
-  fileName: '',
-  sourceUrl: '',
-  authority: '',
-  description: '',
-  badgeColor: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
-  keywords: '',
-  categories: '',
-};
-
-const BADGE_COLORS = [
-  { label: 'Blue', value: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
-  { label: 'Red', value: 'bg-red-500/20 text-red-400 border-red-500/30' },
-  { label: 'Violet', value: 'bg-violet-500/20 text-violet-400 border-violet-500/30' },
-  { label: 'Purple', value: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
-  { label: 'Cyan', value: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' },
-  { label: 'Green', value: 'bg-green-500/20 text-green-400 border-green-500/30' },
-  { label: 'Orange', value: 'bg-orange-500/20 text-orange-400 border-orange-500/30' },
-  { label: 'Yellow', value: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
-  { label: 'Gray', value: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
-];
-
 // -----------------------------------------------------------------------------
 // Component
 // -----------------------------------------------------------------------------
@@ -98,11 +60,9 @@ export function DocumentManagement() {
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<DocumentFormData>(EMPTY_FORM);
+  const [editingDocument, setEditingDocument] = useState<DocumentRecord | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
   const csrfTokenRef = useRef<string | null>(null);
@@ -177,37 +137,24 @@ export function DocumentManagement() {
 
   // Form handlers
   const openAddForm = () => {
-    setEditingId(null);
-    setFormData(EMPTY_FORM);
+    setEditingDocument(null);
     setFormError(null);
-    setPdfFile(null);
     setShowForm(true);
   };
 
   const openEditForm = (doc: DocumentRecord) => {
-    setEditingId(doc.id);
-    setFormData({
-      id: doc.id,
-      displayName: doc.displayName,
-      shortName: doc.shortName,
-      fileName: doc.fileName,
-      sourceUrl: doc.sourceUrl,
-      authority: doc.authority,
-      description: doc.description,
-      badgeColor: doc.badgeColor,
-      keywords: doc.keywords.join(', '),
-      categories: doc.categories.join(', '),
-    });
+    setEditingDocument(doc);
     setFormError(null);
-    setPdfFile(null);
     setShowForm(true);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (formData: DocumentFormValues, pdfFile: File | null) => {
     if (!formData.displayName || !formData.shortName) {
       setFormError('Display Name and Short Name are required');
       return;
     }
+
+    const editingId = editingDocument?.id ?? null;
 
     // For new documents, require either a PDF file or a filename
     if (!editingId && !pdfFile && !formData.fileName) {
@@ -294,7 +241,7 @@ export function DocumentManagement() {
       }
 
       setShowForm(false);
-      setPdfFile(null);
+      setEditingDocument(null);
       loadDocuments();
       runDiagnostics();
     } catch (err) {
@@ -455,153 +402,18 @@ export function DocumentManagement() {
 
         {/* Add/Edit Form */}
         {showForm && (
-          <Card className="border-primary/50">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center justify-between text-base">
-                <span>{editingId ? 'Edit Document' : 'Register New Document'}</span>
-                <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </CardTitle>
-              <CardDescription>
-                {editingId ? 'Update document metadata. Select a new PDF to replace the existing one.' : 'Add a new document and upload its PDF file.'}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">Display Name *</label>
-                  <Input
-                    value={formData.displayName}
-                    onChange={e => setFormData(prev => ({ ...prev, displayName: e.target.value }))}
-                    placeholder="Building Code 2021"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">Short Name *</label>
-                  <Input
-                    value={formData.shortName}
-                    onChange={e => setFormData(prev => ({ ...prev, shortName: e.target.value }))}
-                    placeholder="DBC"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">PDF File *</label>
-                  <input
-                    type="file"
-                    accept=".pdf,application/pdf"
-                    onChange={e => {
-                      const file = e.target.files?.[0] || null;
-                      setPdfFile(file);
-                      if (file) {
-                        setFormData(prev => ({ ...prev, fileName: file.name }));
-                      }
-                    }}
-                    className="block w-full text-sm text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 file:cursor-pointer cursor-pointer mt-1"
-                  />
-                  {editingId && !pdfFile && formData.fileName && (
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      Current: {formData.fileName}
-                    </p>
-                  )}
-                  {pdfFile && (
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      {pdfFile.name} ({(pdfFile.size / 1024 / 1024).toFixed(1)} MB)
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">Authority</label>
-                  <Input
-                    value={formData.authority}
-                    onChange={e => setFormData(prev => ({ ...prev, authority: e.target.value }))}
-                    placeholder="e.g., City Authority"
-                  />
-                </div>
-              </div>
-
-              {!editingId && (
-                <div>
-                  <label className="text-xs font-medium text-muted-foreground">Document ID (auto-generated from name if empty)</label>
-                  <Input
-                    value={formData.id}
-                    onChange={e => setFormData(prev => ({ ...prev, id: e.target.value }))}
-                    placeholder="building-code-2021"
-                  />
-                </div>
-              )}
-
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Description</label>
-                <Input
-                  value={formData.description}
-                  onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                  placeholder="Brief description of the document"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Source URL</label>
-                <Input
-                  value={formData.sourceUrl}
-                  onChange={e => setFormData(prev => ({ ...prev, sourceUrl: e.target.value }))}
-                  placeholder="https://..."
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Keywords (comma-separated, for search routing)</label>
-                <Input
-                  value={formData.keywords}
-                  onChange={e => setFormData(prev => ({ ...prev, keywords: e.target.value }))}
-                  placeholder="building, code, construction, parking"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Categories (comma-separated)</label>
-                <Input
-                  value={formData.categories}
-                  onChange={e => setFormData(prev => ({ ...prev, categories: e.target.value }))}
-                  placeholder="structural, general"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-muted-foreground">Badge Color</label>
-                <div className="flex flex-wrap gap-2 mt-1">
-                  {BADGE_COLORS.map(color => (
-                    <button
-                      key={color.label}
-                      onClick={() => setFormData(prev => ({ ...prev, badgeColor: color.value }))}
-                      className={`px-2 py-1 rounded text-xs border transition-all ${color.value} ${
-                        formData.badgeColor === color.value ? 'ring-2 ring-primary ring-offset-1 ring-offset-background' : ''
-                      }`}
-                    >
-                      {color.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {formError && (
-                <div className="p-2 rounded bg-red-500/10 border border-red-500/30 text-xs text-red-400">
-                  {formError}
-                </div>
-              )}
-
-              <div className="flex gap-2 pt-2">
-                <Button onClick={handleSave} disabled={saving || uploading} size="sm">
-                  {(saving || uploading) ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-                  {uploading ? 'Uploading PDF...' : saving ? 'Saving...' : editingId ? 'Update' : 'Register'}
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>Cancel</Button>
-              </div>
-            </CardContent>
-          </Card>
+          <DocumentForm
+            editingDocument={editingDocument}
+            saving={saving}
+            uploading={uploading}
+            error={formError}
+            onSave={handleSave}
+            onCancel={() => {
+              setShowForm(false);
+              setEditingDocument(null);
+              setFormError(null);
+            }}
+          />
         )}
 
         {/* Document Cards */}

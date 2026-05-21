@@ -181,10 +181,10 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 - [x] **F14 — Simplify #14** Single `EXACT_REFERENCE_REGEX` constant in `lib/agents.ts`. 🟢 — `40cb7c1`
 - [x] **F15 — Simplify #15** Drop fallback in `saveDocumentTree`. 🟢 (overlap with F8 pattern) — `589f8c3`
 - [x] **F16 — Simplify #16** `runExactSearchIfApplicable` helper in `lib/rag.ts`. 🟢 — `78ed1d1`
-- [x] **F17 — Simplify #17** Extract `useIngestionStream()` hook. Verify whether `components/admin/pdf-ingestion-tab.tsx` is still routed in `app/admin/page.tsx`; if dead, delete it. 🟡 — (pending commit) — extracted to `hooks/use-ingestion-stream.ts` + migrated `document-management.tsx`; `pdf-ingestion-tab.tsx` was confirmed dead and deleted in F27.
+- [x] **F17 — Simplify #17** Extract `useIngestionStream()` hook. Verify whether `components/admin/pdf-ingestion-tab.tsx` is still routed in `app/admin/page.tsx`; if dead, delete it. 🟡 — `7b2234e` (extracted to `hooks/use-ingestion-stream.ts` + migrated `document-management.tsx`; dead `pdf-ingestion-tab.tsx` already deleted in F27).
 - [x] **F18 — Simplify #18** Reusable `<ConfirmDialog>` and `<ResultDialog>` in `components/ui/`. Migrate `user-management.tsx`. 🟢 — `648ec62`
 - [ ] **F19 — Simplify #19** Extract `useChatStream()` hook with event-typed SSE protocol. Touches `chat-interface.tsx` AND `app/api/chat/stream/route.ts`. Coordinate with Track B if still open. 🔴
-- [ ] **F20 — Simplify #20** Split `DocumentManagement` into list + form. `useReducer` for form state. Move `BADGE_COLORS` to `lib/constants.ts`. 🟡
+- [x] **F20 — Simplify #20** Split `DocumentManagement` into list + form. `useReducer` for form state. Move `BADGE_COLORS` to `lib/constants.ts`. 🟡 — (pending commit) — extracted `components/admin/document-form.tsx` with `useReducer` for form state; moved colors to `DOCUMENT_BADGE_COLORS` in `lib/constants.ts`.
 - [x] **F21 — Dead code** Delete `lib/logger.ts` (zero imports). 🟢 — `72768e8`
 - [x] **F22 — Dead code** `npm uninstall @google/generative-ai isomorphic-dompurify @types/dompurify supabase` (verify `isomorphic-dompurify` is truly unused after C18H lands — keep it if C18H uses it). 🟢 — `50784fe` — kept `isomorphic-dompurify` (used by C18H + message-bubble.tsx); removed `@google/generative-ai` (replaced by @google/genai), `@types/dompurify` (isomorphic-dompurify ships own types), and `supabase` CLI.
 - [x] **F23 — Dead code** Remove unused exports: `CRAG_THRESHOLD`, `citationSchema`, `permitStatusSchema`, `DialogTrigger`, `ScrollBar`. 🟢 — `6fbf2af`
