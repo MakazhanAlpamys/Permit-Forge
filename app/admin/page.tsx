@@ -4,7 +4,7 @@
 // Admin Dashboard - Complete Admin Panel
 // ============================================================================
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   getAuditLogs,
   getAllUsers,
@@ -95,6 +95,26 @@ export default function AdminPage() {
 
   // Admin profile dialog
   const [profileOpen, setProfileOpen] = useState(false);
+  // X12: stash the auto-close setTimeout id so manually closing the dialog
+  // cancels it. Previously, closing the dialog by hand left the timer alive
+  // and a stale `setProfileOpen(false)` fired ~1.5s later — no visible effect
+  // when already closed, but a misleading state flap if the user reopened it.
+  const profileCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const closeProfileDialog = useCallback(() => {
+    if (profileCloseTimerRef.current) {
+      clearTimeout(profileCloseTimerRef.current);
+      profileCloseTimerRef.current = null;
+    }
+    setProfileOpen(false);
+  }, []);
+
+  // Cancel any pending auto-close on unmount.
+  useEffect(() => {
+    return () => {
+      if (profileCloseTimerRef.current) clearTimeout(profileCloseTimerRef.current);
+    };
+  }, []);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [showCurrentPw, setShowCurrentPw] = useState(false);
@@ -187,9 +207,13 @@ export default function AdminPage() {
       setProfileSuccess(true);
       setCurrentPassword('');
       setNewPassword('');
-      setTimeout(() => {
+      // X12: store the timer id so we can cancel it if the user closes the
+      // dialog manually before it fires.
+      if (profileCloseTimerRef.current) clearTimeout(profileCloseTimerRef.current);
+      profileCloseTimerRef.current = setTimeout(() => {
         setProfileOpen(false);
         setProfileSuccess(false);
+        profileCloseTimerRef.current = null;
       }, 1500);
     }
     setProfileLoading(false);
@@ -404,7 +428,7 @@ export default function AdminPage() {
           <div className="bg-card border border-border rounded-lg p-6 max-w-sm w-full mx-4 shadow-lg">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold">Admin Profile</h3>
-              <button onClick={() => setProfileOpen(false)} className="text-muted-foreground hover:text-foreground">
+              <button onClick={closeProfileDialog} className="text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -463,7 +487,7 @@ export default function AdminPage() {
                 )}
 
                 <div className="flex gap-3 justify-end">
-                  <Button variant="outline" type="button" onClick={() => setProfileOpen(false)}>Cancel</Button>
+                  <Button variant="outline" type="button" onClick={closeProfileDialog}>Cancel</Button>
                   <Button type="submit" disabled={profileLoading}>
                     {profileLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                     Change Password
