@@ -58,8 +58,25 @@ export function NotificationBell() {
   useEffect(() => {
     fetchNotifications();
     getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
-    const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
+
+    // X7: 30s base poll with ±5s jitter so a tab full of users opened at
+    // the same time doesn't stampede the notifications endpoint at the
+    // same instant. Reschedule recursively with setTimeout instead of a
+    // setInterval so each tick re-randomizes.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      const jitterMs = 5_000;
+      const delay = 30_000 + (Math.random() * 2 - 1) * jitterMs;
+      timer = setTimeout(async () => {
+        await fetchNotifications();
+        schedule();
+      }, delay);
+    };
+    schedule();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [fetchNotifications]);
 
   const handleMarkRead = async (notification: Notification) => {
