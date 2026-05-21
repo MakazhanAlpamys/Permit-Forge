@@ -7,6 +7,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createChatSession, saveMessageToSession, getSessionMessages } from '@/actions/chat-history';
 import { getCSRFTokenAction } from '@/actions/auth';
+import { useChatStream } from '@/hooks/use-chat-stream';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -63,6 +64,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
   const isCancelledRef = useRef(false);
   const csrfTokenRef = useRef<string | null>(null);
   const isInternalSessionCreateRef = useRef(false);
+  const { streamMessage } = useChatStream();
 
   // Load messages when session changes
   useEffect(() => {
@@ -248,135 +250,80 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       });
     }
 
-    try {
-      // Use streaming API with the current controller's signal
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (csrfTokenRef.current) {
-        headers['x-csrf-token'] = csrfTokenRef.current;
-      }
+    // Switch to streaming mode and hand the work to the hook.
+    setIsLoading(false);
+    setIsStreaming(true);
 
-      const response = await fetch('/api/chat/stream', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          message: text,
-          sessionId: activeSessionId,
-        }),
+    let finalContent = '';
+    let finalCitations: Citation[] = [];
+    let streamErrored = false;
+
+    await streamMessage(
+      { message: text, sessionId: activeSessionId },
+      {
+        csrfToken: csrfTokenRef.current,
         signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        let errorDetail = `HTTP ${response.status}`;
-        try {
-          const errJson = await response.json();
-          errorDetail = errJson.message || errJson.error || errorDetail;
-        } catch { /* not JSON */ }
-        throw new Error(errorDetail);
-      }
-
-      // Switch to streaming mode
-      setIsLoading(false);
-      setIsStreaming(true);
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let rawContent = '';
-      let fullContent = '';
-      let citations: Citation[] = [];
-      let streamTextDone = false;
-
-      if (reader) {
-        while (true) {
-          if (isCancelledRef.current) break;
-          const { done, value } = await reader.read();
-          if (done) break;
-          
-          const chunk = decoder.decode(value, { stream: true });
-          rawContent += chunk;
-          
-          // Check for stream error marker
-          const errorMarkerIdx = rawContent.indexOf('__ERROR__');
-          if (errorMarkerIdx !== -1) {
-            const errorJson = rawContent.slice(errorMarkerIdx + '__ERROR__'.length);
-            try {
-              const streamErr = JSON.parse(errorJson);
-              throw new Error(streamErr.message || 'Stream error');
-            } catch (e) {
-              if (e instanceof SyntaxError) throw new Error('Stream processing failed');
-              throw e;
+        isCancelled: () => isCancelledRef.current,
+        callbacks: {
+          onContent: (content) => {
+            if (isMountedRef.current) setStreamingContent(content);
+          },
+          onTextDone: () => {
+            if (isMountedRef.current && !isCancelledRef.current) {
+              setIsVerifyingSources(true);
             }
-          }
+          },
+          onComplete: ({ content, citations }) => {
+            finalContent = content;
+            finalCitations = citations;
+            if (isMountedRef.current) setIsVerifyingSources(false);
+          },
+          onError: (error) => {
+            streamErrored = true;
+            if (!isMountedRef.current) return;
+            const errorMessage: ChatMessage = {
+              id: `error-${Date.now()}`,
+              role: 'assistant',
+              content: 'Sorry, I encountered an error while processing your request. Please try again.',
+              timestamp: new Date(),
+              complianceStatus: 'pending',
+            };
+            setMessages((prev) => [...prev, errorMessage]);
+            console.error('Chat error:', error);
+          },
+          onAbort: () => {
+            // Cancellation; the UI cleanup is handled in the finally block below.
+          },
+        },
+      },
+    );
 
-          // Extract display text (everything before __CITATIONS__ marker)
-          const citationMarkerIdx = rawContent.indexOf('__CITATIONS__');
-          if (citationMarkerIdx !== -1) {
-            fullContent = rawContent.slice(0, citationMarkerIdx);
-          } else {
-            fullContent = rawContent;
-          }
-          
-          if (isMountedRef.current) {
-            setStreamingContent(fullContent);
+    if (!isMountedRef.current) {
+      return;
+    }
 
-            // Detect when text is done but citations haven't arrived yet
-            // The marker may appear across chunk boundaries, so also check for the
-            // trailing newlines that precede it.
-            if (!streamTextDone && citationMarkerIdx === -1 && rawContent.includes('\n\n__CIT')) {
-              streamTextDone = true;
-            }
-          }
-        }
-
-        // Show "Verifying sources..." while parsing citations
-        if (isMountedRef.current && !isCancelledRef.current) {
-          setIsVerifyingSources(true);
-        }
-
-        // After stream ends, parse citations from accumulated raw content
-        const citationMarkerIdx = rawContent.indexOf('__CITATIONS__');
-        if (citationMarkerIdx !== -1) {
-          fullContent = rawContent.slice(0, citationMarkerIdx);
-          const citationsJson = rawContent.slice(citationMarkerIdx + '__CITATIONS__'.length);
-          try {
-            citations = JSON.parse(citationsJson);
-          } catch {
-            console.error('Failed to parse citations JSON');
-          }
-        }
-
-        if (isMountedRef.current) {
-          setIsVerifyingSources(false);
-        }
-      }
-
-      // Check if cancelled
-      if (!isMountedRef.current || isCancelledRef.current) return;
-
-      // Create final assistant message
+    if (!streamErrored && !isCancelledRef.current) {
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: fullContent,
-        citations: citations,
+        content: finalContent,
+        citations: finalCitations,
         complianceStatus: 'pending',
         timestamp: new Date(),
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages((prev) => [...prev, assistantMessage]);
       setStreamingContent('');
 
       // B17: persist the assistant reply best-effort. If the save throws or
       // returns success:false, the on-screen transcript is ahead of the DB.
-      // Flip saveSyncFailed so the UI can show a "not synced" indicator; the
-      // session-switch effect already calls loadSessionMessages, which will
-      // reconcile on the next mount/reload.
       if (activeSessionId) {
         try {
           const saveResult = await saveMessageToSession({
             sessionId: activeSessionId,
             role: 'assistant',
-            content: fullContent,
-            citations: citations,
+            content: finalContent,
+            citations: finalCitations,
             complianceStatus: 'pending',
           });
           if (!saveResult.success && isMountedRef.current) {
@@ -389,30 +336,13 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
           }
         }
       }
-    } catch (error) {
-      // Don't show error if cancelled or unmounted
-      if (!isMountedRef.current) return;
-      
-      // Create error message only if not cancelled
-      if (!isCancelledRef.current && !(error instanceof DOMException && error.name === 'AbortError')) {
-        const errorMessage: ChatMessage = {
-          id: `error-${Date.now()}`,
-          role: 'assistant',
-          content: 'Sorry, I encountered an error while processing your request. Please try again.',
-          timestamp: new Date(),
-          complianceStatus: 'pending',
-        };
+    }
 
-        setMessages(prev => [...prev, errorMessage]);
-      }
-      console.error('Chat error:', error);
-    } finally {
-      if (isMountedRef.current) {
-        setIsLoading(false);
-        setIsStreaming(false);
-        setIsVerifyingSources(false);
-        setStreamingContent('');
-      }
+    if (isMountedRef.current) {
+      setIsLoading(false);
+      setIsStreaming(false);
+      setIsVerifyingSources(false);
+      setStreamingContent('');
     }
   };
 
