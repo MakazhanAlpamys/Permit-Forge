@@ -3,24 +3,37 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// Each diamond side ≈ 170 SVG units
 const SIDE = 170;
 const GROUND_LEN = 160;
 const ease: [number, number, number, number] = [0.4, 0, 0.2, 1];
 
-// Phase timeline (ms):
-// 0: ground line draws          (0 → 400)
-// 1: beams rise, form diamond   (400 → 1350)
-// 2: scan line sweeps, recolor  (1400 → 2000)
-// 3: fill + flash               (2050)
-// 4: text reveal                (2350)
-// 5: exit                       (2900)
+// Heuristic: skip the splash on devices that will lag through it. Browsers
+// that don't expose deviceMemory/hardwareConcurrency report undefined → treat
+// as "modern enough" and keep the splash. Also skip when the user prefers
+// reduced motion, and when we've already shown the splash this session.
+function shouldSkipSplash(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (sessionStorage.getItem('pf:splash:shown') === '1') return true;
+  } catch {}
+  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return true;
+  const nav = navigator as Navigator & { deviceMemory?: number };
+  if (typeof nav.deviceMemory === 'number' && nav.deviceMemory > 0 && nav.deviceMemory < 4) return true;
+  if (typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency > 0 && navigator.hardwareConcurrency < 4) return true;
+  return false;
+}
 
 export function SplashScreen({ children }: { children: React.ReactNode }) {
   const [showSplash, setShowSplash] = useState(true);
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
+    if (shouldSkipSplash()) {
+      setShowSplash(false);
+      return;
+    }
+    try { sessionStorage.setItem('pf:splash:shown', '1'); } catch {}
+
     const t = [
       setTimeout(() => setPhase(1), 400),
       setTimeout(() => setPhase(2), 1400),
@@ -48,10 +61,12 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
               animate={phase >= 5 ? { opacity: 0, scale: 1.08 } : { opacity: 1, scale: 1 }}
               transition={{ duration: 0.6, ease }}
               style={{
+                // Cheap CSS box-shadow approximation instead of SVG feGaussianBlur,
+                // which forces a per-frame raster pass on low-end GPUs.
                 filter:
                   phase >= 3 && phase < 5
-                    ? 'drop-shadow(0 0 24px rgba(124,58,237,0.7)) drop-shadow(0 0 48px rgba(124,58,237,0.3))'
-                    : 'drop-shadow(0 0 6px rgba(255,255,255,0.08))',
+                    ? 'drop-shadow(0 0 18px rgba(124,58,237,0.55))'
+                    : 'none',
                 transition: 'filter 0.4s ease',
               }}
             >
@@ -62,25 +77,6 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
                 xmlns="http://www.w3.org/2000/svg"
                 overflow="visible"
               >
-                <defs>
-                  <filter id="sf-glow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur stdDeviation="2" />
-                    <feMerge>
-                      <feMergeNode />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
-                  <filter id="sf-scan-glow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur stdDeviation="6" result="b" />
-                    <feFlood floodColor="#7c3aed" floodOpacity="0.5" result="c" />
-                    <feComposite in="c" in2="b" operator="in" result="g" />
-                    <feMerge>
-                      <feMergeNode in="g" />
-                      <feMergeNode in="SourceGraphic" />
-                    </feMerge>
-                  </filter>
-                </defs>
-
                 {/* Ground line — draws from center outward */}
                 <line
                   x1={48} y1={248} x2={208} y2={248}
@@ -93,9 +89,8 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
                   }}
                 />
 
-                {/* White structural beams — draw bottom-to-top */}
+                {/* White structural beams — draw bottom-to-top (no filter) */}
                 <g
-                  filter="url(#sf-glow)"
                   style={{
                     opacity: phase >= 3 ? 0 : 1,
                     transition: 'opacity 0.3s ease',
@@ -120,7 +115,7 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
                   <path d="M 248 128 L 128 8"    className="sf-beam sf-b4" stroke="#7c3aed" strokeWidth={2.5} fill="none" strokeLinecap="round" />
                 </g>
 
-                {/* Scan line — sweeps top to bottom */}
+                {/* Scan line — sweeps top to bottom (no SVG filter; box-shadow on rect is cheap) */}
                 {phase >= 2 && phase < 4 && (
                   <motion.rect
                     x={-10}
@@ -128,7 +123,6 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
                     height={3}
                     rx={1.5}
                     fill="#7c3aed"
-                    filter="url(#sf-scan-glow)"
                     initial={{ y: 8, opacity: 0 }}
                     animate={{ y: 248, opacity: [0, 0.9, 0.9, 0] }}
                     transition={{ duration: 0.6, ease }}
@@ -234,17 +228,25 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
         @keyframes sf-draw-beam {
           to { stroke-dashoffset: 0; }
         }
+        @media (prefers-reduced-motion: reduce) {
+          .sf-ground, .sf-beam { animation: none; stroke-dashoffset: 0; }
+        }
       `}</style>
 
-      {/* Page content */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: showSplash ? 0 : 1 }}
-        transition={{ duration: 0.85, ease: 'easeOut' }}
-        style={{ pointerEvents: showSplash ? 'none' : 'auto' }}
-      >
-        {children}
-      </motion.div>
+      {/* Page content. If the splash is skipped we render at full opacity from
+          the start so we don't pay for a Framer Motion transition that nobody
+          will see. */}
+      {showSplash ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 0 }}
+          style={{ pointerEvents: 'none' }}
+        >
+          {children}
+        </motion.div>
+      ) : (
+        <div>{children}</div>
+      )}
     </>
   );
 }
