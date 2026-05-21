@@ -173,9 +173,9 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 - [x] **F6 — Simplify #6** Generic `verifyOwnership(table, idColumn, recordId, userId)` in `lib/security.ts`. 🟢 — `702fee2`
 - [x] **F7 — Simplify #7** Drop in-memory aggregation fallback in `actions/ingest-pdf.ts:330-366` (RPC always exists post-migration). 🟢 — `c2dd7fc`
 - [x] **F8 — Simplify #8** Drop RPC fallbacks in `actions/documents.ts:66-86, 125-162, 210-222`. 🟡 — `d9e6d4e`
-- [x] **F9 — Simplify #9** `paginateByCursor` helper. 🟢 — (pending commit)
+- [x] **F9 — Simplify #9** `paginateByCursor` helper. 🟢 — `b7fbe34`
 - [ ] **F10 — Simplify #10** Merge `queryBuildingCode` / `queryBuildingCodeFiltered` in `lib/rag.ts`. 🟡
-- [ ] **F11 — Simplify #11** Extract `normalizeChunkMetadata` + `mapHybridRow` / `mapExactRow` in `lib/rag.ts`. 🟢
+- [x] **F11 — Simplify #11** Extract `normalizeChunkMetadata` + `mapHybridRow` / `mapExactRow` in `lib/rag.ts`. 🟢 — (pending commit)
 - [ ] **F12 — Simplify #12** Share `chunkPagesAtSize` between `splitWithPageTracking` and `createParentChunks`. 🟡
 - [ ] **F13 — Simplify #13** Decompose `runIngestionPipeline` into stage functions with auto-computed progress. 🟡
 - [x] **F14 — Simplify #14** Single `EXACT_REFERENCE_REGEX` constant in `lib/agents.ts`. 🟢 — `40cb7c1`

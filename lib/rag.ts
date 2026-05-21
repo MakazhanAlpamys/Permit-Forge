@@ -22,6 +22,60 @@ const MAX_CHUNK_LENGTH = 1500;
 const CRAG_THRESHOLD = 0.3;
 
 // -----------------------------------------------------------------------------
+// Row mappers (F11 / Simplify #11)
+// -----------------------------------------------------------------------------
+// The hybrid + exact-search RPCs return slightly different row shapes but
+// share the same metadata-normalization rule: page / startPage / endPage
+// must be numbers, never undefined. These helpers centralize that rule and
+// the row → MatchedChunk / HybridSearchResult mapping.
+
+/** Ensure page-tracking fields on chunk metadata are numbers (default 0). */
+function normalizeChunkMetadata(metadata: ChunkMetadata | null | undefined): ChunkMetadata {
+  return {
+    ...(metadata || {}),
+    page: metadata?.page ?? 0,
+    startPage: metadata?.startPage ?? 0,
+    endPage: metadata?.endPage ?? 0,
+  } as ChunkMetadata;
+}
+
+interface HybridRpcRow {
+  id: number;
+  content: string;
+  metadata: ChunkMetadata;
+  vector_similarity: number;
+  keyword_rank: number;
+  hybrid_score: number;
+}
+
+function mapHybridRow(row: HybridRpcRow): HybridSearchResult {
+  return {
+    id: row.id,
+    content: row.content,
+    metadata: normalizeChunkMetadata(row.metadata),
+    vectorSimilarity: row.vector_similarity || 0,
+    keywordRank: row.keyword_rank || 0,
+    hybridScore: row.hybrid_score || 0,
+  };
+}
+
+interface ExactRpcRow {
+  id: number;
+  content: string;
+  metadata: ChunkMetadata;
+  match_position: number;
+}
+
+function mapExactRow(row: ExactRpcRow): MatchedChunk {
+  return {
+    id: row.id,
+    content: row.content,
+    metadata: normalizeChunkMetadata(row.metadata),
+    similarity: 1.0,
+  };
+}
+
+// -----------------------------------------------------------------------------
 // Hybrid Search (accepts pre-computed embedding)
 // -----------------------------------------------------------------------------
 
@@ -65,21 +119,7 @@ export async function hybridSearch(
     throw new Error(`Hybrid search failed: ${error.message}`);
   }
 
-  let results = (data || []).map((item: {
-    id: number;
-    content: string;
-    metadata: ChunkMetadata;
-    vector_similarity: number;
-    keyword_rank: number;
-    hybrid_score: number;
-  }) => ({
-    id: item.id,
-    content: item.content,
-    metadata: { ...(item.metadata || {}), page: (item.metadata?.page ?? 0), startPage: (item.metadata?.startPage ?? 0), endPage: (item.metadata?.endPage ?? 0) } as ChunkMetadata,
-    vectorSimilarity: item.vector_similarity || 0,
-    keywordRank: item.keyword_rank || 0,
-    hybridScore: item.hybrid_score || 0,
-  }));
+  let results = ((data || []) as HybridRpcRow[]).map(mapHybridRow);
 
   // Post-filter by multiple documents if needed
   if (options.documentFilter && options.documentFilter.length > 1) {
@@ -114,17 +154,7 @@ async function exactSearch(
     return [];
   }
 
-  return (data || []).map((item: {
-    id: number;
-    content: string;
-    metadata: ChunkMetadata;
-    match_position: number;
-  }) => ({
-    id: item.id,
-    content: item.content,
-    metadata: { ...(item.metadata || {}), page: (item.metadata?.page ?? 0), startPage: (item.metadata?.startPage ?? 0), endPage: (item.metadata?.endPage ?? 0) } as ChunkMetadata,
-    similarity: 1.0,
-  }));
+  return ((data || []) as ExactRpcRow[]).map(mapExactRow);
 }
 
 /**
@@ -336,21 +366,7 @@ export async function filteredHybridSearch(
     throw new Error(`Filtered hybrid search failed: ${error.message}`);
   }
 
-  return (data || []).map((item: {
-    id: number;
-    content: string;
-    metadata: ChunkMetadata;
-    vector_similarity: number;
-    keyword_rank: number;
-    hybrid_score: number;
-  }) => ({
-    id: item.id,
-    content: item.content,
-    metadata: { ...(item.metadata || {}), page: (item.metadata?.page ?? 0), startPage: (item.metadata?.startPage ?? 0), endPage: (item.metadata?.endPage ?? 0) } as ChunkMetadata,
-    vectorSimilarity: item.vector_similarity || 0,
-    keywordRank: item.keyword_rank || 0,
-    hybridScore: item.hybrid_score || 0,
-  }));
+  return ((data || []) as HybridRpcRow[]).map(mapHybridRow);
 }
 
 async function hybridSearchWithPostFilter(
