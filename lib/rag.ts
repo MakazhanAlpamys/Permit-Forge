@@ -196,35 +196,24 @@ async function runExactSearchIfApplicable(
 // -----------------------------------------------------------------------------
 
 /**
- * Query building code using hybrid search.
- * Accepts pre-computed embedding (reused from semantic cache check)
- * and document filter (from document selector).
+ * Internal worker: convert hybrid search results into MatchedChunks, merge
+ * with any exact-search hits, sort by similarity, truncate to FINAL_CHUNK_COUNT,
+ * and build the LLM context. (F10 / Simplify #10 — single body shared between
+ * queryBuildingCode and queryBuildingCodeFiltered.)
  */
-export async function queryBuildingCode(
-  params: RAGQuery & {
-    precomputedEmbedding?: number[];
-    documentFilter?: string[];
-  }
-): Promise<RAGResult> {
-  const { query, matchCount = DEFAULT_MATCH_COUNT } = params;
-
-  let chunks: MatchedChunk[] = await runExactSearchIfApplicable(query);
-
-  // Hybrid search with pre-computed embedding
-  const hybridResults = await hybridSearch(query, matchCount, {
-    precomputedEmbedding: params.precomputedEmbedding,
-    documentFilter: params.documentFilter,
-  });
-
-  const hybridChunks: MatchedChunk[] = hybridResults.map(result => ({
+function assembleRAGResult(
+  exactChunks: MatchedChunk[],
+  hybridResults: HybridSearchResult[],
+): RAGResult {
+  const hybridChunks: MatchedChunk[] = hybridResults.map((result) => ({
     id: result.id,
     content: result.content,
     metadata: result.metadata,
     similarity: Math.min(result.hybridScore * 10, 1.0),
   }));
 
-  // Merge, deduplicate
-  const seenIds = new Set(chunks.map(c => c.id));
+  let chunks: MatchedChunk[] = [...exactChunks];
+  const seenIds = new Set(chunks.map((c) => c.id));
   for (const chunk of hybridChunks) {
     if (!seenIds.has(chunk.id)) {
       chunks.push(chunk);
@@ -237,6 +226,28 @@ export async function queryBuildingCode(
 
   const context = buildContext(chunks);
   return { chunks, context };
+}
+
+/**
+ * Query building code using hybrid search.
+ * Accepts pre-computed embedding (reused from semantic cache check)
+ * and document filter (from document selector).
+ */
+export async function queryBuildingCode(
+  params: RAGQuery & {
+    precomputedEmbedding?: number[];
+    documentFilter?: string[];
+  }
+): Promise<RAGResult> {
+  const { query, matchCount = DEFAULT_MATCH_COUNT } = params;
+
+  const exactChunks = await runExactSearchIfApplicable(query);
+  const hybridResults = await hybridSearch(query, matchCount, {
+    precomputedEmbedding: params.precomputedEmbedding,
+    documentFilter: params.documentFilter,
+  });
+
+  return assembleRAGResult(exactChunks, hybridResults);
 }
 
 // -----------------------------------------------------------------------------
@@ -400,32 +411,12 @@ export async function queryBuildingCodeFiltered(
 ): Promise<RAGResult> {
   const { query, pageRanges, matchCount = DEFAULT_MATCH_COUNT } = params;
 
-  let chunks: MatchedChunk[] = await runExactSearchIfApplicable(query, pageRanges);
-
-  const filteredResults = await filteredHybridSearch(
-    query, pageRanges, matchCount, params.precomputedEmbedding
+  const exactChunks = await runExactSearchIfApplicable(query, pageRanges);
+  const hybridResults = await filteredHybridSearch(
+    query, pageRanges, matchCount, params.precomputedEmbedding,
   );
 
-  const filteredChunks: MatchedChunk[] = filteredResults.map(result => ({
-    id: result.id,
-    content: result.content,
-    metadata: result.metadata,
-    similarity: Math.min(result.hybridScore * 10, 1.0),
-  }));
-
-  const seenIds = new Set(chunks.map(c => c.id));
-  for (const chunk of filteredChunks) {
-    if (!seenIds.has(chunk.id)) {
-      chunks.push(chunk);
-      seenIds.add(chunk.id);
-    }
-  }
-
-  chunks.sort((a, b) => b.similarity - a.similarity);
-  chunks = chunks.slice(0, FINAL_CHUNK_COUNT);
-
-  const context = buildContext(chunks);
-  return { chunks, context };
+  return assembleRAGResult(exactChunks, hybridResults);
 }
 
 // -----------------------------------------------------------------------------
