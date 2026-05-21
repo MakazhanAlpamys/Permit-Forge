@@ -38,6 +38,7 @@ import {
   X,
 } from 'lucide-react';
 import { DocumentForm, type DocumentFormValues } from './document-form';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -66,6 +67,31 @@ export function DocumentManagement() {
   const [uploading, setUploading] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
   const csrfTokenRef = useRef<string | null>(null);
+
+  // X9: unified confirmation dialog state. Each call-site stashes its details
+  // here and the single <ConfirmDialog> at the bottom of the tree renders it.
+  // Replaces 4 `window.confirm()` calls that were inconsistent with the rest
+  // of the admin UI (which already uses shadcn dialogs everywhere else).
+  interface PendingConfirm {
+    title: string;
+    description: React.ReactNode;
+    confirmLabel: string;
+    destructive?: boolean;
+    onConfirm: () => Promise<void> | void;
+  }
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+
+  const runConfirm = async () => {
+    if (!pendingConfirm) return;
+    setConfirmLoading(true);
+    try {
+      await pendingConfirm.onConfirm();
+    } finally {
+      setConfirmLoading(false);
+      setPendingConfirm(null);
+    }
+  };
 
   const [diagnostic, setDiagnostic] = useState<DiagnosticInfo>({
     dbConnected: false,
@@ -251,23 +277,40 @@ export function DocumentManagement() {
     }
   };
 
-  const handleDelete = async (docId: string, docName: string) => {
-    if (!confirm(`Deactivate "${docName}"? This will hide it from search but preserve its data.`)) return;
-
-    const result = await deleteDocument(docId, false, csrfTokenRef.current || '');
-    if (result.success) {
-      loadDocuments();
-    }
+  const handleDelete = (docId: string, docName: string) => {
+    setPendingConfirm({
+      title: 'Deactivate Document',
+      description: (
+        <>
+          Deactivate <strong>{docName}</strong>? This will hide it from search but preserve its data.
+        </>
+      ),
+      confirmLabel: 'Deactivate',
+      onConfirm: async () => {
+        const result = await deleteDocument(docId, false, csrfTokenRef.current || '');
+        if (result.success) loadDocuments();
+      },
+    });
   };
 
-  const handleDeleteWithChunks = async (docId: string, docName: string) => {
-    if (!confirm(`DELETE "${docName}" and all its chunks? This cannot be undone.`)) return;
-
-    const result = await deleteDocument(docId, true, csrfTokenRef.current || '');
-    if (result.success) {
-      loadDocuments();
-      runDiagnostics();
-    }
+  const handleDeleteWithChunks = (docId: string, docName: string) => {
+    setPendingConfirm({
+      title: 'Delete Document',
+      description: (
+        <>
+          Delete <strong>{docName}</strong> and all its chunks? This cannot be undone.
+        </>
+      ),
+      confirmLabel: 'Delete',
+      destructive: true,
+      onConfirm: async () => {
+        const result = await deleteDocument(docId, true, csrfTokenRef.current || '');
+        if (result.success) {
+          loadDocuments();
+          runDiagnostics();
+        }
+      },
+    });
   };
 
   const handleRestore = async (docId: string) => {
@@ -282,24 +325,37 @@ export function DocumentManagement() {
     // B5: when the uploaded PDF differs from the one that produced the
     // existing chunk set, mixing old + new chunks would silently corrupt
     // search results. Prompt before continuing.
-    let replaceChunks = false;
+    let reingestInfo: { hashChanged: boolean; chunkCount: number } | null = null;
     try {
       const reingest = await checkPdfReingest(documentId);
       if (reingest.hashChanged && reingest.chunkCount > 0) {
-        const ok = window.confirm(
-          `The uploaded PDF differs from the one that produced the current ${reingest.chunkCount} chunks. ` +
-            `Replace existing ${reingest.chunkCount} chunks before re-ingesting?\n\n` +
-            `Click OK to clear prior chunks and re-ingest, Cancel to abort.`,
-        );
-        if (!ok) return;
-        replaceChunks = true;
+        reingestInfo = { hashChanged: true, chunkCount: reingest.chunkCount };
       }
     } catch {
       // If the hash-check call fails, fall through to the normal ingest path
       // — better to risk a duplicate-chunks warning than to block re-ingest.
     }
 
-    await startIngestion(documentId, csrfTokenRef.current, replaceChunks);
+    if (reingestInfo) {
+      const chunkCount = reingestInfo.chunkCount;
+      setPendingConfirm({
+        title: 'Replace existing chunks?',
+        description: (
+          <>
+            The uploaded PDF differs from the one that produced the current {chunkCount} chunks.
+            Replace existing {chunkCount} chunks before re-ingesting?
+          </>
+        ),
+        confirmLabel: 'Replace and re-ingest',
+        destructive: true,
+        onConfirm: async () => {
+          await startIngestion(documentId, csrfTokenRef.current, true);
+        },
+      });
+      return;
+    }
+
+    await startIngestion(documentId, csrfTokenRef.current, false);
   };
 
   // B4: cancel an in-flight ingestion. Server route listens on request.signal
@@ -308,21 +364,31 @@ export function DocumentManagement() {
     cancelIngestion(documentId);
   };
 
-  const handleClearChunks = async (documentId: string, displayName: string) => {
-    if (!confirm(`Clear all chunks for "${displayName}"? This cannot be undone.`)) return;
-
-    setIngestionStatus(documentId, 'loading');
-    try {
-      const result = await clearDocumentChunks(documentId, csrfTokenRef.current || '');
-      if (result.success) {
-        setIngestionStatus(documentId, 'idle', `Cleared ${result.deletedCount || 0} chunks`);
-        runDiagnostics();
-      } else {
-        setIngestionStatus(documentId, 'error', result.error || 'Failed to clear');
-      }
-    } catch (error) {
-      setIngestionStatus(documentId, 'error', error instanceof Error ? error.message : 'Failed');
-    }
+  const handleClearChunks = (documentId: string, displayName: string) => {
+    setPendingConfirm({
+      title: 'Clear all chunks',
+      description: (
+        <>
+          Clear all chunks for <strong>{displayName}</strong>? This cannot be undone.
+        </>
+      ),
+      confirmLabel: 'Clear',
+      destructive: true,
+      onConfirm: async () => {
+        setIngestionStatus(documentId, 'loading');
+        try {
+          const result = await clearDocumentChunks(documentId, csrfTokenRef.current || '');
+          if (result.success) {
+            setIngestionStatus(documentId, 'idle', `Cleared ${result.deletedCount || 0} chunks`);
+            runDiagnostics();
+          } else {
+            setIngestionStatus(documentId, 'error', result.error || 'Failed to clear');
+          }
+        } catch (error) {
+          setIngestionStatus(documentId, 'error', error instanceof Error ? error.message : 'Failed');
+        }
+      },
+    });
   };
 
   const getDocChunkCount = (docId: string) => {
@@ -611,6 +677,18 @@ export function DocumentManagement() {
           </>
         )}
       </div>
+
+      <ConfirmDialog
+        open={pendingConfirm !== null}
+        onOpenChange={(open) => { if (!open) setPendingConfirm(null); }}
+        title={pendingConfirm?.title ?? ''}
+        description={pendingConfirm?.description}
+        confirmLabel={pendingConfirm?.confirmLabel ?? 'Confirm'}
+        confirmVariant={pendingConfirm?.destructive ? 'destructive' : 'default'}
+        destructive={pendingConfirm?.destructive}
+        loading={confirmLoading}
+        onConfirm={runConfirm}
+      />
     </>
   );
 }
