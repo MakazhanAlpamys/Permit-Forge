@@ -49,13 +49,18 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
     setLoading(true);
 
     const result = await adminCreateUser(formData, csrfTokenRef.current || undefined);
-    
+
     setLoading(false);
-    
+
     if (result.success) {
+      // X11: close the dialog first, then clear local form state, then ask
+      // the parent to refresh the user list. The previous order
+      // (`onSuccess` -> `onClose`) made the parent re-render with the dialog
+      // still mounted, causing a one-frame flicker as the user table
+      // repopulated under the open modal.
+      onClose();
       setFormData({ username: '', password: '', full_name: '', role: 'user' });
       onSuccess();
-      onClose();
     } else {
       setError(result.error || 'Failed to create user');
     }
