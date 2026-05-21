@@ -9,16 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { ConfirmDialog, ResultDialog } from '@/components/ui/confirm-dialog';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { 
-  Users, 
+  Users,
   Search,
   Shield,
   ShieldOff,
@@ -28,7 +21,6 @@ import {
   Key,
   Trash2,
   Loader2,
-  AlertTriangle
 } from 'lucide-react';
 import { 
   blockUser, 
@@ -388,23 +380,19 @@ export function UserManagement({
         </CardContent>
       </Card>
 
-      {/* Block/Unblock Modal */}
-      <Dialog open={modal.type === 'block'} onOpenChange={(open) => !open && closeModal()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {modal.user?.blocked ? 'Unblock User' : 'Block User'}
-            </DialogTitle>
-            <DialogDescription>
-              {modal.user?.blocked 
-                ? `Are you sure you want to unblock ${modal.user?.username}?`
-                : `Are you sure you want to block ${modal.user?.username}? They will not be able to log in.`
-              }
-            </DialogDescription>
-          </DialogHeader>
-          
-          {!modal.user?.blocked && (
-            <div className="py-4">
+      {/* Block / Unblock */}
+      <ConfirmDialog
+        open={modal.type === 'block'}
+        onOpenChange={(open) => !open && closeModal()}
+        title={modal.user?.blocked ? 'Unblock User' : 'Block User'}
+        description={
+          modal.user?.blocked
+            ? `Are you sure you want to unblock ${modal.user?.username}?`
+            : `Are you sure you want to block ${modal.user?.username}? They will not be able to log in.`
+        }
+        body={
+          !modal.user?.blocked ? (
+            <>
               <label className="text-sm font-medium">Reason (optional)</label>
               <Input
                 placeholder="Enter reason for blocking..."
@@ -412,63 +400,40 @@ export function UserManagement({
                 onChange={(e) => setBlockReason(e.target.value)}
                 className="mt-2"
               />
-            </div>
-          )}
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={closeModal}>
-              Cancel
-            </Button>
-            <Button 
-              variant={modal.user?.blocked ? 'default' : 'destructive'}
-              onClick={handleBlockConfirm}
-              disabled={actionLoading === modal.user?.id}
-            >
-              {actionLoading === modal.user?.id && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {modal.user?.blocked ? 'Unblock' : 'Block'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </>
+          ) : undefined
+        }
+        confirmLabel={modal.user?.blocked ? 'Unblock' : 'Block'}
+        confirmVariant={modal.user?.blocked ? 'default' : 'destructive'}
+        loading={actionLoading === modal.user?.id}
+        onConfirm={handleBlockConfirm}
+      />
 
-      {/* Role Change Modal */}
-      <Dialog open={modal.type === 'role'} onOpenChange={(open) => !open && closeModal()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Change User Role</DialogTitle>
-            <DialogDescription>
-              Change {modal.user?.username}&apos;s role from{' '}
-              <strong>{modal.user?.role}</strong> to{' '}
-              <strong>{modal.user?.role === 'admin' ? 'user' : 'admin'}</strong>?
-            </DialogDescription>
-          </DialogHeader>
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={closeModal}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleRoleConfirm}
-              disabled={actionLoading === modal.user?.id}
-            >
-              {actionLoading === modal.user?.id && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Change Role
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Role Change */}
+      <ConfirmDialog
+        open={modal.type === 'role'}
+        onOpenChange={(open) => !open && closeModal()}
+        title="Change User Role"
+        description={
+          <>
+            Change {modal.user?.username}&apos;s role from{' '}
+            <strong>{modal.user?.role}</strong> to{' '}
+            <strong>{modal.user?.role === 'admin' ? 'user' : 'admin'}</strong>?
+          </>
+        }
+        confirmLabel="Change Role"
+        loading={actionLoading === modal.user?.id}
+        onConfirm={handleRoleConfirm}
+      />
 
-      {/* Password Reset Modal */}
-      <Dialog open={modal.type === 'password'} onOpenChange={(open) => !open && closeModal()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reset Password</DialogTitle>
-            <DialogDescription>
-              Enter a new password for {modal.user?.username}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="py-4">
+      {/* Password Reset */}
+      <ConfirmDialog
+        open={modal.type === 'password'}
+        onOpenChange={(open) => !open && closeModal()}
+        title="Reset Password"
+        description={`Enter a new password for ${modal.user?.username ?? ''}`}
+        body={
+          <>
             <label className="text-sm font-medium">New Password</label>
             <Input
               type="password"
@@ -486,94 +451,47 @@ export function UserManagement({
             <p className="text-xs text-muted-foreground mt-2">
               Password must be at least 8 characters with uppercase, lowercase, digit, and special character.
             </p>
-          </div>
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={closeModal}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handlePasswordConfirm}
-              disabled={actionLoading === modal.user?.id || !newPassword}
-            >
-              {actionLoading === modal.user?.id && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Reset Password
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </>
+        }
+        confirmLabel="Reset Password"
+        loading={actionLoading === modal.user?.id}
+        disabled={!newPassword}
+        onConfirm={handlePasswordConfirm}
+      />
 
-      {/* Delete User Modal */}
-      <Dialog open={modal.type === 'delete'} onOpenChange={(open) => !open && closeModal()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-500">
-              <AlertTriangle className="h-5 w-5" />
-              Delete User
-            </DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete <strong>{modal.user?.username}</strong>? 
-              This action cannot be undone. All user data including chat history will be permanently deleted.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <DialogFooter>
-            <Button variant="outline" onClick={closeModal}>
-              Cancel
-            </Button>
-            <Button 
-              variant="destructive"
-              onClick={handleDeleteConfirm}
-              disabled={actionLoading === modal.user?.id}
-            >
-              {actionLoading === modal.user?.id && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Delete User
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete User */}
+      <ConfirmDialog
+        open={modal.type === 'delete'}
+        onOpenChange={(open) => !open && closeModal()}
+        title="Delete User"
+        destructive
+        description={
+          <>
+            Are you sure you want to delete <strong>{modal.user?.username}</strong>?
+            This action cannot be undone. All user data including chat history will be permanently deleted.
+          </>
+        }
+        confirmLabel="Delete User"
+        confirmVariant="destructive"
+        loading={actionLoading === modal.user?.id}
+        onConfirm={handleDeleteConfirm}
+      />
 
-      {/* Success Modal */}
-      <Dialog open={modal.type === 'success'} onOpenChange={(open) => !open && closeModal()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-violet-500">
-              <CheckCircle className="h-5 w-5" />
-              Success
-            </DialogTitle>
-            <DialogDescription>
-              {modal.message}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <DialogFooter>
-            <Button onClick={closeModal}>
-              OK
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Success */}
+      <ResultDialog
+        open={modal.type === 'success'}
+        onOpenChange={(open) => !open && closeModal()}
+        variant="success"
+        message={modal.message}
+      />
 
-      {/* Error Modal */}
-      <Dialog open={modal.type === 'error'} onOpenChange={(open) => !open && closeModal()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-red-500">
-              <AlertTriangle className="h-5 w-5" />
-              Error
-            </DialogTitle>
-            <DialogDescription>
-              {modal.message}
-            </DialogDescription>
-          </DialogHeader>
-          
-          <DialogFooter>
-            <Button onClick={closeModal}>
-              OK
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Error */}
+      <ResultDialog
+        open={modal.type === 'error'}
+        onOpenChange={(open) => !open && closeModal()}
+        variant="error"
+        message={modal.message}
+      />
     </>
   );
 }

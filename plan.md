@@ -177,12 +177,12 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 - [x] **F10 — Simplify #10** Merge `queryBuildingCode` / `queryBuildingCodeFiltered` in `lib/rag.ts`. 🟡 — `3167f4f` (shared `assembleRAGResult` worker; kept public wrappers since each carries different param shape).
 - [x] **F11 — Simplify #11** Extract `normalizeChunkMetadata` + `mapHybridRow` / `mapExactRow` in `lib/rag.ts`. 🟢 — `02afc3a`
 - [x] **F12 — Simplify #12** Share `chunkPagesAtSize` between `splitWithPageTracking` and `createParentChunks`. 🟡 — `f4be7d1`
-- [x] **F13 — Simplify #13** Decompose `runIngestionPipeline` into stage functions with auto-computed progress. 🟡 — (pending commit) — split into `loadPdfStage`, `persistKeywordsStage`, `planChunksStage`, `embedAndInsertBatchesStage`; orchestrator now fits on one screen.
+- [x] **F13 — Simplify #13** Decompose `runIngestionPipeline` into stage functions with auto-computed progress. 🟡 — `3c5ed5f` (split into `loadPdfStage`, `persistKeywordsStage`, `planChunksStage`, `embedAndInsertBatchesStage`; orchestrator now fits on one screen).
 - [x] **F14 — Simplify #14** Single `EXACT_REFERENCE_REGEX` constant in `lib/agents.ts`. 🟢 — `40cb7c1`
 - [x] **F15 — Simplify #15** Drop fallback in `saveDocumentTree`. 🟢 (overlap with F8 pattern) — `589f8c3`
 - [x] **F16 — Simplify #16** `runExactSearchIfApplicable` helper in `lib/rag.ts`. 🟢 — `78ed1d1`
 - [ ] **F17 — Simplify #17** Extract `useIngestionStream()` hook. Verify whether `components/admin/pdf-ingestion-tab.tsx` is still routed in `app/admin/page.tsx`; if dead, delete it. 🟡
-- [ ] **F18 — Simplify #18** Reusable `<ConfirmDialog>` and `<ResultDialog>` in `components/ui/`. Migrate `user-management.tsx`. 🟢
+- [x] **F18 — Simplify #18** Reusable `<ConfirmDialog>` and `<ResultDialog>` in `components/ui/`. Migrate `user-management.tsx`. 🟢 — (pending commit)
 - [ ] **F19 — Simplify #19** Extract `useChatStream()` hook with event-typed SSE protocol. Touches `chat-interface.tsx` AND `app/api/chat/stream/route.ts`. Coordinate with Track B if still open. 🔴
 - [ ] **F20 — Simplify #20** Split `DocumentManagement` into list + form. `useReducer` for form state. Move `BADGE_COLORS` to `lib/constants.ts`. 🟡
 - [x] **F21 — Dead code** Delete `lib/logger.ts` (zero imports). 🟢 — `72768e8`
