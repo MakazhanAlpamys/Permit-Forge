@@ -4,6 +4,7 @@
 // Admin Permit Server Actions
 // ============================================================================
 
+import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase-server';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { requireAdmin, requireCSRF, requireActionRateLimit } from '@/lib/security';
@@ -153,6 +154,13 @@ export async function reviewPermit(
       notificationWarning = 'Decision recorded, but the applicant notification could not be delivered.';
     }
 
+    // X15: a permit's status just changed. Invalidate the user-facing
+    // /permits list and the permit detail page so the owner sees the new
+    // state on next mount in any open tab.
+    revalidatePath('/permits');
+    revalidatePath(`/permits/${permitId}`);
+    revalidatePath('/admin');
+
     return notificationWarning
       ? { success: true, warning: notificationWarning }
       : { success: true };
@@ -241,6 +249,11 @@ export async function setPermitUnderReview(
       console.error('setPermitUnderReview notification failed:', notifyError);
       notificationWarning = 'Status updated, but the applicant notification could not be delivered.';
     }
+
+    // X15: status flipped to under_review — refresh user-facing list + detail.
+    revalidatePath('/permits');
+    revalidatePath(`/permits/${permitId}`);
+    revalidatePath('/admin');
 
     return notificationWarning
       ? { success: true, warning: notificationWarning }

@@ -19,6 +19,16 @@ vi.mock('next/headers', () => ({
   headers: vi.fn(() => new Headers()),
 }));
 
+// Mock Next.js cache invalidators — these require a request scope at runtime
+// and throw "static generation store missing" when invoked from a unit test.
+// X15 added `revalidatePath` calls to admin-permit actions; this keeps every
+// action test inert against those calls.
+vi.mock('next/cache', () => ({
+  revalidatePath: vi.fn(),
+  revalidateTag: vi.fn(),
+  unstable_cache: <T>(fn: T) => fn,
+}));
+
 // Mock Supabase server client - MUST mock @/lib/supabase-server (the actual import path used in code)
 vi.mock('@/lib/supabase-server', () => {
   const mockRpc = vi.fn().mockResolvedValue({ data: [], error: null });
