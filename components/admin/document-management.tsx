@@ -16,6 +16,7 @@ import {
 } from '@/actions/documents';
 import { clearDocumentChunks, getIngestionStatus, testRAGQuery } from '@/actions/ingest-pdf';
 import { getCSRFTokenAction } from '@/actions/auth';
+import { useIngestionStream } from '@/hooks/use-ingestion-stream';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -41,16 +42,6 @@ import {
 // -----------------------------------------------------------------------------
 // Types
 // -----------------------------------------------------------------------------
-
-type IngestionStatus = 'idle' | 'loading' | 'success' | 'error';
-
-interface ProgressInfo {
-  stage: string;
-  progress: number;
-  total: number;
-  message: string;
-  chunksProcessed?: number;
-}
 
 interface DiagnosticInfo {
   dbConnected: boolean;
@@ -116,14 +107,6 @@ export function DocumentManagement() {
   const [showInactive, setShowInactive] = useState(false);
   const csrfTokenRef = useRef<string | null>(null);
 
-  // Ingestion state
-  const [ingestionStatus, setIngestionStatus] = useState<Record<string, IngestionStatus>>({});
-  const [ingestionMessages, setIngestionMessages] = useState<Record<string, string>>({});
-  const [activeProgress, setActiveProgress] = useState<Record<string, ProgressInfo>>({});
-  // B4: one AbortController per active ingestion so the user can cancel
-  // mid-run and so component unmount kills hung fetches.
-  const ingestionAbortersRef = useRef<Record<string, AbortController>>({});
-
   const [diagnostic, setDiagnostic] = useState<DiagnosticInfo>({
     dbConnected: false,
     totalChunkCount: 0,
@@ -169,6 +152,22 @@ export function DocumentManagement() {
       });
     }
   }, []);
+
+  // Ingestion stream — encapsulates SSE parsing, AbortController, and per-doc
+  // status / progress state (F17).
+  const {
+    statuses: ingestionStatus,
+    messages: ingestionMessages,
+    activeProgress,
+    startIngestion,
+    cancelIngestion,
+    setStatus: setIngestionStatus,
+  } = useIngestionStream({
+    onComplete: () => {
+      // Refresh per-document chunk stats once each ingestion finishes.
+      void runDiagnostics();
+    },
+  });
 
   useEffect(() => {
     loadDocuments();
@@ -353,126 +352,29 @@ export function DocumentManagement() {
       // — better to risk a duplicate-chunks warning than to block re-ingest.
     }
 
-    setIngestionStatus(prev => ({ ...prev, [documentId]: 'loading' }));
-    setIngestionMessages(prev => ({ ...prev, [documentId]: 'Starting ingestion...' }));
-    setActiveProgress(prev => ({ ...prev, [documentId]: { stage: 'starting', progress: 0, total: 100, message: 'Connecting...' } }));
-
-    // B4: bind an AbortController per ingestion so handleCancelIngestion below
-    // can interrupt the fetch. Any prior controller for this doc is aborted —
-    // shouldn't happen given the button disable, but defensive.
-    ingestionAbortersRef.current[documentId]?.abort();
-    const controller = new AbortController();
-    ingestionAbortersRef.current[documentId] = controller;
-
-    try {
-      const response = await fetch('/api/ingest', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-csrf-token': csrfTokenRef.current || '',
-        },
-        body: JSON.stringify({ documentId, replaceChunks }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) throw new Error('Failed to start ingestion');
-
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      if (!reader) throw new Error('No response stream');
-
-      let buffer = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        // Keep the last (potentially incomplete) line in the buffer
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              setActiveProgress(prev => ({
-                ...prev,
-                [documentId]: {
-                  stage: data.stage,
-                  progress: data.progress,
-                  total: data.total,
-                  message: data.message,
-                  chunksProcessed: data.chunksProcessed,
-                },
-              }));
-
-              if (data.done) {
-                if (data.error) {
-                  setIngestionStatus(prev => ({ ...prev, [documentId]: 'error' }));
-                  setIngestionMessages(prev => ({ ...prev, [documentId]: data.error }));
-                } else {
-                  setIngestionStatus(prev => ({ ...prev, [documentId]: 'success' }));
-                  setIngestionMessages(prev => ({ ...prev, [documentId]: `${data.chunksProcessed || 0} chunks ingested` }));
-                }
-                setActiveProgress(prev => {
-                  const next = { ...prev };
-                  delete next[documentId];
-                  return next;
-                });
-              }
-            } catch {
-              // Ignore parse errors for incomplete lines
-            }
-          }
-        }
-      }
-    } catch (error) {
-      // B4: distinguish a user-initiated abort from a real network error so
-      // the UI doesn't shout "Failed" when the admin just clicked Cancel.
-      const isAbort = error instanceof DOMException && error.name === 'AbortError';
-      setIngestionStatus(prev => ({ ...prev, [documentId]: isAbort ? 'idle' : 'error' }));
-      setIngestionMessages(prev => ({
-        ...prev,
-        [documentId]: isAbort
-          ? 'Ingestion cancelled.'
-          : error instanceof Error ? error.message : 'Failed',
-      }));
-      setActiveProgress(prev => {
-        const next = { ...prev };
-        delete next[documentId];
-        return next;
-      });
-    } finally {
-      delete ingestionAbortersRef.current[documentId];
-    }
-
-    runDiagnostics();
+    await startIngestion(documentId, csrfTokenRef.current, replaceChunks);
   };
 
   // B4: cancel an in-flight ingestion. Server route listens on request.signal
   // between stages and stamps ingestion_state='aborted'.
   const handleCancelIngestion = (documentId: string) => {
-    const aborter = ingestionAbortersRef.current[documentId];
-    if (aborter) aborter.abort();
+    cancelIngestion(documentId);
   };
 
   const handleClearChunks = async (documentId: string, displayName: string) => {
     if (!confirm(`Clear all chunks for "${displayName}"? This cannot be undone.`)) return;
 
-    setIngestionStatus(prev => ({ ...prev, [documentId]: 'loading' }));
+    setIngestionStatus(documentId, 'loading');
     try {
       const result = await clearDocumentChunks(documentId, csrfTokenRef.current || '');
       if (result.success) {
-        setIngestionStatus(prev => ({ ...prev, [documentId]: 'idle' }));
-        setIngestionMessages(prev => ({ ...prev, [documentId]: `Cleared ${result.deletedCount || 0} chunks` }));
+        setIngestionStatus(documentId, 'idle', `Cleared ${result.deletedCount || 0} chunks`);
         runDiagnostics();
       } else {
-        setIngestionStatus(prev => ({ ...prev, [documentId]: 'error' }));
-        setIngestionMessages(prev => ({ ...prev, [documentId]: result.error || 'Failed to clear' }));
+        setIngestionStatus(documentId, 'error', result.error || 'Failed to clear');
       }
     } catch (error) {
-      setIngestionStatus(prev => ({ ...prev, [documentId]: 'error' }));
-      setIngestionMessages(prev => ({ ...prev, [documentId]: error instanceof Error ? error.message : 'Failed' }));
+      setIngestionStatus(documentId, 'error', error instanceof Error ? error.message : 'Failed');
     }
   };
 

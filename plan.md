@@ -181,7 +181,7 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 - [x] **F14 — Simplify #14** Single `EXACT_REFERENCE_REGEX` constant in `lib/agents.ts`. 🟢 — `40cb7c1`
 - [x] **F15 — Simplify #15** Drop fallback in `saveDocumentTree`. 🟢 (overlap with F8 pattern) — `589f8c3`
 - [x] **F16 — Simplify #16** `runExactSearchIfApplicable` helper in `lib/rag.ts`. 🟢 — `78ed1d1`
-- [ ] **F17 — Simplify #17** Extract `useIngestionStream()` hook. Verify whether `components/admin/pdf-ingestion-tab.tsx` is still routed in `app/admin/page.tsx`; if dead, delete it. 🟡
+- [x] **F17 — Simplify #17** Extract `useIngestionStream()` hook. Verify whether `components/admin/pdf-ingestion-tab.tsx` is still routed in `app/admin/page.tsx`; if dead, delete it. 🟡 — (pending commit) — extracted to `hooks/use-ingestion-stream.ts` + migrated `document-management.tsx`; `pdf-ingestion-tab.tsx` was confirmed dead and deleted in F27.
 - [x] **F18 — Simplify #18** Reusable `<ConfirmDialog>` and `<ResultDialog>` in `components/ui/`. Migrate `user-management.tsx`. 🟢 — `648ec62`
 - [ ] **F19 — Simplify #19** Extract `useChatStream()` hook with event-typed SSE protocol. Touches `chat-interface.tsx` AND `app/api/chat/stream/route.ts`. Coordinate with Track B if still open. 🔴
 - [ ] **F20 — Simplify #20** Split `DocumentManagement` into list + form. `useReducer` for form state. Move `BADGE_COLORS` to `lib/constants.ts`. 🟡
@@ -191,7 +191,7 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 - [x] **F24 — Dead code** Remove unused functions: `getSession`, `resetTransporter`, `generateChatResponse`, `_getCacheState`, `_seedCache`, `loadDocumentTree`. Verify test mocks first. 🟡 — `0108f75` (removed the 4 truly-unused functions; kept `_getCacheState` / `_seedCache` as test-only utilities since 9 active test sites depend on them).
 - [x] **F25 — Dedupe** Consolidate the 3 permit-status configs (constants vs chart vs filter list) into one. 🟢 — `e43fbc2`
 - [x] **F26 — Dedupe** Pick one of `chatModel`/`streamingModel` proxy vs `getChatModel()`/`getStreamingModel()` — delete the other. 🟢 — `b0c680d`
-- [x] **F27 — Dedupe** Pick one ingestion-trigger path: `actions/ingest-pdf.ts` OR `actions/documents.ts`. Delete the other. (Likely deletable: `actions/ingest-pdf.ts` if all UI now goes through documents.) 🟡 — (pending commit) — removed the now-unused `ingestPDF` + `clearChunks` server actions (ingestion flows via `/api/ingest` SSE route) and deleted the dead `pdf-ingestion-tab.tsx` (no app/ route). Kept `clearDocumentChunks` + `getIngestionStatus` + `testRAGQuery` — still called from `document-management.tsx`.
+- [x] **F27 — Dedupe** Pick one ingestion-trigger path: `actions/ingest-pdf.ts` OR `actions/documents.ts`. Delete the other. (Likely deletable: `actions/ingest-pdf.ts` if all UI now goes through documents.) 🟡 — `e832e5a` (removed unused `ingestPDF` + `clearChunks`; deleted dead `pdf-ingestion-tab.tsx`; kept `clearDocumentChunks`/`getIngestionStatus`/`testRAGQuery` still called from `document-management.tsx`).
 
 ---
 
