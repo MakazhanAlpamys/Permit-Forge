@@ -29,6 +29,12 @@ import { MAX_MESSAGE_LENGTH } from '@/lib/constants';
 // ============================================================================
 
 const MIN_REQUEST_INTERVAL = 2000; // 2 seconds between requests
+// X13: persist the timestamp of the last send so a quick tab-reload can't
+// reset the in-memory throttle. Server already enforces its own rate limit;
+// this is defense-in-depth + UX hint (so the cooldown banner shows again
+// instead of letting the user fire another quick request that the server
+// would reject anyway).
+const LAST_SENT_AT_KEY = 'ef:chat:lastSentAt';
 
 // ============================================================================
 // Main Chat Interface
@@ -58,7 +64,14 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
   const [saveSyncFailed, setSaveSyncFailed] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const lastRequestRef = useRef<number>(0);
+  // X13: seed from sessionStorage so a quick tab-reload doesn't reset the
+  // 2s send-throttle. SessionStorage scopes to the tab, so different tabs
+  // get independent budgets — matches the server's per-user rate limiter.
+  const lastRequestRef = useRef<number>(
+    typeof window !== 'undefined'
+      ? Number(window.sessionStorage.getItem(LAST_SENT_AT_KEY)) || 0
+      : 0,
+  );
   const abortControllerRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
   const isCancelledRef = useRef(false);
@@ -199,6 +212,9 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       return;
     }
     lastRequestRef.current = now;
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem(LAST_SENT_AT_KEY, String(now));
+    }
 
     // Cancel any pending request and clean up previous controller
     if (abortControllerRef.current) {
