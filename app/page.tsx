@@ -11,6 +11,9 @@ import { ChatInterface } from '@/components/chat';
 export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  // X1: bump on real session events (create / delete) instead of refetching
+  // sessions every time the active session id changes.
+  const [sessionsVersion, setSessionsVersion] = useState(0);
 
   const handleNewChat = () => {
     setCurrentSessionId(null);
@@ -18,6 +21,14 @@ export default function Home() {
 
   const handleSelectSession = (sessionId: string) => {
     setCurrentSessionId(sessionId);
+  };
+
+  const handleSessionCreated = (sessionId: string | null) => {
+    setCurrentSessionId(sessionId);
+    // A new session was just created — refresh the sidebar's list.
+    if (sessionId) {
+      setSessionsVersion((v) => v + 1);
+    }
   };
 
   return (
@@ -28,19 +39,20 @@ export default function Home() {
       {/* Main Layout */}
       <div className="flex">
         {/* Sidebar */}
-        <Sidebar 
-          isOpen={sidebarOpen} 
+        <Sidebar
+          isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           currentSessionId={currentSessionId}
+          sessionsVersion={sessionsVersion}
           onNewChat={handleNewChat}
           onSelectSession={handleSelectSession}
         />
 
         {/* Main Content */}
         <main className="flex-1 h-[calc(100vh-3.5rem)]">
-          <ChatInterface 
+          <ChatInterface
             sessionId={currentSessionId}
-            onSessionCreated={setCurrentSessionId}
+            onSessionCreated={handleSessionCreated}
           />
         </main>
       </div>

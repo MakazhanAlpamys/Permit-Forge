@@ -199,7 +199,7 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 
 These are small enough that whichever track owner naturally touches the relevant file should grab them.
 
-- [ ] **X1 — M1 (clickpath)** Sidebar refetches sessions on every `currentSessionId` change. Fix: depend only on mount + a `version` bumped by chat handler. **Track B** if still open, else Track F. 🟢
+- [x] **X1 — M1 (clickpath)** Sidebar refetches sessions on every `currentSessionId` change. Fix: depend only on mount + a `version` bumped by chat handler. **Track B** if still open, else Track F. 🟢 — (pending commit)
 - [ ] **X2 — M2 (clickpath)** Persist `PermitManagement` filter to URL or localStorage. **Track B / F.** 🟢
 - [ ] **X3 — M5 (clickpath)** `UserManagement` rapid actions — add request token / cancel previous fetch. **Track B / C.** 🟢
 - [ ] **X4 — M8 (clickpath)** Cache PDF certificate in storage instead of regenerating each download. **Track B / C.** 🟢

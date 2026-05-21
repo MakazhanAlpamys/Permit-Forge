@@ -29,6 +29,13 @@ interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
   currentSessionId?: string | null;
+  /**
+   * X1: bumped by the parent whenever a real session-list change happens
+   * (create / delete). The sidebar refetches the list when this value changes
+   * instead of refetching every time the *active* session id flips, which used
+   * to fire on every chat-tab switch.
+   */
+  sessionsVersion?: number;
   onNewChat?: () => void;
   onSelectSession?: (sessionId: string) => void;
 }
@@ -71,7 +78,7 @@ function formatTimeAgo(date: Date): string {
   }
 }
 
-export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelectSession }: SidebarProps) {
+export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0, onNewChat, onSelectSession }: SidebarProps) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -83,12 +90,14 @@ export function Sidebar({ isOpen, onClose, currentSessionId, onNewChat, onSelect
   const csrfTokenRef = useRef<string | null>(null);
   const pathname = usePathname();
 
-  // Load chat sessions on mount and whenever active session changes
-  // (including when it becomes null after "New Chat" click)
+  // X1: Load chat sessions on mount and whenever the parent bumps
+  // `sessionsVersion` (i.e. a real session was created or deleted). Previously
+  // this re-ran on every `currentSessionId` flip, including plain tab switches
+  // between existing sessions, which caused an extra unnecessary DB roundtrip.
   useEffect(() => {
     loadSessions();
     getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
-  }, [currentSessionId]);
+  }, [sessionsVersion]);
 
   // Clear pending debounce timeout on unmount to prevent state updates on unmounted component
   useEffect(() => {
