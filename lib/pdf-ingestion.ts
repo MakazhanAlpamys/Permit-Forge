@@ -198,17 +198,179 @@ export interface IngestionOptions {
  * Main PDF ingestion pipeline
  * @param options - Ingestion options including documentId and pdfPath
  */
+// ----------------------------------------------------------------------------
+// Pipeline stages (F13 / Simplify #13)
+// ----------------------------------------------------------------------------
+// runIngestionPipeline grew to ~250 lines of mixed I/O + progress reporting.
+// Decomposing it into stage functions makes the orchestrator readable as a
+// single page of code and keeps each stage independently testable.
+// ----------------------------------------------------------------------------
+
+type Supa = ReturnType<typeof createAdminClient>;
+
+async function loadPdfStage(
+  options: IngestionOptions,
+  sendProgress: ProgressCallback,
+): Promise<PDFParser> {
+  const { documentId, pdfBuffer, pdfPath: relativePdfPath } = options;
+  await sendProgress({
+    stage: 'parsing', progress: 5, total: 100,
+    message: `Loading PDF (${documentId})...`,
+  });
+  if (pdfBuffer) return createPDFParser(pdfBuffer);
+
+  const pdfPath = path.join(process.cwd(), relativePdfPath!);
+  if (!fs.existsSync(pdfPath)) {
+    throw new Error(`PDF file not found at ${pdfPath}`);
+  }
+  return createPDFParser(pdfPath);
+}
+
+async function persistKeywordsStage(
+  supabase: Supa,
+  documentId: string,
+  pages: PDFPageContent[],
+  sendProgress: ProgressCallback,
+): Promise<void> {
+  await sendProgress({
+    stage: 'keywords', progress: 12, total: 100,
+    message: 'Extracting keywords from document text...',
+  });
+
+  const { keywords, categories } = extractKeywords(pages);
+  if (keywords.length === 0) return;
+
+  const { data: docRecord } = await supabase
+    .from('document_registry')
+    .select('keywords_auto_generated')
+    .eq('id', documentId)
+    .single();
+
+  if (docRecord?.keywords_auto_generated === false) return;
+
+  await supabase
+    .from('document_registry')
+    .update({
+      keywords,
+      categories,
+      keywords_auto_generated: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', documentId);
+
+  invalidateRegistryCache();
+  invalidateProfileCache();
+}
+
+async function planChunksStage(
+  supabase: Supa,
+  documentId: string,
+  chunksWithPages: ChunkWithPageRange[],
+  sendProgress: ProgressCallback,
+): Promise<{ chunksToProcess: ChunkWithPageRange[]; alreadyIngested: number }> {
+  const { data: existingChunks } = await supabase
+    .from('dubai_code_chunks')
+    .select('content')
+    .eq('document_name', documentId);
+
+  const existingContents = new Set((existingChunks || []).map((c) => c.content));
+  const newContents = new Set(chunksWithPages.map((c) => c.content));
+  const staleChunks = (existingChunks || []).filter((c) => !newContents.has(c.content));
+
+  if (staleChunks.length > 0) {
+    await sendProgress({
+      stage: 'cleaning', progress: 16, total: 100,
+      message: `PDF changed: clearing ${existingContents.size} old chunks before re-ingestion...`,
+    });
+    await supabase.from('dubai_code_chunks').delete().eq('document_name', documentId);
+    existingContents.clear();
+  }
+
+  const chunksToProcess = chunksWithPages.filter((chunk) => !existingContents.has(chunk.content));
+  return { chunksToProcess, alreadyIngested: existingContents.size };
+}
+
+async function embedAndInsertBatchesStage(
+  supabase: Supa,
+  documentId: string,
+  chunksToProcess: ChunkWithPageRange[],
+  parentIdMap: Array<{ id: number; startPage: number; endPage: number }>,
+  totalChunks: number,
+  startCount: number,
+  sendProgress: ProgressCallback,
+): Promise<{ ok: true; processed: number } | { ok: false; processed: number; error: string }> {
+  const { BATCH_SIZE, BATCH_DELAY_MS, EMBED_DELAY_MS } = PDF_INGESTION_CONFIG;
+
+  let processedCount = startCount;
+  const totalBatches = Math.ceil(chunksToProcess.length / BATCH_SIZE);
+
+  for (let i = 0; i < chunksToProcess.length; i += BATCH_SIZE) {
+    const batch = chunksToProcess.slice(i, i + BATCH_SIZE);
+    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+    const progressPercent = 20 + Math.round((batchNumber / totalBatches) * 80);
+
+    await sendProgress({
+      stage: 'embedding', progress: progressPercent, total: 100,
+      message: `Batch ${batchNumber}/${totalBatches}: Generating embeddings (${processedCount}/${totalChunks})...`,
+      chunksProcessed: processedCount,
+    });
+
+    const embeddings: number[][] = [];
+    for (let j = 0; j < batch.length; j++) {
+      try {
+        embeddings.push(await generateEmbedding(batch[j].content));
+        if (j < batch.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, EMBED_DELAY_MS));
+        }
+      } catch (error) {
+        if (error instanceof DailyQuotaExhaustedError) {
+          const errorMsg = `${error.message} (${processedCount}/${totalChunks} chunks saved — will resume on next attempt)`;
+          await sendProgress({
+            stage: 'error', progress: progressPercent, total: 100,
+            message: errorMsg, done: true, error: errorMsg, chunksProcessed: processedCount,
+          });
+          return { ok: false, processed: processedCount, error: errorMsg };
+        }
+        throw error;
+      }
+    }
+
+    const records = batch.map((chunk, idx) => ({
+      content: chunk.content,
+      metadata: { ...buildChunkMetadata(chunk), documentName: documentId },
+      embedding: embeddings[idx],
+      document_name: documentId,
+      parent_id: findParentForChild(chunk, parentIdMap),
+    }));
+
+    const { error } = await supabase.from('dubai_code_chunks').insert(records);
+    if (error) {
+      const errorMsg = `Failed at batch ${batchNumber}: ${error.message}`;
+      await sendProgress({
+        stage: 'error', progress: progressPercent, total: 100,
+        message: errorMsg, done: true, error: error.message, chunksProcessed: processedCount,
+      });
+      return { ok: false, processed: processedCount, error: errorMsg };
+    }
+
+    processedCount += batch.length;
+
+    if (i + BATCH_SIZE < chunksToProcess.length) {
+      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
+    }
+  }
+
+  return { ok: true, processed: processedCount };
+}
+
 export async function runIngestionPipeline(
   options: IngestionOptions
 ): Promise<IngestionResult> {
   const { documentId, pdfPath: relativePdfPath, pdfBuffer, onProgress } = options;
-  const { BATCH_SIZE, BATCH_DELAY_MS } = PDF_INGESTION_CONFIG;
   let parser: PDFParser | null = null;
 
-  const sendProgress = async (progress: IngestionProgress) => {
-    if (onProgress) {
-      await onProgress(progress);
-    }
+  const sendProgress: ProgressCallback = async (progress) => {
+    if (onProgress) await onProgress(progress);
   };
 
   try {
@@ -218,288 +380,87 @@ export async function runIngestionPipeline(
       return { success: false, chunksProcessed: 0, error };
     }
 
-    // Stage 1: Loading PDF
-    await sendProgress({
-      stage: 'parsing',
-      progress: 5,
-      total: 100,
-      message: `Loading PDF (${documentId})...`,
-    });
-
-    if (pdfBuffer) {
-      parser = await createPDFParser(pdfBuffer);
-    } else {
-      const pdfPath = path.join(process.cwd(), relativePdfPath!);
-      if (!fs.existsSync(pdfPath)) {
-        const error = `PDF file not found at ${pdfPath}`;
-        await sendProgress({ stage: 'error', progress: 0, total: 100, message: 'PDF file not found', done: true, error });
-        return { success: false, chunksProcessed: 0, error };
-      }
-      parser = await createPDFParser(pdfPath);
+    // Stage 1: load PDF (may throw on missing path)
+    try {
+      parser = await loadPdfStage(options, sendProgress);
+    } catch (loadErr) {
+      const error = loadErr instanceof Error ? loadErr.message : 'PDF load failed';
+      await sendProgress({ stage: 'error', progress: 0, total: 100, message: 'PDF file not found', done: true, error });
+      return { success: false, chunksProcessed: 0, error };
     }
 
-    // Stage 2: Extract TOC
-    await sendProgress({
-      stage: 'toc',
-      progress: 8,
-      total: 100,
-      message: 'Extracting Table of Contents...',
-    });
-
+    // Stage 2: TOC + document tree
+    await sendProgress({ stage: 'toc', progress: 8, total: 100, message: 'Extracting Table of Contents...' });
     const structure = await parser.extractTOC();
 
     const supabase = createAdminClient();
 
-    // Stage 2.5: Save document tree for Tree Reasoning
-    await sendProgress({
-      stage: 'tree',
-      progress: 9,
-      total: 100,
-      message: 'Saving document tree for structure-aware search...',
-    });
-
+    await sendProgress({ stage: 'tree', progress: 9, total: 100, message: 'Saving document tree for structure-aware search...' });
     const treeNodes = convertTOCToTreeNodes(structure.flatTOC, parser.totalPages);
     await saveDocumentTree(supabase, documentId, parser.totalPages, treeNodes);
 
-    // Stage 3: Extract text
-    await sendProgress({
-      stage: 'extracting',
-      progress: 10,
-      total: 100,
-      message: `Extracting text from ${parser.totalPages} pages...`,
-    });
-
+    // Stage 3: extract text
+    await sendProgress({ stage: 'extracting', progress: 10, total: 100, message: `Extracting text from ${parser.totalPages} pages...` });
     const pages = await parser.getAllPagesText();
 
-    // Stage 3.5: Auto-extract keywords from PDF text (0 API calls)
-    await sendProgress({
-      stage: 'keywords',
-      progress: 12,
-      total: 100,
-      message: 'Extracting keywords from document text...',
-    });
+    // Stage 3.5: persist keywords
+    await persistKeywordsStage(supabase, documentId, pages, sendProgress);
 
-    const { keywords, categories } = extractKeywords(pages);
-    if (keywords.length > 0) {
-      // Update keywords in DB only if they were auto-generated (don't overwrite manual edits)
-      const { data: docRecord } = await supabase
-        .from('document_registry')
-        .select('keywords_auto_generated')
-        .eq('id', documentId)
-        .single();
-
-      if (docRecord?.keywords_auto_generated !== false) {
-        await supabase
-          .from('document_registry')
-          .update({
-            keywords,
-            categories,
-            keywords_auto_generated: true,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', documentId);
-
-        invalidateRegistryCache();
-        invalidateProfileCache();
-      }
-    }
-
-    // Stage 4: Split into chunks
-    await sendProgress({
-      stage: 'splitting',
-      progress: 15,
-      total: 100,
-      message: 'Splitting into chunks with page tracking...',
-    });
-
+    // Stage 4: split into chunks
+    await sendProgress({ stage: 'splitting', progress: 15, total: 100, message: 'Splitting into chunks with page tracking...' });
     const chunksWithPages = await splitWithPageTracking(pages, parser);
     const totalChunks = chunksWithPages.length;
 
-    // Stage 5: Check for existing chunks and handle re-ingestion
-    const { data: existingChunks } = await supabase
-      .from('dubai_code_chunks')
-      .select('content')
-      .eq('document_name', documentId);
+    // Stage 5: plan chunks (resume vs full-vs-stale)
+    const { chunksToProcess, alreadyIngested } = await planChunksStage(supabase, documentId, chunksWithPages, sendProgress);
 
-    const existingContents = new Set((existingChunks || []).map(c => c.content));
-
-    // Detect stale chunks: chunks in DB that no longer exist in the new PDF
-    const newContents = new Set(chunksWithPages.map(c => c.content));
-    const staleChunks = (existingChunks || []).filter(c => !newContents.has(c.content));
-
-    if (staleChunks.length > 0) {
-      // PDF was updated — clear ALL old child chunks to avoid orphans
+    if (alreadyIngested > 0 && chunksToProcess.length > 0) {
       await sendProgress({
-        stage: 'cleaning',
-        progress: 16,
-        total: 100,
-        message: `PDF changed: clearing ${existingContents.size} old chunks before re-ingestion...`,
-      });
-
-      await supabase
-        .from('dubai_code_chunks')
-        .delete()
-        .eq('document_name', documentId);
-
-      existingContents.clear();
-    }
-
-    const chunksToProcess = chunksWithPages.filter(
-      chunk => !existingContents.has(chunk.content)
-    );
-
-    if (existingContents.size > 0 && chunksToProcess.length > 0) {
-      await sendProgress({
-        stage: 'embedding',
-        progress: 20,
-        total: 100,
-        message: `Resuming: ${existingContents.size} chunks already ingested, ${chunksToProcess.length} remaining...`,
+        stage: 'embedding', progress: 20, total: 100,
+        message: `Resuming: ${alreadyIngested} chunks already ingested, ${chunksToProcess.length} remaining...`,
       });
     } else if (chunksToProcess.length === 0) {
       await sendProgress({
-        stage: 'complete',
-        progress: 100,
-        total: 100,
+        stage: 'complete', progress: 100, total: 100,
         message: `All ${totalChunks} chunks already ingested — nothing to do!`,
-        done: true,
-        chunksProcessed: totalChunks,
+        done: true, chunksProcessed: totalChunks,
       });
-      return {
-        success: true,
-        chunksProcessed: totalChunks,
-        pagesProcessed: parser.totalPages,
-        tocExtracted: structure.flatTOC.length > 0,
-      };
+      return { success: true, chunksProcessed: totalChunks, pagesProcessed: parser.totalPages, tocExtracted: structure.flatTOC.length > 0 };
     }
 
-    // Stage 5.5: Create parent chunks (larger chunks for LLM context)
-    await sendProgress({
-      stage: 'parents',
-      progress: 17,
-      total: 100,
-      message: 'Creating parent chunks for richer LLM context...',
-    });
-
+    // Stage 5.5: parent chunks (skip insertion-roundtrip when no new chunks)
+    await sendProgress({ stage: 'parents', progress: 17, total: 100, message: 'Creating parent chunks for richer LLM context...' });
     const parentChunks = await createParentChunks(pages, parser);
     const parentIdMap = await insertParentChunks(supabase, parentChunks, documentId);
 
-    // Stage 6: Generate embeddings and store child chunks
+    // Stage 6: embed + insert in batches
     await sendProgress({
-      stage: 'embedding',
-      progress: 20,
-      total: 100,
+      stage: 'embedding', progress: 20, total: 100,
       message: `Processing ${chunksToProcess.length} child chunks (TOC: ${structure.flatTOC.length} entries)...`,
     });
-
-    let processedCount = existingContents.size;
-    const totalBatches = Math.ceil(chunksToProcess.length / BATCH_SIZE);
-    const { EMBED_DELAY_MS } = PDF_INGESTION_CONFIG;
-
-    for (let i = 0; i < chunksToProcess.length; i += BATCH_SIZE) {
-      const batch = chunksToProcess.slice(i, i + BATCH_SIZE);
-      const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
-      const progressPercent = 20 + Math.round((batchNumber / totalBatches) * 80);
-
-      await sendProgress({
-        stage: 'embedding',
-        progress: progressPercent,
-        total: 100,
-        message: `Batch ${batchNumber}/${totalBatches}: Generating embeddings (${processedCount}/${totalChunks})...`,
-        chunksProcessed: processedCount,
-      });
-
-      // Generate embeddings SEQUENTIALLY
-      const embeddings: number[][] = [];
-      for (let j = 0; j < batch.length; j++) {
-        try {
-          const embedding = await generateEmbedding(batch[j].content);
-          embeddings.push(embedding);
-          if (j < batch.length - 1) {
-            await new Promise(resolve => setTimeout(resolve, EMBED_DELAY_MS));
-          }
-        } catch (error) {
-          if (error instanceof DailyQuotaExhaustedError) {
-            const errorMsg = `${error.message} (${processedCount}/${totalChunks} chunks saved — will resume on next attempt)`;
-            await sendProgress({
-              stage: 'error',
-              progress: progressPercent,
-              total: 100,
-              message: errorMsg,
-              done: true,
-              error: errorMsg,
-              chunksProcessed: processedCount,
-            });
-            return { success: false, chunksProcessed: processedCount, error: errorMsg };
-          }
-          throw error;
-        }
-      }
-
-      // Find parent_id for each child chunk by page overlap
-      const records = batch.map((chunk, idx) => ({
-        content: chunk.content,
-        metadata: { ...buildChunkMetadata(chunk), documentName: documentId },
-        embedding: embeddings[idx],
-        document_name: documentId,
-        parent_id: findParentForChild(chunk, parentIdMap),
-      }));
-
-      const { error } = await supabase
-        .from('dubai_code_chunks')
-        .insert(records);
-
-      if (error) {
-        const errorMsg = `Failed at batch ${batchNumber}: ${error.message}`;
-        await sendProgress({
-          stage: 'error',
-          progress: progressPercent,
-          total: 100,
-          message: errorMsg,
-          done: true,
-          error: error.message,
-          chunksProcessed: processedCount,
-        });
-        return { success: false, chunksProcessed: processedCount, error: errorMsg };
-      }
-
-      processedCount += batch.length;
-
-      if (i + BATCH_SIZE < chunksToProcess.length) {
-        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
-      }
+    const result = await embedAndInsertBatchesStage(
+      supabase, documentId, chunksToProcess, parentIdMap, totalChunks, alreadyIngested, sendProgress,
+    );
+    if (!result.ok) {
+      return { success: false, chunksProcessed: result.processed, error: result.error };
     }
 
-    // Done!
     await sendProgress({
-      stage: 'complete',
-      progress: 100,
-      total: 100,
-      message: `Successfully ingested ${processedCount} chunks with page ranges!`,
-      done: true,
-      chunksProcessed: processedCount,
+      stage: 'complete', progress: 100, total: 100,
+      message: `Successfully ingested ${result.processed} chunks with page ranges!`,
+      done: true, chunksProcessed: result.processed,
     });
 
     return {
       success: true,
-      chunksProcessed: processedCount,
+      chunksProcessed: result.processed,
       pagesProcessed: parser.totalPages,
       tocExtracted: structure.flatTOC.length > 0,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    await sendProgress({
-      stage: 'error',
-      progress: 0,
-      total: 100,
-      message: 'Ingestion failed',
-      done: true,
-      error: errorMessage,
-    });
-    return {
-      success: false,
-      chunksProcessed: 0,
-      error: `PDF ingestion failed: ${errorMessage}`,
-    };
+    await sendProgress({ stage: 'error', progress: 0, total: 100, message: 'Ingestion failed', done: true, error: errorMessage });
+    return { success: false, chunksProcessed: 0, error: `PDF ingestion failed: ${errorMessage}` };
   } finally {
     if (parser) {
       await parser.close();

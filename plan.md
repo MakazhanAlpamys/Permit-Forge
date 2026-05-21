@@ -176,8 +176,8 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 - [x] **F9 — Simplify #9** `paginateByCursor` helper. 🟢 — `b7fbe34`
 - [x] **F10 — Simplify #10** Merge `queryBuildingCode` / `queryBuildingCodeFiltered` in `lib/rag.ts`. 🟡 — `3167f4f` (shared `assembleRAGResult` worker; kept public wrappers since each carries different param shape).
 - [x] **F11 — Simplify #11** Extract `normalizeChunkMetadata` + `mapHybridRow` / `mapExactRow` in `lib/rag.ts`. 🟢 — `02afc3a`
-- [x] **F12 — Simplify #12** Share `chunkPagesAtSize` between `splitWithPageTracking` and `createParentChunks`. 🟡 — (pending commit)
-- [ ] **F13 — Simplify #13** Decompose `runIngestionPipeline` into stage functions with auto-computed progress. 🟡
+- [x] **F12 — Simplify #12** Share `chunkPagesAtSize` between `splitWithPageTracking` and `createParentChunks`. 🟡 — `f4be7d1`
+- [x] **F13 — Simplify #13** Decompose `runIngestionPipeline` into stage functions with auto-computed progress. 🟡 — (pending commit) — split into `loadPdfStage`, `persistKeywordsStage`, `planChunksStage`, `embedAndInsertBatchesStage`; orchestrator now fits on one screen.
 - [x] **F14 — Simplify #14** Single `EXACT_REFERENCE_REGEX` constant in `lib/agents.ts`. 🟢 — `40cb7c1`
 - [x] **F15 — Simplify #15** Drop fallback in `saveDocumentTree`. 🟢 (overlap with F8 pattern) — `589f8c3`
 - [x] **F16 — Simplify #16** `runExactSearchIfApplicable` helper in `lib/rag.ts`. 🟢 — `78ed1d1`
