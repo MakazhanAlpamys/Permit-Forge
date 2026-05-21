@@ -166,8 +166,12 @@ export default function PermitDetailPage() {
       document.body.removeChild(a);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to download certificate');
+    } finally {
+      // X8: ensure the "Downloading..." spinner clears even if the fetch /
+      // blob path threw mid-way. Previously the unconditional line below the
+      // try/catch was unreachable on certain throw paths in browsers.
+      setActionLoading(null);
     }
-    setActionLoading(null);
   };
 
   if (loading) {
