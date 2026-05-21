@@ -1,8 +1,9 @@
 // ============================================================================
 // E15 — actions/ingest-pdf.ts coverage
 // ============================================================================
-// Covers admin guard, CSRF gate, documentId validation, audit logging,
-// and the registry-driven branch selection (storage_path vs file_name).
+// Covers admin guard, CSRF gate, audit logging, and the document-status /
+// clear-document helpers. (F27 removed the deprecated `ingestPDF` /
+// `clearChunks` actions; ingestion now flows through `/api/ingest`.)
 // runIngestionPipeline + tree-cache are mocked so we don't touch real PDFs.
 // ============================================================================
 
@@ -24,11 +25,6 @@ vi.mock('@/lib/security', async () => {
   };
 });
 
-const mockRunIngestion = vi.fn();
-vi.mock('@/lib/pdf-ingestion', () => ({
-  runIngestionPipeline: (...args: unknown[]) => mockRunIngestion(...args),
-}));
-
 const mockClearTreeCache = vi.fn();
 vi.mock('@/lib/tree-cache', () => ({
   clearDocumentTreeCache: (name?: string) => mockClearTreeCache(name),
@@ -46,7 +42,7 @@ vi.mock('@/lib/auth', async () => {
 });
 
 import { createAdminClient } from '@/lib/supabase-server';
-import { ingestPDF, clearDocumentChunks, clearChunks, getIngestionStatus } from '@/actions/ingest-pdf';
+import { clearDocumentChunks, getIngestionStatus } from '@/actions/ingest-pdf';
 
 const ADMIN = { id: 'admin-1', username: 'admin', role: 'admin' as const };
 
@@ -116,117 +112,6 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockRequireAdmin.mockResolvedValue({ success: true, user: ADMIN });
   mockRequireCSRF.mockResolvedValue({ valid: true });
-  mockRunIngestion.mockResolvedValue({ success: true, chunksProcessed: 42 });
-});
-
-// ============================================================================
-// ingestPDF
-// ============================================================================
-
-describe('ingestPDF', () => {
-  it('rejects when requireAdmin fails', async () => {
-    mockRequireAdmin.mockResolvedValueOnce({ success: false, error: 'Not admin' });
-    const out = await ingestPDF('doc-a', 'csrf');
-    expect(out).toMatchObject({ success: false, error: 'Not admin' });
-    expect(mockRunIngestion).not.toHaveBeenCalled();
-  });
-
-  it('rejects when CSRF fails', async () => {
-    mockRequireCSRF.mockResolvedValueOnce({ valid: false, error: 'Bad CSRF' });
-    const out = await ingestPDF('doc-a', 'csrf');
-    expect(out).toMatchObject({ success: false, error: 'Bad CSRF' });
-  });
-
-  it('rejects empty documentId', async () => {
-    const out = await ingestPDF('', 'csrf');
-    expect(out.success).toBe(false);
-    expect(out.error).toMatch(/Missing documentId/);
-  });
-
-  it('rejects unknown documentId (no DB row)', async () => {
-    setupAdminClient({ registryRow: { data: null, error: { message: 'not found' } } });
-    const out = await ingestPDF('doc-x', 'csrf');
-    expect(out.success).toBe(false);
-    expect(out.error).toMatch(/Unknown document/);
-  });
-
-  it('rejects inactive documentId', async () => {
-    setupAdminClient({
-      registryRow: {
-        data: { file_name: 'a.pdf', is_active: false, storage_path: null, pdf_hash: null },
-        error: null,
-      },
-    });
-    const out = await ingestPDF('doc-x', 'csrf');
-    expect(out.success).toBe(false);
-    expect(out.error).toMatch(/Unknown document/);
-  });
-
-  it('uses storage_path branch and runs pipeline with pdfBuffer', async () => {
-    // ArrayBuffer-shaped blob
-    const blob = {
-      arrayBuffer: () => Promise.resolve(new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer),
-    };
-    setupAdminClient({
-      registryRow: {
-        data: { file_name: '', is_active: true, storage_path: 'docs/a.pdf', pdf_hash: 'h1' },
-        error: null,
-      },
-      storageDownload: { data: blob, error: null },
-    });
-
-    const out = await ingestPDF('doc-a', 'csrf');
-    expect(mockRunIngestion).toHaveBeenCalledTimes(1);
-    const args = mockRunIngestion.mock.calls[0][0];
-    expect(args.documentId).toBe('doc-a');
-    expect(args.pdfBuffer).toBeInstanceOf(Uint8Array);
-    expect(out.success).toBe(true);
-    // Tree cache invalidated on success
-    expect(mockClearTreeCache).toHaveBeenCalledWith('doc-a');
-    // 2 audit events: started + completed
-    expect(mockLogAudit).toHaveBeenCalledTimes(2);
-  });
-
-  it('returns error when storage download fails', async () => {
-    setupAdminClient({
-      registryRow: {
-        data: { file_name: '', is_active: true, storage_path: 'docs/a.pdf', pdf_hash: null },
-        error: null,
-      },
-      storageDownload: { data: null, error: { message: 'object not found' } },
-    });
-    const out = await ingestPDF('doc-a', 'csrf');
-    expect(out.success).toBe(false);
-    expect(out.error).toMatch(/Failed to download PDF/);
-    expect(mockRunIngestion).not.toHaveBeenCalled();
-  });
-
-  it('uses public/ fallback branch when storage_path is absent', async () => {
-    setupAdminClient({
-      registryRow: {
-        data: { file_name: 'building-code.pdf', is_active: true, storage_path: null, pdf_hash: null },
-        error: null,
-      },
-    });
-    const out = await ingestPDF('doc-a', 'csrf');
-    expect(out.success).toBe(true);
-    const args = mockRunIngestion.mock.calls[0][0];
-    expect(args.pdfPath).toBe('public/building-code.pdf');
-    expect(args.pdfBuffer).toBeUndefined();
-  });
-
-  it('rejects unsafe file names in public/ fallback', async () => {
-    setupAdminClient({
-      registryRow: {
-        data: { file_name: '../etc/passwd', is_active: true, storage_path: null, pdf_hash: null },
-        error: null,
-      },
-    });
-    const out = await ingestPDF('doc-a', 'csrf');
-    expect(out.success).toBe(false);
-    expect(out.error).toMatch(/No PDF uploaded/);
-    expect(mockRunIngestion).not.toHaveBeenCalled();
-  });
 });
 
 // ============================================================================
@@ -251,31 +136,6 @@ describe('clearDocumentChunks', () => {
     const out = await clearDocumentChunks('doc-a', 'csrf');
     expect(out).toMatchObject({ success: true, deletedCount: 25 });
     expect(mockClearTreeCache).toHaveBeenCalledWith('doc-a');
-  });
-});
-
-// ============================================================================
-// clearChunks (legacy)
-// ============================================================================
-
-describe('clearChunks', () => {
-  it('rejects when not admin', async () => {
-    mockRequireAdmin.mockResolvedValueOnce({ success: false, error: 'no' });
-    const out = await clearChunks('csrf');
-    expect(out.success).toBe(false);
-  });
-
-  it('returns success immediately when count is 0', async () => {
-    setupAdminClient({ countResult: { count: 0, error: null } });
-    const out = await clearChunks('csrf');
-    expect(out.success).toBe(true);
-  });
-
-  it('reports count error', async () => {
-    setupAdminClient({ countResult: { error: { message: 'no table' } } });
-    const out = await clearChunks('csrf');
-    expect(out.success).toBe(false);
-    expect(out.error).toMatch(/Access error/);
   });
 });
 

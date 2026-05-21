@@ -188,10 +188,10 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 - [x] **F21 — Dead code** Delete `lib/logger.ts` (zero imports). 🟢 — `72768e8`
 - [x] **F22 — Dead code** `npm uninstall @google/generative-ai isomorphic-dompurify @types/dompurify supabase` (verify `isomorphic-dompurify` is truly unused after C18H lands — keep it if C18H uses it). 🟢 — `50784fe` — kept `isomorphic-dompurify` (used by C18H + message-bubble.tsx); removed `@google/generative-ai` (replaced by @google/genai), `@types/dompurify` (isomorphic-dompurify ships own types), and `supabase` CLI.
 - [x] **F23 — Dead code** Remove unused exports: `CRAG_THRESHOLD`, `citationSchema`, `permitStatusSchema`, `DialogTrigger`, `ScrollBar`. 🟢 — `6fbf2af`
-- [x] **F24 — Dead code** Remove unused functions: `getSession`, `resetTransporter`, `generateChatResponse`, `_getCacheState`, `_seedCache`, `loadDocumentTree`. Verify test mocks first. 🟡 — (pending commit) — removed `getSession` / `generateChatResponse` / `resetTransporter` / `loadDocumentTree` (only test-file refs). Kept `_getCacheState` / `_seedCache` (explicitly test-only utilities; 9 active test sites would need a non-trivial rewrite to drop them).
+- [x] **F24 — Dead code** Remove unused functions: `getSession`, `resetTransporter`, `generateChatResponse`, `_getCacheState`, `_seedCache`, `loadDocumentTree`. Verify test mocks first. 🟡 — `0108f75` (removed the 4 truly-unused functions; kept `_getCacheState` / `_seedCache` as test-only utilities since 9 active test sites depend on them).
 - [x] **F25 — Dedupe** Consolidate the 3 permit-status configs (constants vs chart vs filter list) into one. 🟢 — `e43fbc2`
 - [x] **F26 — Dedupe** Pick one of `chatModel`/`streamingModel` proxy vs `getChatModel()`/`getStreamingModel()` — delete the other. 🟢 — `b0c680d`
-- [ ] **F27 — Dedupe** Pick one ingestion-trigger path: `actions/ingest-pdf.ts` OR `actions/documents.ts`. Delete the other. (Likely deletable: `actions/ingest-pdf.ts` if all UI now goes through documents.) 🟡
+- [x] **F27 — Dedupe** Pick one ingestion-trigger path: `actions/ingest-pdf.ts` OR `actions/documents.ts`. Delete the other. (Likely deletable: `actions/ingest-pdf.ts` if all UI now goes through documents.) 🟡 — (pending commit) — removed the now-unused `ingestPDF` + `clearChunks` server actions (ingestion flows via `/api/ingest` SSE route) and deleted the dead `pdf-ingestion-tab.tsx` (no app/ route). Kept `clearDocumentChunks` + `getIngestionStatus` + `testRAGQuery` — still called from `document-management.tsx`.
 
 ---
 

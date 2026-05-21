@@ -3,146 +3,17 @@
 // ============================================================================
 // PDF Ingestion Server Actions (Admin Only) — Multi-Document Support
 // ============================================================================
+// F27: the actual ingestion trigger now lives behind `/api/ingest` (SSE
+// streaming, see `app/api/ingest/route.ts`). The old `ingestPDF` server
+// action duplicated the same flow without streaming and had no remaining
+// UI callers, so it was removed. The actions below are the *status* + *clear*
+// helpers that the admin UI still uses.
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { requireAdmin, requireCSRF } from '@/lib/security';
-import { runIngestionPipeline } from '@/lib/pdf-ingestion';
 import { clearDocumentTreeCache } from '@/lib/tree-cache';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
-import type { ChunkMetadata, IngestionResult } from '@/types';
-
-// -----------------------------------------------------------------------------
-// Main Ingestion Action — Per-Document
-// -----------------------------------------------------------------------------
-
-export async function ingestPDF(
-  documentId: string,
-  csrfToken: string,
-  options: { replaceChunks?: boolean } = {}
-): Promise<IngestionResult> {
-  // SECURITY: Verify admin role
-  const authCheck = await requireAdmin();
-  if (!authCheck.success || !authCheck.user) {
-    return {
-      success: false,
-      chunksProcessed: 0,
-      error: authCheck.error || 'Unauthorized',
-    };
-  }
-
-  const csrf = await requireCSRF(csrfToken);
-  if (!csrf.valid) return { success: false, chunksProcessed: 0, error: csrf.error };
-
-  if (!documentId) {
-    return {
-      success: false,
-      chunksProcessed: 0,
-      error: 'Missing documentId',
-    };
-  }
-
-  // SECURITY: Validate documentId from DB registry
-  const supabase = createAdminClient();
-  const { data: dbDoc } = await supabase
-    .from('document_registry')
-    .select('file_name, is_active, storage_path, pdf_hash')
-    .eq('id', documentId)
-    .single();
-
-  if (!dbDoc || !dbDoc.is_active) {
-    return {
-      success: false,
-      chunksProcessed: 0,
-      error: 'Unknown document ID',
-    };
-  }
-
-  // B5: caller-supplied replace flag. The streaming API route owns the UI
-  // confirm flow; this action mirrors the same handling for the (rare)
-  // direct server-action call path so the two ingestion entry points
-  // behave the same way.
-  if (options.replaceChunks) {
-    await supabase.from('dubai_code_chunks').delete().eq('document_name', documentId);
-    await supabase.from('parent_chunks').delete().eq('document_name', documentId);
-    await supabase.from('document_trees').delete().eq('document_name', documentId);
-  }
-
-  // Determine PDF source: Supabase Storage or local file
-  let pdfBuffer: Uint8Array | undefined;
-  let pdfPath: string | undefined;
-
-  if (dbDoc.storage_path) {
-    // Download from Supabase Storage
-    const { data: blob, error: dlError } = await supabase.storage
-      .from('document-pdfs')
-      .download(dbDoc.storage_path as string);
-
-    if (dlError || !blob) {
-      return {
-        success: false,
-        chunksProcessed: 0,
-        error: `Failed to download PDF from storage: ${dlError?.message || 'No data'}`,
-      };
-    }
-
-    pdfBuffer = new Uint8Array(await blob.arrayBuffer());
-  } else {
-    // Fallback: read from public/ folder (local dev)
-    const rawName = dbDoc.file_name as string;
-    const fileName = rawName.split(/[\/\\]/).pop() || '';
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*\.pdf$/i.test(fileName)) {
-      return {
-        success: false,
-        chunksProcessed: 0,
-        error: 'No PDF uploaded. Upload a PDF file first.',
-      };
-    }
-    pdfPath = `public/${fileName}`;
-  }
-
-  console.log(`📄 Starting PDF ingestion for document: ${documentId}...`);
-
-  // Log admin action
-  const metadata = await getRequestMetadata();
-  await logAuditEvent({
-    userId: authCheck.user.id,
-    action: 'pdf_ingested',
-    metadata: { stage: 'started', documentId },
-    ...metadata,
-  });
-
-  const result = await runIngestionPipeline({
-    documentId,
-    ...(pdfBuffer ? { pdfBuffer } : { pdfPath }),
-  });
-
-  // Invalidate the tree cache for this document
-  if (result.success) {
-    clearDocumentTreeCache(documentId);
-    // B5: record which PDF content produced the now-current chunk set.
-    if (dbDoc.pdf_hash) {
-      await supabase
-        .from('document_registry')
-        .update({ last_ingested_pdf_hash: dbDoc.pdf_hash })
-        .eq('id', documentId);
-    }
-  }
-
-  // Log completion
-  await logAuditEvent({
-    userId: authCheck.user.id,
-    action: 'pdf_ingested',
-    metadata: {
-      stage: 'completed',
-      documentId,
-      success: result.success,
-      chunksProcessed: result.chunksProcessed,
-    },
-    ...metadata,
-  });
-
-  return result;
-}
+import type { ChunkMetadata } from '@/types';
 
 // -----------------------------------------------------------------------------
 // Clear Chunks for a Specific Document
@@ -231,67 +102,6 @@ export async function clearDocumentChunks(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Clear document chunks error:', errorMessage);
-    return { success: false, error: `Failed to clear chunks: ${errorMessage}` };
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Clear All Chunks (Legacy)
-// -----------------------------------------------------------------------------
-
-export async function clearChunks(
-  csrfToken: string
-): Promise<{ success: boolean; error?: string }> {
-  // SECURITY: Verify admin role
-  const authCheck = await requireAdmin();
-  if (!authCheck.success || !authCheck.user) {
-    return { success: false, error: authCheck.error || 'Unauthorized' };
-  }
-
-  const csrf = await requireCSRF(csrfToken);
-  if (!csrf.valid) return { success: false, error: csrf.error };
-
-  try {
-    const supabase = createAdminClient();
-
-    const { count, error: countError } = await supabase
-      .from('dubai_code_chunks')
-      .select('*', { count: 'exact', head: true });
-
-    if (countError) {
-      return {
-        success: false,
-        error: `Access error: ${countError.message}. Please ensure the SQL migration has been run.`
-      };
-    }
-
-    if (count === 0) {
-      return { success: true };
-    }
-
-    const { error } = await supabase
-      .from('dubai_code_chunks')
-      .delete()
-      .gte('id', 0);
-
-    if (error) {
-      return { success: false, error: `Delete error: ${error.message}` };
-    }
-
-    console.log(`✅ Cleared all ${count} chunks from database`);
-    clearDocumentTreeCache(); // Clear all caches
-
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'chunks_cleared',
-      metadata: { chunksCleared: count },
-      ...metadata,
-    });
-
-    return { success: true };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return { success: false, error: `Failed to clear chunks: ${errorMessage}` };
   }
 }
