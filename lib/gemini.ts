@@ -3,9 +3,7 @@
 // ============================================================================
 
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
-import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
 import { GoogleGenAI } from '@google/genai';
-import { MAX_MESSAGE_LENGTH, MAX_CONTEXT_LENGTH } from './constants';
 
 // -----------------------------------------------------------------------------
 // Lazy model initialization — avoids crashing non-AI pages when key is absent
@@ -155,75 +153,6 @@ export async function generateEmbedding(text: string, maxRetries = 7): Promise<n
   throw lastError || new Error('Failed to generate embedding');
 }
 
-// -----------------------------------------------------------------------------
-// Chat Completion
-// -----------------------------------------------------------------------------
-
-export interface GeminiChatOptions {
-  systemPrompt: string;
-  userMessage: string;
-  context?: string;
-  conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
-}
-
-// -----------------------------------------------------------------------------
-// Context Truncation - Prevent token overflow
-// -----------------------------------------------------------------------------
-
-// MAX_CONTEXT_LENGTH and MAX_MESSAGE_LENGTH imported from constants.ts
-
-function truncateContext(context: string): string {
-  if (context.length <= MAX_CONTEXT_LENGTH) return context;
-  return context.slice(0, MAX_CONTEXT_LENGTH) + '\n[...context truncated]';
-}
-
-function sanitizeUserMessage(message: string): string {
-  const trimmed = message.trim().slice(0, MAX_MESSAGE_LENGTH);
-  return trimmed.replace(/\s+/g, ' ');
-}
-
-/**
- * Generate a chat completion with the compliance-focused system prompt
- * Uses LangChain ChatGoogleGenerativeAI
- */
-export async function generateChatResponse(options: GeminiChatOptions): Promise<string> {
-  const { systemPrompt, userMessage, context, conversationHistory = [] } = options;
-
-  // Sanitize inputs
-  const safeMessage = sanitizeUserMessage(userMessage);
-  const safeContext = context ? truncateContext(context) : '';
-
-  // Build user message with context
-  const fullUserMessage = safeContext
-    ? `CONTEXT:\n${safeContext}\n\nQ: ${safeMessage}`
-    : `Q: ${safeMessage}`;
-
-  // Build messages with conversation history for memory
-  const messages = [
-    new SystemMessage(systemPrompt),
-  ];
-
-  // Add last 10 messages from conversation history (5 exchanges)
-  const recentHistory = conversationHistory.slice(-10);
-  for (const msg of recentHistory) {
-    if (msg.role === 'user') {
-      messages.push(new HumanMessage(msg.content));
-    } else {
-      messages.push(new AIMessage(msg.content));
-    }
-  }
-
-  // Add current message
-  messages.push(new HumanMessage(fullUserMessage));
-
-  const response = await getChatModel().invoke(messages);
-  const raw = response.content;
-  return typeof raw === 'string'
-    ? raw
-    : Array.isArray(raw)
-      ? raw.map(c => (typeof c === 'string' ? c : 'text' in c ? c.text : '')).join('')
-      : String(raw);
-}
 
 // -----------------------------------------------------------------------------
 // System Prompts

@@ -1,9 +1,9 @@
 // ============================================================================
 // E5: lib/gemini.ts coverage
 // ============================================================================
-// Focus on the embedding retry loop + DailyQuotaExhaustedError detection +
-// generateChatResponse context/history shaping. The real Google SDKs are
-// expensive and stateful; we mock both @google/genai and @langchain/google-genai.
+// Focus on the embedding retry loop + DailyQuotaExhaustedError detection.
+// The real Google SDKs are expensive and stateful; we mock @google/genai
+// and @langchain/google-genai.
 // ============================================================================
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -47,7 +47,6 @@ import {
   generateEmbedding,
   embeddingsModel,
   DailyQuotaExhaustedError,
-  generateChatResponse,
   getChatModel,
   getStreamingModel,
 } from '@/lib/gemini';
@@ -165,99 +164,6 @@ describe('embeddingsModel shim', () => {
     const out = await embeddingsModel.embedDocuments(['a', 'b', 'c']);
     expect(out).toHaveLength(3);
     expect(mockEmbedContent).toHaveBeenCalledTimes(3);
-  });
-});
-
-// ----------------------------------------------------------------------------
-// generateChatResponse — context truncation + history cap + role mapping
-// ----------------------------------------------------------------------------
-
-describe('generateChatResponse', () => {
-  it('sends system + user message + context to the chat model', async () => {
-    mockInvoke.mockResolvedValueOnce({ content: 'answer' });
-
-    const answer = await generateChatResponse({
-      systemPrompt: 'sys',
-      userMessage: 'what is parking?',
-      context: 'small context',
-    });
-
-    expect(answer).toBe('answer');
-    expect(mockInvoke).toHaveBeenCalledTimes(1);
-    const messages = mockInvoke.mock.calls[0][0];
-    // System message + 1 human message (no history)
-    expect(messages).toHaveLength(2);
-    // Last message contains the context + question
-    const last = messages[1];
-    expect(last.content).toContain('CONTEXT:');
-    expect(last.content).toContain('small context');
-    expect(last.content).toContain('Q: what is parking?');
-  });
-
-  it('truncates context beyond MAX_CONTEXT_LENGTH (12000 chars)', async () => {
-    mockInvoke.mockResolvedValueOnce({ content: 'answer' });
-    const long = 'X'.repeat(20_000);
-
-    await generateChatResponse({
-      systemPrompt: 's',
-      userMessage: 'q',
-      context: long,
-    });
-
-    const last = mockInvoke.mock.calls[0][0].at(-1).content as string;
-    expect(last).toContain('[...context truncated]');
-    expect(last.length).toBeLessThan(20_000);
-  });
-
-  it('caps conversation history at the last 10 messages', async () => {
-    mockInvoke.mockResolvedValueOnce({ content: 'answer' });
-
-    const longHistory = Array.from({ length: 30 }, (_, i) => ({
-      role: (i % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant',
-      content: `m${i}`,
-    }));
-
-    await generateChatResponse({
-      systemPrompt: 's',
-      userMessage: 'q',
-      conversationHistory: longHistory,
-    });
-
-    const messages = mockInvoke.mock.calls[0][0];
-    // system + 10 history + 1 final user = 12
-    expect(messages).toHaveLength(12);
-    // First history message should be the LAST 10 from longHistory (i.e. m20)
-    expect(messages[1].content).toBe('m20');
-  });
-
-  it('joins array content blocks from the model into a string', async () => {
-    mockInvoke.mockResolvedValueOnce({
-      content: [{ text: 'hello ' }, { text: 'world' }],
-    });
-
-    const answer = await generateChatResponse({
-      systemPrompt: 's',
-      userMessage: 'q',
-    });
-    expect(answer).toBe('hello world');
-  });
-
-  it('coerces non-string non-array content via String()', async () => {
-    mockInvoke.mockResolvedValueOnce({ content: 42 });
-    const answer = await generateChatResponse({ systemPrompt: 's', userMessage: 'q' });
-    expect(answer).toBe('42');
-  });
-
-  it('sanitizes user message: trims, slices to MAX_MESSAGE_LENGTH, collapses whitespace', async () => {
-    mockInvoke.mockResolvedValueOnce({ content: 'ok' });
-    await generateChatResponse({
-      systemPrompt: 's',
-      userMessage: '  multi\n\n  whitespace\t \t input  ',
-    });
-
-    const last = mockInvoke.mock.calls[0][0].at(-1).content as string;
-    // No tabs or newlines remain inside the question.
-    expect(last).toContain('Q: multi whitespace input');
   });
 });
 

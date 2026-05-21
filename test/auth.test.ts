@@ -6,7 +6,6 @@ import {
   verifyJWTToken,
   createSession,
   destroySession,
-  getSession,
   getQuickSession,
   logAuditEvent,
 } from '@/lib/auth';
@@ -244,127 +243,6 @@ describe('Auth Library', () => {
       expect(result).toEqual({ id: VALID_UUID, username: 'alice', role: 'user' });
     });
 
-    it('getSession returns null without token', async () => {
-      vi.mocked(cookies).mockResolvedValueOnce({
-        get: vi.fn(() => undefined),
-        set: vi.fn(),
-        delete: vi.fn(),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any);
-
-      const result = await getSession();
-      expect(result).toBeNull();
-    });
-
-    it('getSession returns user when DB row exists and not blocked', async () => {
-      const token = await createJWTToken({
-        id: VALID_UUID,
-        username: 'alice',
-        role: 'user',
-      });
-      vi.mocked(cookies).mockResolvedValueOnce({
-        get: vi.fn(() => ({ value: token })),
-        set: vi.fn(),
-        delete: vi.fn(),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any);
-
-      const single = vi.fn().mockResolvedValue({
-        data: {
-          id: VALID_UUID,
-          username: 'alice',
-          full_name: 'Alice A',
-          role: 'user',
-          blocked: false,
-        },
-        error: null,
-      });
-      vi.mocked(createAdminClient).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          single,
-        }),
-        rpc: vi.fn(),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any);
-
-      const result = await getSession();
-      expect(result).toEqual({
-        id: VALID_UUID,
-        username: 'alice',
-        full_name: 'Alice A',
-        role: 'user',
-      });
-    });
-
-    it('getSession returns null when DB row is blocked', async () => {
-      const token = await createJWTToken({
-        id: VALID_UUID,
-        username: 'alice',
-        role: 'user',
-      });
-      vi.mocked(cookies).mockResolvedValueOnce({
-        get: vi.fn(() => ({ value: token })),
-        set: vi.fn(),
-        delete: vi.fn(),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any);
-
-      const single = vi.fn().mockResolvedValue({
-        data: {
-          id: VALID_UUID,
-          username: 'alice',
-          full_name: null,
-          role: 'user',
-          blocked: true,
-        },
-        error: null,
-      });
-      vi.mocked(createAdminClient).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          single,
-        }),
-        rpc: vi.fn(),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any);
-
-      const result = await getSession();
-      expect(result).toBeNull();
-    });
-
-    it('getSession returns null when DB query errors', async () => {
-      const token = await createJWTToken({
-        id: VALID_UUID,
-        username: 'alice',
-        role: 'user',
-      });
-      vi.mocked(cookies).mockResolvedValueOnce({
-        get: vi.fn(() => ({ value: token })),
-        set: vi.fn(),
-        delete: vi.fn(),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any);
-
-      const single = vi.fn().mockResolvedValue({
-        data: null,
-        error: { message: 'boom' },
-      });
-      vi.mocked(createAdminClient).mockReturnValueOnce({
-        from: vi.fn().mockReturnValue({
-          select: vi.fn().mockReturnThis(),
-          eq: vi.fn().mockReturnThis(),
-          single,
-        }),
-        rpc: vi.fn(),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any);
-
-      const result = await getSession();
-      expect(result).toBeNull();
-    });
   });
 
   // ============================================================================

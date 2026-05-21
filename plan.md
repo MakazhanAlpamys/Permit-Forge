@@ -182,13 +182,13 @@ Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.t
 - [x] **F15 — Simplify #15** Drop fallback in `saveDocumentTree`. 🟢 (overlap with F8 pattern) — `589f8c3`
 - [x] **F16 — Simplify #16** `runExactSearchIfApplicable` helper in `lib/rag.ts`. 🟢 — `78ed1d1`
 - [ ] **F17 — Simplify #17** Extract `useIngestionStream()` hook. Verify whether `components/admin/pdf-ingestion-tab.tsx` is still routed in `app/admin/page.tsx`; if dead, delete it. 🟡
-- [x] **F18 — Simplify #18** Reusable `<ConfirmDialog>` and `<ResultDialog>` in `components/ui/`. Migrate `user-management.tsx`. 🟢 — (pending commit)
+- [x] **F18 — Simplify #18** Reusable `<ConfirmDialog>` and `<ResultDialog>` in `components/ui/`. Migrate `user-management.tsx`. 🟢 — `648ec62`
 - [ ] **F19 — Simplify #19** Extract `useChatStream()` hook with event-typed SSE protocol. Touches `chat-interface.tsx` AND `app/api/chat/stream/route.ts`. Coordinate with Track B if still open. 🔴
 - [ ] **F20 — Simplify #20** Split `DocumentManagement` into list + form. `useReducer` for form state. Move `BADGE_COLORS` to `lib/constants.ts`. 🟡
 - [x] **F21 — Dead code** Delete `lib/logger.ts` (zero imports). 🟢 — `72768e8`
 - [x] **F22 — Dead code** `npm uninstall @google/generative-ai isomorphic-dompurify @types/dompurify supabase` (verify `isomorphic-dompurify` is truly unused after C18H lands — keep it if C18H uses it). 🟢 — `50784fe` — kept `isomorphic-dompurify` (used by C18H + message-bubble.tsx); removed `@google/generative-ai` (replaced by @google/genai), `@types/dompurify` (isomorphic-dompurify ships own types), and `supabase` CLI.
 - [x] **F23 — Dead code** Remove unused exports: `CRAG_THRESHOLD`, `citationSchema`, `permitStatusSchema`, `DialogTrigger`, `ScrollBar`. 🟢 — `6fbf2af`
-- [ ] **F24 — Dead code** Remove unused functions: `getSession`, `resetTransporter`, `generateChatResponse`, `_getCacheState`, `_seedCache`, `loadDocumentTree`. Verify test mocks first. 🟡
+- [x] **F24 — Dead code** Remove unused functions: `getSession`, `resetTransporter`, `generateChatResponse`, `_getCacheState`, `_seedCache`, `loadDocumentTree`. Verify test mocks first. 🟡 — (pending commit) — removed `getSession` / `generateChatResponse` / `resetTransporter` / `loadDocumentTree` (only test-file refs). Kept `_getCacheState` / `_seedCache` (explicitly test-only utilities; 9 active test sites would need a non-trivial rewrite to drop them).
 - [x] **F25 — Dedupe** Consolidate the 3 permit-status configs (constants vs chart vs filter list) into one. 🟢 — `e43fbc2`
 - [x] **F26 — Dedupe** Pick one of `chatModel`/`streamingModel` proxy vs `getChatModel()`/`getStreamingModel()` — delete the other. 🟢 — `b0c680d`
 - [ ] **F27 — Dedupe** Pick one ingestion-trigger path: `actions/ingest-pdf.ts` OR `actions/documents.ts`. Delete the other. (Likely deletable: `actions/ingest-pdf.ts` if all UI now goes through documents.) 🟡

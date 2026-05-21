@@ -144,39 +144,6 @@ export async function getSessionFromToken(): Promise<JWTPayload | null> {
   }
 }
 
-/**
- * Get current user with full data from database
- * Use this when you need the complete user object
- */
-export async function getSession(): Promise<User | null> {
-  const tokenPayload = await getSessionFromToken();
-  if (!tokenPayload) return null;
-  
-  try {
-    // Use admin client because anon role has no access to users table (REVOKED in migration)
-    const supabase = createAdminClient();
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('id, username, full_name, role, blocked')
-      .eq('id', tokenPayload.sub)
-      .single();
-    
-    if (error || !user) return null;
-    
-    // Check if user is blocked
-    if (user.blocked) return null;
-    
-    return {
-      id: user.id,
-      username: user.username,
-      full_name: user.full_name,
-      role: user.role as 'admin' | 'user',
-    };
-  } catch (error) {
-    console.error('Session retrieval failed:', error instanceof Error ? error.message : 'Unknown error');
-    return null;
-  }
-}
 
 /**
  * Quick token-only session check (no DB call)

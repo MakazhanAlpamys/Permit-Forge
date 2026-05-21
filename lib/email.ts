@@ -34,11 +34,6 @@ export function getTransporter(): nodemailer.Transporter {
   return _transporter;
 }
 
-/** Reset cached transporter (useful in tests or after env var changes) */
-export function resetTransporter(): void {
-  _transporter = null;
-}
-
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, '&amp;')
