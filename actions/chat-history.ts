@@ -11,6 +11,7 @@ import { requireAuth, requireCSRF, verifyOwnership } from '@/lib/security';
 import { uuidSchema, paginationSchema, citationsArraySchema } from '@/lib/validations';
 import type { ChatSession, ChatMessage, Citation } from '@/types';
 import { signCursor, verifyCursor } from '@/lib/signed-cursor';
+import { paginateByCursor } from '@/lib/paginate';
 
 // -----------------------------------------------------------------------------
 // Helper: Verify Session Ownership — wraps the generic helper (F6).
@@ -175,28 +176,23 @@ export async function getChatSessions(
       return { sessions: [], hasMore: false, error: error.message };
     }
 
-    const sessions = data || [];
-    const hasMore = sessions.length > validLimit;
-
-    // Remove the extra item we fetched for pagination check
-    if (hasMore) {
-      sessions.pop();
-    }
-
-    const nextCursor = hasMore && sessions.length > 0
-      ? signCursor(sessions[sessions.length - 1].updated_at as string)
-      : undefined;
+    const { rows, hasMore, nextCursor } = paginateByCursor(
+      (data || []) as Array<Record<string, unknown>>,
+      validLimit,
+      'updated_at',
+      signCursor,
+    );
 
     return {
-      sessions: sessions as ChatSession[],
+      sessions: rows as unknown as ChatSession[],
       nextCursor,
-      hasMore
+      hasMore,
     };
   } catch {
     return {
       sessions: [],
       hasMore: false,
-      error: 'Failed to fetch sessions' 
+      error: 'Failed to fetch sessions'
     };
   }
 }
@@ -258,22 +254,25 @@ export async function getSessionMessages(
       return { messages: [], hasMore: false, error: error.message };
     }
 
-    const rows = data || [];
-    const hasMore = rows.length > validLimit;
-
-    if (hasMore) {
-      rows.pop();
-    }
-
-    const nextCursor = hasMore && rows.length > 0
-      ? rows[rows.length - 1].created_at
-      : undefined;
+    const { rows, hasMore, nextCursor } = paginateByCursor(
+      (data || []) as Array<Record<string, unknown>>,
+      validLimit,
+      'created_at',
+    );
 
     // Reverse to chronological order (oldest first)
     rows.reverse();
 
     // Transform to ChatMessage format
-    const messages: ChatMessage[] = rows.map(msg => ({
+    interface MessageRow {
+      id: string;
+      role: string;
+      content: string;
+      citations?: Citation[];
+      compliance_status?: ChatMessage['complianceStatus'];
+      created_at: string;
+    }
+    const messages: ChatMessage[] = (rows as unknown as MessageRow[]).map((msg) => ({
       id: msg.id,
       role: msg.role as 'user' | 'assistant',
       content: msg.content,
