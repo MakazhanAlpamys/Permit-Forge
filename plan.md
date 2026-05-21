@@ -140,24 +140,24 @@ Risk legend: 🟢 LOW · 🟡 MEDIUM · 🔴 HIGH (touches hot path, needs manua
 
 Run-of-the-mill structure: each task adds ONE test file at `test/<module>.test.ts` mocking the same Supabase shape as existing tests.
 
-- [ ] **E1** `test/middleware.test.ts` — JWT verify, block-cache TTL, role redirect, security headers, `x-middleware-subrequest` rejection. (Phase2 T1) 🟡
-- [ ] **E2** Extend `test/auth.test.ts` to cover `createSession`, `destroySession`, `getSession`, `getQuickSession`, `logAuditEvent` (Phase2 T2). 🟢
-- [ ] **E3** `test/chat-pipeline.test.ts` — cache HIT path; `ENABLE_CACHE`/`ENABLE_PARENT_EXPANSION`/`ENABLE_TREE_REASONING` false branches; scope-detected → `queryBuildingCodeFiltered`. Also fix weak assertions noted in coverage report. 🟡
-- [ ] **E4** Extend `test/rag.test.ts` — `filteredHybridSearch` happy + fallback + throw; `passesCRAGCheck` boundary; `buildContext` truncation / multi-doc; `expandToParentChunks` happy + error. 🟡
-- [ ] **E5** `test/gemini.test.ts` — `generateEmbedding` retry loop, `DailyQuotaExhaustedError`, network retry, empty values, context truncation, history-cap. 🟡
-- [ ] **E6** `test/document-selector.test.ts` — keyword scoring, profile load, empty profile fallback, ID→name mapping. 🟢
-- [ ] **E7** Extend `test/document-registry` tests — cache HIT, DB-error empty caching is removed (overlap with B2), `refreshPromise` dedup, `getDocumentByIdSync` cold/warm. 🟡
-- [ ] **E8** `test/semantic-cache.test.ts` — search hit/miss/error; store error swallow; empty cache. 🟢
-- [ ] **E9** `test/supabase-server.test.ts` + `test/tree-cache.test.ts` — singleton; missing env throw; L1/L2 hit/miss. 🟡
-- [ ] **E10** `test/pdf-ingestion.test.ts` — resume skip path; child→parent linking; quota error mid-run; advisory-lock collision (overlap with D19); empty PDF. 🔴
-- [ ] **E11** `test/pdf-parser.test.ts` — TOC extraction, no-TOC fallback, malformed PDF. 🟡
-- [ ] **E12** `test/permit-certificate.test.ts` — cert number format, all fields present in buffer, optional null fields. 🟢
-- [ ] **E13** `test/notifications.test.ts` — in-app + email; email failure swallow; both transports off. 🟢
-- [ ] **E14** `test/keyword-extractor.test.ts` — TF-IDF, stopword exclusion, frequency normalization. 🟢
-- [ ] **E15** `test/ingest-pdf-action.test.ts` — auth + admin guard, CSRF, UUID validation, audit log, registry invalidation. 🟡
-- [ ] **E16** Edge cases from coverage §4: `x-middleware-subrequest` CVE header (handled by E1); 10MB±1B file boundary; DWG/DXF MIME with `application/octet-stream`; concurrent `getAllDocuments` dedup; expired-code boundary; JWT signed with wrong secret. Distribute into the relevant test files. 🟡
-- [ ] **E17** Fix weak assertions called out in coverage §5 (see report for the 12 specific tests). 🟢
-- [ ] **E18** (Optional, defense-nice-to-have) One smoke component test per critical area: `chat-interface.test.tsx`, `permit-form-step3.test.tsx`, `user-management.test.tsx`. Use `@testing-library/react`. 🟡
+- [x] **E1** `test/middleware.test.ts` — JWT verify, block-cache TTL, role redirect, security headers, `x-middleware-subrequest` rejection. (Phase2 T1) 🟡 — `ea75c1d`
+- [x] **E2** Extend `test/auth.test.ts` to cover `createSession`, `destroySession`, `getSession`, `getQuickSession`, `logAuditEvent` (Phase2 T2). 🟢 — `10648a0`
+- [x] **E3** `test/chat-pipeline.test.ts` — cache HIT path; `ENABLE_CACHE`/`ENABLE_PARENT_EXPANSION`/`ENABLE_TREE_REASONING` false branches; scope-detected → `queryBuildingCodeFiltered`. Also fix weak assertions noted in coverage report. 🟡 — `fa14947`
+- [x] **E4** Extend `test/rag.test.ts` — `filteredHybridSearch` happy + fallback + throw; `passesCRAGCheck` boundary; `buildContext` truncation / multi-doc; `expandToParentChunks` happy + error. 🟡 — `c97dbc4`
+- [x] **E5** `test/gemini.test.ts` — `generateEmbedding` retry loop, `DailyQuotaExhaustedError`, network retry, empty values, context truncation, history-cap. 🟡 — `06e7417`
+- [x] **E6** `test/document-selector.test.ts` — keyword scoring, profile load, empty profile fallback, ID→name mapping. 🟢 — `13a4f73`
+- [x] **E7** Extend `test/document-registry` tests — cache HIT, DB-error empty caching is removed (overlap with B2), `refreshPromise` dedup, `getDocumentByIdSync` cold/warm. 🟡 — `d73cf23`
+- [x] **E8** `test/semantic-cache.test.ts` — search hit/miss/error; store error swallow; empty cache. 🟢 — `413f9fd`
+- [x] **E9** `test/supabase-server.test.ts` + `test/tree-cache.test.ts` — singleton; missing env throw; L1/L2 hit/miss. 🟡 — `1b0eae1`
+- [x] **E10** `test/pdf-ingestion.test.ts` — resume skip path; child→parent linking; quota error mid-run; advisory-lock collision (overlap with D19); empty PDF. 🔴 — (pending commit)
+- [x] **E11** `test/pdf-parser.test.ts` — TOC extraction, no-TOC fallback, malformed PDF. 🟡 — `77b3fe1`
+- [x] **E12** `test/permit-certificate.test.ts` — cert number format, all fields present in buffer, optional null fields. 🟢 — `a362019`
+- [x] **E13** `test/notifications.test.ts` — in-app + email; email failure swallow; both transports off. 🟢 — `3d8e0a2`
+- [x] **E14** `test/keyword-extractor.test.ts` — TF-IDF, stopword exclusion, frequency normalization. 🟢 — `161433e`
+- [x] **E15** `test/ingest-pdf-action.test.ts` — auth + admin guard, CSRF, UUID validation, audit log, registry invalidation. 🟡 — `affee91`
+- [x] **E16** Edge cases from coverage §4: `x-middleware-subrequest` CVE header (handled by E1); 10MB±1B file boundary; DWG/DXF MIME with `application/octet-stream`; concurrent `getAllDocuments` dedup; expired-code boundary; JWT signed with wrong secret. Distribute into the relevant test files. 🟡 — `e1d8b49`
+- [x] **E17** Fix weak assertions called out in coverage §5 (see report for the 12 specific tests). 🟢 — `676a621`
+- [x] **E18** (Optional, defense-nice-to-have) One smoke component test per critical area: `chat-interface.test.tsx`, `permit-form-step3.test.tsx`, `user-management.test.tsx`. Use `@testing-library/react`. 🟡 — `3aa9c25`
 
 ---
 
