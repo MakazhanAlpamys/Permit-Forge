@@ -64,17 +64,43 @@ export async function GET(
       return applySecurityHeaders(Response.json({ error: 'Certificate only available for approved permits' }, { status: 400 }));
     }
 
-    // Check if certificate already exists
+    // X4 / M8: cached-cert path. If we already produced this PDF and stashed
+    // it in Storage, serve the bytes from there instead of regenerating with
+    // PDFKit (~50–200ms each).
     const adminClient = createAdminClient();
     const { data: existingCert } = await adminClient
       .from('permit_certificates')
-      .select('certificate_number')
+      .select('certificate_number, storage_path')
       .eq('permit_id', permitId)
       .single();
 
     const certNumber = existingCert?.certificate_number || generateCertificateNumber(permitId);
+    const cacheBucket = 'permit-certificates';
+    const cachePath = `${permitId}/${certNumber}.pdf`;
 
-    // Generate PDF
+    if (existingCert?.storage_path) {
+      const { data: cachedBlob, error: dlErr } = await adminClient.storage
+        .from(cacheBucket)
+        .download(existingCert.storage_path as string);
+
+      if (!dlErr && cachedBlob) {
+        const cachedBytes = new Uint8Array(await cachedBlob.arrayBuffer());
+        return applySecurityHeaders(
+          new Response(cachedBytes, {
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': `attachment; filename="permit-certificate-${certNumber}.pdf"`,
+              'Cache-Control': 'private, max-age=3600',
+              'X-Cert-Cache': 'hit',
+            },
+          })
+        );
+      }
+      // If the object is missing / unreadable, fall through to regenerate.
+    }
+
+    // Cache miss → generate the PDF, upload to Storage best-effort, and
+    // persist the storage_path on the cert row so the next request hits cache.
     const certData: CertificateData = {
       certificateNumber: certNumber,
       projectName: permit.project_name,
@@ -89,13 +115,28 @@ export async function GET(
 
     const pdfBuffer = await generateCertificatePDF(certData);
 
-    // Save certificate record if it doesn't exist
-    // Handle race condition: if concurrent request already inserted, ignore duplicate error
+    // Upload + insert/update the cert row. Both are best-effort; failure here
+    // just means the next download will regenerate again.
+    let storedPath: string | null = null;
+    try {
+      const { error: uploadErr } = await adminClient.storage
+        .from(cacheBucket)
+        .upload(cachePath, new Uint8Array(pdfBuffer), {
+          contentType: 'application/pdf',
+          upsert: true,
+        });
+      if (!uploadErr) storedPath = cachePath;
+      else console.error('Certificate cache upload failed:', uploadErr);
+    } catch (uploadEx) {
+      console.error('Certificate cache upload threw:', uploadEx);
+    }
+
     if (!existingCert) {
       const { error: certInsertError } = await adminClient.from('permit_certificates').insert({
         permit_id: permitId,
         certificate_number: certNumber,
         generated_by: user.id,
+        storage_path: storedPath,
       });
 
       if (certInsertError) {
@@ -112,6 +153,14 @@ export async function GET(
           ...metadata,
         });
       }
+    } else if (storedPath && !existingCert.storage_path) {
+      // Backfill the storage_path on an older cert row produced before the
+      // cache existed. Stale paths from the same cert row get overwritten
+      // because we always upload with upsert:true to the same path.
+      await adminClient
+        .from('permit_certificates')
+        .update({ storage_path: storedPath })
+        .eq('permit_id', permitId);
     }
 
     return applySecurityHeaders(
@@ -119,7 +168,8 @@ export async function GET(
         headers: {
           'Content-Type': 'application/pdf',
           'Content-Disposition': `attachment; filename="permit-certificate-${certNumber}.pdf"`,
-          'Cache-Control': 'no-cache',
+          'Cache-Control': 'private, max-age=3600',
+          'X-Cert-Cache': 'miss',
         },
       })
     );

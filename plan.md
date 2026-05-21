@@ -201,8 +201,8 @@ These are small enough that whichever track owner naturally touches the relevant
 
 - [x] **X1 — M1 (clickpath)** Sidebar refetches sessions on every `currentSessionId` change. Fix: depend only on mount + a `version` bumped by chat handler. **Track B** if still open, else Track F. 🟢 — `9ce1328`
 - [x] **X2 — M2 (clickpath)** Persist `PermitManagement` filter to URL or localStorage. **Track B / F.** 🟢 — `d0d25c2`
-- [x] **X3 — M5 (clickpath)** `UserManagement` rapid actions — add request token / cancel previous fetch. **Track B / C.** 🟢 — (pending commit) — added monotonic `actionTokenRef` + `beginAction()` checker; each handler drops its result if a newer action has fired.
-- [ ] **X4 — M8 (clickpath)** Cache PDF certificate in storage instead of regenerating each download. **Track B / C.** 🟢
+- [x] **X3 — M5 (clickpath)** `UserManagement` rapid actions — add request token / cancel previous fetch. **Track B / C.** 🟢 — `9cea4b9` (monotonic `actionTokenRef` + `beginAction()` checker; each handler drops its result if a newer action has fired).
+- [x] **X4 — M8 (clickpath)** Cache PDF certificate in storage instead of regenerating each download. **Track B / C.** 🟢 — (pending commit) — new `permit-certificates` bucket (migration 022) + cache-hit path on the cert route that streams the stored PDF when `permit_certificates.storage_path` is present. Misses upload + backfill best-effort.
 - [ ] **X5 — M9 (clickpath)** Gate `<FileUploadZone>` `onDrop`/`onClick` on `uploading` flag. **Track B.** 🟢
 - [ ] **X6 — M10 (clickpath)** Add poll (or supabase realtime) on `/permits` so users see status change. **Track B.** 🟢
 - [ ] **X7 — L4 (clickpath)** Add jitter to NotificationBell 30s poll. **Track B / F.** 🟢
