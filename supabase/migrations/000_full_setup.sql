@@ -2174,6 +2174,1845 @@ $$;
 REVOKE ALL ON FUNCTION check_ip_rate_limit(TEXT, INT, INT) FROM public, anon;
 GRANT EXECUTE ON FUNCTION check_ip_rate_limit(TEXT, INT, INT) TO service_role;
 
+
+-- ============================================================================
+-- APPLIED MIGRATIONS 001-023 (merged inline for diploma single-file setup)
+-- ============================================================================
+
+
+-- ---- 001_add_pdf_hash.sql ----
+
+-- ============================================================================
+-- B5 — Track PDF content hash on document_registry
+-- ============================================================================
+--
+-- pdf_hash:               SHA-256 of the most recently uploaded PDF.
+-- last_ingested_pdf_hash: SHA-256 of the PDF that produced the *current* chunk
+--                         set. When these diverge AND chunks already exist,
+--                         the admin UI prompts before clearing prior chunks
+--                         (avoids silently mixing old + new chunks).
+--
+-- Idempotent — safe to re-run after a fresh 000_full_setup.sql.
+
+ALTER TABLE document_registry
+  ADD COLUMN IF NOT EXISTS pdf_hash TEXT,
+  ADD COLUMN IF NOT EXISTS last_ingested_pdf_hash TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_document_registry_pdf_hash
+  ON document_registry(pdf_hash)
+  WHERE pdf_hash IS NOT NULL;
+
+
+-- ---- 002_add_ingestion_state.sql ----
+
+-- ============================================================================
+-- B4 — Track explicit ingestion state on document_registry
+-- ============================================================================
+--
+-- ingestion_state is one of:
+--   NULL       — never ingested (default)
+--   'pending'  — an ingestion job is currently running
+--   'completed'— last ingestion finished successfully
+--   'failed'   — last ingestion errored or was aborted
+--   'aborted'  — client cancelled the ingestion mid-stream
+--
+-- Used by the admin UI to surface which documents are mid-ingest, and to mark
+-- abandoned runs so admin can spot them after a server crash / browser close.
+--
+-- ingestion_started_at / ingestion_finished_at let the UI show wall-clock
+-- duration and detect runs older than the longest-allowed ingestion window
+-- (those are effectively stuck and should be re-tried).
+
+ALTER TABLE document_registry
+  ADD COLUMN IF NOT EXISTS ingestion_state TEXT
+    CHECK (ingestion_state IS NULL OR ingestion_state IN ('pending', 'completed', 'failed', 'aborted')),
+  ADD COLUMN IF NOT EXISTS ingestion_started_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS ingestion_finished_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_document_registry_ingestion_state
+  ON document_registry(ingestion_state)
+  WHERE ingestion_state IS NOT NULL;
+
+
+-- ---- 003_submit_permit_atomic.sql ----
+
+-- ============================================================================
+-- B7 — Atomic permit submit / revise RPCs
+-- ============================================================================
+--
+-- Replaces two-step "UPDATE then INSERT status_history" with a single
+-- transactional RPC so a crash between the two writes can't leave a permit
+-- in 'submitted' state without a matching status history row.
+--
+-- Returns:
+--   { status_changed boolean, is_resubmission boolean, project_name text,
+--     prev_status text, new_status text }
+-- so the caller can decide whether the row actually transitioned (false if
+-- another tab raced and already moved it).
+--
+-- Best-effort notification stays in the application layer — it isn't part
+-- of the DB transaction because notification failure shouldn't block the
+-- state change (see B8 warning surface).
+
+DROP FUNCTION IF EXISTS submit_permit_atomic(UUID, UUID);
+
+CREATE OR REPLACE FUNCTION submit_permit_atomic(
+  p_permit_id UUID,
+  p_user_id UUID
+)
+RETURNS TABLE (
+  status_changed BOOLEAN,
+  is_resubmission BOOLEAN,
+  project_name TEXT,
+  prev_status TEXT,
+  new_status TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_prev_status TEXT;
+  v_revision_count INT;
+  v_bd JSONB;
+  v_project_name TEXT;
+  v_is_resub BOOLEAN := FALSE;
+BEGIN
+  -- Lock the row for the duration of this transaction to prevent racing
+  -- submitters from both observing status='draft' and both transitioning.
+  SELECT pa.status, pa.revision_count, pa.building_details, pa.project_name
+    INTO v_prev_status, v_revision_count, v_bd, v_project_name
+  FROM permit_applications pa
+  WHERE pa.id = p_permit_id AND pa.user_id = p_user_id
+  FOR UPDATE;
+
+  IF v_prev_status IS NULL THEN
+    RAISE EXCEPTION 'PERMIT_NOT_FOUND' USING ERRCODE = 'P0001';
+  END IF;
+
+  IF v_prev_status NOT IN ('draft', 'revision_requested') THEN
+    -- Idempotent: don't raise, just report no change.
+    RETURN QUERY SELECT FALSE, FALSE, v_project_name, v_prev_status, v_prev_status;
+    RETURN;
+  END IF;
+
+  -- Building details guard mirrors the action-layer check so the RPC is
+  -- safe to call without re-validating in JS.
+  IF v_bd IS NULL
+     OR COALESCE((v_bd->>'numberOfFloors')::NUMERIC, 0) <= 0
+     OR COALESCE((v_bd->>'totalBuiltUpArea')::NUMERIC, 0) <= 0
+     OR COALESCE((v_bd->>'plotArea')::NUMERIC, 0) <= 0
+     OR COALESCE((v_bd->>'buildingHeight')::NUMERIC, 0) <= 0 THEN
+    RAISE EXCEPTION 'BUILDING_DETAILS_INCOMPLETE' USING ERRCODE = 'P0002';
+  END IF;
+
+  v_is_resub := v_prev_status = 'revision_requested';
+
+  UPDATE permit_applications
+     SET status = 'submitted',
+         submitted_at = NOW(),
+         revision_count = CASE WHEN v_is_resub THEN COALESCE(v_revision_count, 0) + 1
+                               ELSE COALESCE(v_revision_count, 0) END,
+         revision_notes = CASE WHEN v_is_resub THEN NULL ELSE revision_notes END,
+         updated_at = NOW()
+   WHERE id = p_permit_id AND user_id = p_user_id;
+
+  INSERT INTO permit_status_history (permit_id, from_status, to_status, changed_by, comment)
+  VALUES (
+    p_permit_id,
+    v_prev_status,
+    'submitted',
+    p_user_id,
+    CASE WHEN v_is_resub THEN 'Application resubmitted after revision'
+         ELSE 'Application submitted for review' END
+  );
+
+  RETURN QUERY SELECT TRUE, v_is_resub, v_project_name, v_prev_status, 'submitted'::TEXT;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION submit_permit_atomic(UUID, UUID) TO authenticated, service_role;
+
+-- ----------------------------------------------------------------------------
+-- revise_permit_atomic: same shape, for the user re-opening a returned permit.
+-- ----------------------------------------------------------------------------
+
+DROP FUNCTION IF EXISTS revise_permit_atomic(UUID, UUID);
+
+CREATE OR REPLACE FUNCTION revise_permit_atomic(
+  p_permit_id UUID,
+  p_user_id UUID
+)
+RETURNS TABLE (
+  status_changed BOOLEAN,
+  prev_status TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_prev_status TEXT;
+BEGIN
+  SELECT pa.status INTO v_prev_status
+  FROM permit_applications pa
+  WHERE pa.id = p_permit_id AND pa.user_id = p_user_id
+  FOR UPDATE;
+
+  IF v_prev_status IS NULL THEN
+    RAISE EXCEPTION 'PERMIT_NOT_FOUND' USING ERRCODE = 'P0001';
+  END IF;
+
+  IF v_prev_status <> 'revision_requested' THEN
+    RETURN QUERY SELECT FALSE, v_prev_status;
+    RETURN;
+  END IF;
+
+  UPDATE permit_applications
+     SET status = 'draft',
+         compliance_check_result = NULL,
+         updated_at = NOW()
+   WHERE id = p_permit_id AND user_id = p_user_id;
+
+  INSERT INTO permit_status_history (permit_id, from_status, to_status, changed_by, comment)
+  VALUES (p_permit_id, v_prev_status, 'draft', p_user_id, 'Started revision');
+
+  RETURN QUERY SELECT TRUE, v_prev_status;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION revise_permit_atomic(UUID, UUID) TO authenticated, service_role;
+
+
+-- ---- 004_insert_permit_attachment_capped.sql ----
+
+-- ============================================================================
+-- C6H — Atomic per-permit attachment insert with cap enforcement
+-- ============================================================================
+--
+-- The Node-side flow was:
+--   1. SELECT count(*) FROM permit_attachments WHERE permit_id = $1
+--   2. if count >= 10: reject
+--   3. INSERT INTO permit_attachments ...
+--
+-- Two concurrent uploads both see count=9, both insert, end state = 11
+-- attachments — the cap is silently bypassed. This RPC moves the count check
+-- inside the same transaction as the insert, holding ROW SHARE locks via the
+-- pl/pgsql block so a second caller observes the first caller's pending row.
+--
+-- Returns the inserted row's id (or raises ATTACHMENT_LIMIT_EXCEEDED). The
+-- caller is expected to have already validated ownership + status='draft'.
+
+DROP FUNCTION IF EXISTS insert_permit_attachment_capped(UUID, TEXT, BIGINT, TEXT, TEXT, UUID, INT);
+
+CREATE OR REPLACE FUNCTION insert_permit_attachment_capped(
+  p_permit_id UUID,
+  p_file_name TEXT,
+  p_file_size BIGINT,
+  p_file_type TEXT,
+  p_storage_path TEXT,
+  p_uploaded_by UUID,
+  p_max_files INT DEFAULT 10
+)
+RETURNS TABLE (
+  id UUID,
+  permit_id UUID,
+  file_name TEXT,
+  file_size BIGINT,
+  file_type TEXT,
+  storage_path TEXT,
+  uploaded_by UUID,
+  uploaded_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_existing_count INT;
+BEGIN
+  -- Lock the parent permit row so concurrent uploaders serialize on it.
+  -- This is what makes the SELECT count below see committed-and-uncommitted
+  -- inserts from the previous holder of the lock.
+  PERFORM 1 FROM permit_applications WHERE permit_applications.id = p_permit_id FOR UPDATE;
+
+  SELECT COUNT(*) INTO v_existing_count
+  FROM permit_attachments
+  WHERE permit_attachments.permit_id = p_permit_id;
+
+  IF v_existing_count >= p_max_files THEN
+    RAISE EXCEPTION 'ATTACHMENT_LIMIT_EXCEEDED' USING ERRCODE = 'P0001';
+  END IF;
+
+  RETURN QUERY
+  INSERT INTO permit_attachments (
+    permit_id, file_name, file_size, file_type, storage_path, uploaded_by
+  )
+  VALUES (
+    p_permit_id, p_file_name, p_file_size, p_file_type, p_storage_path, p_uploaded_by
+  )
+  RETURNING
+    permit_attachments.id,
+    permit_attachments.permit_id,
+    permit_attachments.file_name,
+    permit_attachments.file_size,
+    permit_attachments.file_type,
+    permit_attachments.storage_path,
+    permit_attachments.uploaded_by,
+    permit_attachments.uploaded_at;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION insert_permit_attachment_capped(UUID, TEXT, BIGINT, TEXT, TEXT, UUID, INT) TO authenticated, service_role;
+
+
+-- ---- 005_atomic_check_rate_limit.sql ----
+
+-- ============================================================================
+-- C10H — Atomic check_rate_limit
+-- ============================================================================
+--
+-- The previous RPC did:
+--   1. SELECT COUNT(*), MAX(request_timestamp) FROM rate_limits WHERE user=$1
+--   2. compare against limits (in pl/pgsql)
+--   3. INSERT a new row
+--
+-- Between steps 1 and 3 two concurrent callers can both observe
+-- count < max_requests and both insert — the cap is bypassed.
+--
+-- Fix: take a per-user transaction-scoped advisory lock at the top of the
+-- function. Two callers with the same user_id serialize through the lock
+-- (cheap — int8 hash, no table involved). Different users are unaffected.
+--
+-- We also fold the cleanup-after-insert into the same transaction so it
+-- can't leave stale rows behind on rollback.
+
+CREATE OR REPLACE FUNCTION check_rate_limit(
+  p_user_id UUID,
+  p_window_seconds INT DEFAULT 60,
+  p_max_requests INT DEFAULT 10,
+  p_min_interval_ms INT DEFAULT 2000
+)
+RETURNS TABLE (
+  allowed BOOLEAN,
+  retry_after_ms INT,
+  current_count INT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_window_start TIMESTAMPTZ;
+  v_last_request TIMESTAMPTZ;
+  v_request_count INT;
+  v_ms_since_last INT;
+BEGIN
+  -- C10H: per-user advisory lock to serialize concurrent rate-limit checks.
+  -- hashtextextended is deterministic per UUID; the lock auto-releases at
+  -- transaction end. Different users hash to different ints → no contention.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0));
+
+  v_window_start := NOW() - (p_window_seconds || ' seconds')::INTERVAL;
+
+  SELECT COUNT(*), MAX(request_timestamp)
+  INTO v_request_count, v_last_request
+  FROM rate_limits
+  WHERE user_id = p_user_id AND request_timestamp > v_window_start;
+
+  -- Check minimum interval
+  IF v_last_request IS NOT NULL THEN
+    v_ms_since_last := EXTRACT(EPOCH FROM (NOW() - v_last_request)) * 1000;
+    IF v_ms_since_last < p_min_interval_ms THEN
+      RETURN QUERY SELECT FALSE, (p_min_interval_ms - v_ms_since_last)::INT, v_request_count::INT;
+      RETURN;
+    END IF;
+  END IF;
+
+  -- Check max requests
+  IF v_request_count >= p_max_requests THEN
+    RETURN QUERY SELECT FALSE, (p_window_seconds * 1000)::INT, v_request_count::INT;
+    RETURN;
+  END IF;
+
+  -- Allowed — record and cleanup. Both writes are now inside the locked
+  -- region, so a concurrent caller can't observe the pre-insert count.
+  INSERT INTO rate_limits (user_id, request_timestamp) VALUES (p_user_id, NOW());
+  DELETE FROM rate_limits WHERE user_id = p_user_id AND request_timestamp < NOW() - INTERVAL '1 hour';
+
+  RETURN QUERY SELECT TRUE, 0, (v_request_count + 1)::INT;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION check_rate_limit(UUID, INT, INT, INT) TO authenticated, service_role;
+
+
+-- ---- 006_rate_limit_endpoint_buckets.sql ----
+
+-- ============================================================================
+-- C11H + C22H prep — per-endpoint rate-limit buckets
+-- ============================================================================
+--
+-- The old check_rate_limit was keyed on user_id only, so chat streaming,
+-- permit submission, certificate downloads, and admin mutations all shared
+-- one bucket. A heavy endpoint (chat) starved everything else.
+--
+-- This migration:
+--   1. Adds rate_limits.endpoint TEXT, defaulting to 'default' for existing rows.
+--   2. Replaces the single (user_id, ts) index with (user_id, endpoint, ts).
+--   3. Re-creates check_rate_limit with an optional p_endpoint param. The
+--      window query is now WHERE user_id=$1 AND endpoint=$2. Per-user advisory
+--      lock (C10H) becomes per-(user, endpoint) so concurrent endpoints don't
+--      block each other.
+
+ALTER TABLE rate_limits ADD COLUMN IF NOT EXISTS endpoint TEXT NOT NULL DEFAULT 'default';
+
+DROP INDEX IF EXISTS rate_limits_user_time_idx;
+CREATE INDEX IF NOT EXISTS rate_limits_user_endpoint_time_idx
+  ON rate_limits(user_id, endpoint, request_timestamp DESC);
+
+-- Drop and recreate so the parameter list changes cleanly. Postgres requires
+-- a drop because adding a new parameter is treated as a new overload.
+DROP FUNCTION IF EXISTS check_rate_limit(UUID, INT, INT, INT);
+DROP FUNCTION IF EXISTS check_rate_limit(UUID, TEXT, INT, INT, INT);
+
+CREATE OR REPLACE FUNCTION check_rate_limit(
+  p_user_id UUID,
+  p_endpoint TEXT DEFAULT 'default',
+  p_window_seconds INT DEFAULT 60,
+  p_max_requests INT DEFAULT 10,
+  p_min_interval_ms INT DEFAULT 2000
+)
+RETURNS TABLE (
+  allowed BOOLEAN,
+  retry_after_ms INT,
+  current_count INT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_window_start TIMESTAMPTZ;
+  v_last_request TIMESTAMPTZ;
+  v_request_count INT;
+  v_ms_since_last INT;
+  v_endpoint TEXT;
+BEGIN
+  v_endpoint := COALESCE(p_endpoint, 'default');
+
+  -- C10H: per-(user, endpoint) advisory lock, transaction-scoped.
+  -- Two callers for the same user+endpoint serialize; different endpoints
+  -- under the same user don't contend with each other.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(p_user_id::text, 0),
+    hashtextextended(v_endpoint, 0)
+  );
+
+  v_window_start := NOW() - (p_window_seconds || ' seconds')::INTERVAL;
+
+  SELECT COUNT(*), MAX(request_timestamp)
+  INTO v_request_count, v_last_request
+  FROM rate_limits
+  WHERE user_id = p_user_id
+    AND endpoint = v_endpoint
+    AND request_timestamp > v_window_start;
+
+  IF v_last_request IS NOT NULL THEN
+    v_ms_since_last := EXTRACT(EPOCH FROM (NOW() - v_last_request)) * 1000;
+    IF v_ms_since_last < p_min_interval_ms THEN
+      RETURN QUERY SELECT FALSE, (p_min_interval_ms - v_ms_since_last)::INT, v_request_count::INT;
+      RETURN;
+    END IF;
+  END IF;
+
+  IF v_request_count >= p_max_requests THEN
+    RETURN QUERY SELECT FALSE, (p_window_seconds * 1000)::INT, v_request_count::INT;
+    RETURN;
+  END IF;
+
+  INSERT INTO rate_limits (user_id, endpoint, request_timestamp)
+  VALUES (p_user_id, v_endpoint, NOW());
+
+  DELETE FROM rate_limits
+  WHERE user_id = p_user_id
+    AND endpoint = v_endpoint
+    AND request_timestamp < NOW() - INTERVAL '1 hour';
+
+  RETURN QUERY SELECT TRUE, 0, (v_request_count + 1)::INT;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION check_rate_limit(UUID, TEXT, INT, INT, INT) TO authenticated, service_role;
+
+
+-- ---- 007_token_version.sql ----
+
+-- ============================================================================
+-- C14H/M3 — token_version column for session invalidation on privilege change
+-- ============================================================================
+--
+-- Adds users.token_version. Bumped by admin_update_user_role, admin_block_user
+-- (so the bump can't be skipped by a forgetful TS caller), and TS-side
+-- password change paths.
+--
+-- The JWT carries `tv` at issue time; middleware compares JWT.tv against
+-- users.token_version on the existing block-status hop (no extra DB call).
+-- Mismatch → session is treated as invalid and the user is logged out.
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS token_version INT NOT NULL DEFAULT 0;
+
+-- Helper for TS callers (password changes) so the increment is atomic and
+-- can't be skipped by writing UPDATE ... SET password_hash=... and forgetting
+-- the bump.
+CREATE OR REPLACE FUNCTION bump_user_token_version(p_user_id UUID)
+RETURNS INT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_new INT;
+BEGIN
+  UPDATE users
+     SET token_version = COALESCE(token_version, 0) + 1
+   WHERE id = p_user_id
+   RETURNING token_version INTO v_new;
+  RETURN COALESCE(v_new, 0);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION bump_user_token_version(UUID) TO authenticated, service_role;
+
+-- Re-create admin_update_user_role with token_version bump; keep BOOLEAN
+-- return type and existing guards so callers don't need to change.
+CREATE OR REPLACE FUNCTION admin_update_user_role(
+  p_admin_id UUID,
+  p_target_user_id UUID,
+  p_new_role TEXT
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_admin_role TEXT;
+  v_target_current_role TEXT;
+  v_target_blocked BOOLEAN;
+  v_unblocked_admin_count INT;
+BEGIN
+  IF p_new_role NOT IN ('admin', 'user') THEN RAISE EXCEPTION 'Invalid role'; END IF;
+  SELECT role INTO v_admin_role FROM users WHERE id = p_admin_id;
+  IF v_admin_role != 'admin' THEN RAISE EXCEPTION 'Unauthorized: Admin role required'; END IF;
+
+  SELECT role, blocked INTO v_target_current_role, v_target_blocked
+  FROM users WHERE id = p_target_user_id;
+
+  IF v_target_current_role = 'admin' AND p_new_role = 'user' AND v_target_blocked = FALSE THEN
+    SELECT count(*) INTO v_unblocked_admin_count
+    FROM users
+    WHERE role = 'admin' AND blocked = FALSE
+    FOR UPDATE;
+    IF v_unblocked_admin_count <= 1 THEN
+      RAISE EXCEPTION 'Cannot demote the only remaining unblocked admin';
+    END IF;
+  END IF;
+
+  UPDATE users
+     SET role = p_new_role,
+         token_version = COALESCE(token_version, 0) + 1
+   WHERE id = p_target_user_id;
+  RETURN TRUE;
+END;
+$$;
+
+-- Re-create admin_block_user with token_version bump.
+CREATE OR REPLACE FUNCTION admin_block_user(
+  p_admin_id UUID,
+  p_target_user_id UUID,
+  p_blocked BOOLEAN,
+  p_reason TEXT DEFAULT NULL
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_admin_role TEXT;
+  v_target_role TEXT;
+  v_unblocked_admin_count INT;
+BEGIN
+  SELECT role INTO v_admin_role FROM users WHERE id = p_admin_id;
+  IF v_admin_role != 'admin' THEN RAISE EXCEPTION 'Unauthorized: Admin role required'; END IF;
+  IF p_admin_id = p_target_user_id THEN RAISE EXCEPTION 'Cannot block yourself'; END IF;
+
+  IF p_blocked THEN
+    SELECT role INTO v_target_role FROM users WHERE id = p_target_user_id;
+    IF v_target_role = 'admin' THEN
+      SELECT count(*) INTO v_unblocked_admin_count
+      FROM users
+      WHERE role = 'admin' AND blocked = FALSE
+      FOR UPDATE;
+      IF v_unblocked_admin_count <= 1 THEN
+        RAISE EXCEPTION 'Cannot block the only remaining unblocked admin';
+      END IF;
+    END IF;
+  END IF;
+
+  UPDATE users SET
+    blocked = p_blocked,
+    blocked_reason = CASE WHEN p_blocked THEN p_reason ELSE NULL END,
+    blocked_at = CASE WHEN p_blocked THEN NOW() ELSE NULL END,
+    blocked_by = CASE WHEN p_blocked THEN p_admin_id ELSE NULL END,
+    token_version = COALESCE(token_version, 0) + 1
+  WHERE id = p_target_user_id;
+
+  RETURN TRUE;
+END;
+$$;
+
+
+-- ---- 008_code_attempts.sql ----
+
+-- ============================================================================
+-- C15H/M4 — DB-backed code-attempt counter
+-- ============================================================================
+--
+-- The in-memory Map in lib/code-verification.ts didn't survive serverless
+-- restarts or scale across instances, so an attacker could iterate codes by
+-- triggering a new function instance per attempt. This table moves the
+-- counter into Postgres.
+--
+-- key shape: 'verify:<email>' or 'reset:<email>' (already used by callers).
+-- Free-form TEXT so callers don't need a new schema if we add more purposes.
+
+CREATE TABLE IF NOT EXISTS code_attempts (
+  key TEXT PRIMARY KEY,
+  count INT NOT NULL DEFAULT 0,
+  first_attempt TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS code_attempts_first_attempt_idx
+  ON code_attempts(first_attempt);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON code_attempts TO service_role;
+
+-- Atomic increment + check. Returns the new count and whether the caller
+-- should proceed (count <= p_max within the window). On a window rollover
+-- (first_attempt older than window) the counter resets to 1.
+CREATE OR REPLACE FUNCTION incr_code_attempt(
+  p_key TEXT,
+  p_window_seconds INT DEFAULT 900,
+  p_max INT DEFAULT 5
+)
+RETURNS TABLE (
+  allowed BOOLEAN,
+  current_count INT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_now TIMESTAMPTZ := NOW();
+  v_cutoff TIMESTAMPTZ;
+  v_row RECORD;
+  v_new_count INT;
+BEGIN
+  v_cutoff := v_now - (p_window_seconds || ' seconds')::INTERVAL;
+
+  INSERT INTO code_attempts (key, count, first_attempt)
+  VALUES (p_key, 1, v_now)
+  ON CONFLICT (key) DO UPDATE
+    SET count = CASE
+                  WHEN code_attempts.first_attempt < v_cutoff THEN 1
+                  ELSE code_attempts.count + 1
+                END,
+        first_attempt = CASE
+                          WHEN code_attempts.first_attempt < v_cutoff THEN v_now
+                          ELSE code_attempts.first_attempt
+                        END
+  RETURNING code_attempts.count INTO v_new_count;
+
+  -- Opportunistic cleanup of unrelated stale rows on every write
+  IF random() < 0.05 THEN
+    DELETE FROM code_attempts WHERE first_attempt < v_now - INTERVAL '1 day';
+  END IF;
+
+  SELECT * INTO v_row FROM (SELECT TRUE AS dummy) AS d; -- noop, satisfies plpgsql
+  RETURN QUERY SELECT (v_new_count <= p_max), v_new_count;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION incr_code_attempt(TEXT, INT, INT) TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION clear_code_attempt(p_key TEXT)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  DELETE FROM code_attempts WHERE key = p_key;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION clear_code_attempt(TEXT) TO authenticated, service_role;
+
+
+-- ---- 009_atomic_mutations.sql ----
+
+-- ============================================================================
+-- C17H/M6 — Single-RPC mutations for createPermit, reviewPermit, deleteDocument
+-- ============================================================================
+--
+-- B7 already covered submit/revise. C17H wraps the remaining multi-write
+-- actions in transactional RPCs so a crash between writes can't leave the
+-- DB inconsistent (e.g. permit row inserted but no status_history audit, or
+-- chunks deleted but document_registry row stuck pointing to them).
+--
+-- Notification side-effects stay in the app layer per B8 — a failed in-app
+-- notification surfaces a non-blocking warning instead of rolling back the
+-- DB state change.
+
+-- ---------------------------------------------------------------------------
+-- create_permit_atomic: insert the application + the initial status_history
+-- row in one transaction.
+-- ---------------------------------------------------------------------------
+
+DROP FUNCTION IF EXISTS create_permit_atomic(UUID, TEXT, TEXT, TEXT, TEXT, TEXT);
+
+CREATE OR REPLACE FUNCTION create_permit_atomic(
+  p_user_id UUID,
+  p_project_name TEXT,
+  p_project_type TEXT,
+  p_project_address TEXT,
+  p_plot_number TEXT,
+  p_project_description TEXT
+)
+RETURNS TABLE (permit_id UUID)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_id UUID;
+BEGIN
+  INSERT INTO permit_applications (
+    user_id, status, project_name, project_type, project_address,
+    plot_number, project_description
+  )
+  VALUES (
+    p_user_id, 'draft', p_project_name, p_project_type, p_project_address,
+    p_plot_number, p_project_description
+  )
+  RETURNING id INTO v_id;
+
+  INSERT INTO permit_status_history (permit_id, from_status, to_status, changed_by, comment)
+  VALUES (v_id, NULL, 'draft', p_user_id, 'Permit application created');
+
+  RETURN QUERY SELECT v_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION create_permit_atomic(UUID, TEXT, TEXT, TEXT, TEXT, TEXT) TO authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- review_permit_atomic: status update + history insert in one transaction.
+-- Notification stays in the app layer (see B8).
+-- ---------------------------------------------------------------------------
+
+DROP FUNCTION IF EXISTS review_permit_atomic(UUID, UUID, TEXT, TEXT);
+
+CREATE OR REPLACE FUNCTION review_permit_atomic(
+  p_permit_id UUID,
+  p_admin_id UUID,
+  p_new_status TEXT,
+  p_comments TEXT
+)
+RETURNS TABLE (
+  status_changed BOOLEAN,
+  prev_status TEXT,
+  project_name TEXT,
+  permit_user_id UUID
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_prev_status TEXT;
+  v_project_name TEXT;
+  v_user_id UUID;
+BEGIN
+  IF p_new_status NOT IN ('approved', 'rejected', 'revision_requested') THEN
+    RAISE EXCEPTION 'Invalid review status' USING ERRCODE = 'P0002';
+  END IF;
+
+  SELECT pa.status, pa.project_name, pa.user_id
+    INTO v_prev_status, v_project_name, v_user_id
+  FROM permit_applications pa
+  WHERE pa.id = p_permit_id
+  FOR UPDATE;
+
+  IF v_prev_status IS NULL THEN
+    RAISE EXCEPTION 'PERMIT_NOT_FOUND' USING ERRCODE = 'P0001';
+  END IF;
+
+  IF v_prev_status NOT IN ('submitted', 'under_review') THEN
+    RETURN QUERY SELECT FALSE, v_prev_status, v_project_name, v_user_id;
+    RETURN;
+  END IF;
+
+  UPDATE permit_applications
+     SET status = p_new_status,
+         reviewed_by = p_admin_id,
+         reviewed_at = NOW(),
+         review_comments = p_comments,
+         revision_notes = CASE WHEN p_new_status = 'revision_requested' THEN p_comments ELSE revision_notes END,
+         updated_at = NOW()
+   WHERE id = p_permit_id;
+
+  INSERT INTO permit_status_history (permit_id, from_status, to_status, changed_by, comment)
+  VALUES (p_permit_id, v_prev_status, p_new_status, p_admin_id, p_comments);
+
+  RETURN QUERY SELECT TRUE, v_prev_status, v_project_name, v_user_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION review_permit_atomic(UUID, UUID, TEXT, TEXT) TO authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- delete_document_atomic: registry deactivate / hard-delete + cascade
+-- cleanup of chunks, parent_chunks, document_trees in one transaction.
+-- p_clear_chunks=false → soft delete (is_active=false, keep chunks).
+-- p_clear_chunks=true → hard delete (registry row + all child data).
+-- ---------------------------------------------------------------------------
+
+DROP FUNCTION IF EXISTS delete_document_atomic(TEXT, BOOLEAN);
+
+CREATE OR REPLACE FUNCTION delete_document_atomic(
+  p_document_id TEXT,
+  p_clear_chunks BOOLEAN DEFAULT FALSE
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF p_clear_chunks THEN
+    DELETE FROM dubai_code_chunks WHERE document_name = p_document_id;
+    DELETE FROM parent_chunks WHERE document_name = p_document_id;
+    DELETE FROM document_trees WHERE document_name = p_document_id;
+    DELETE FROM document_registry WHERE id = p_document_id;
+  ELSE
+    UPDATE document_registry
+       SET is_active = FALSE, updated_at = NOW()
+     WHERE id = p_document_id;
+  END IF;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION delete_document_atomic(TEXT, BOOLEAN) TO authenticated, service_role;
+
+
+-- ---- 010_drop_max_requests_param.sql ----
+
+-- ============================================================================
+-- C22H/M20 — Move per-endpoint rate-limit thresholds into the RPC body
+-- ============================================================================
+--
+-- Previously each call site could pass its own p_window_seconds /
+-- p_max_requests / p_min_interval_ms, which meant a careless client could
+-- effectively disable the cap (e.g. p_max_requests=99999). Per-endpoint
+-- limits now live in a CASE inside the function — callers can only pick the
+-- endpoint label.
+--
+-- p_endpoint is still required (defaults to 'default'). For backwards compat
+-- the old window/max/interval parameters remain in the signature but are
+-- accepted only when endpoint='default'; for any named endpoint they are
+-- ignored and the hardcoded values win.
+
+DROP FUNCTION IF EXISTS check_rate_limit(UUID, TEXT, INT, INT, INT);
+
+CREATE OR REPLACE FUNCTION check_rate_limit(
+  p_user_id UUID,
+  p_endpoint TEXT DEFAULT 'default',
+  p_window_seconds INT DEFAULT 60,
+  p_max_requests INT DEFAULT 10,
+  p_min_interval_ms INT DEFAULT 2000
+)
+RETURNS TABLE (
+  allowed BOOLEAN,
+  retry_after_ms INT,
+  current_count INT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_window_start TIMESTAMPTZ;
+  v_last_request TIMESTAMPTZ;
+  v_request_count INT;
+  v_ms_since_last INT;
+  v_endpoint TEXT;
+  v_window_seconds INT;
+  v_max_requests INT;
+  v_min_interval_ms INT;
+BEGIN
+  v_endpoint := COALESCE(p_endpoint, 'default');
+
+  -- Per-endpoint limits. Anything not listed falls back to the default bucket
+  -- (10 req / 60s, 2s minimum interval). To add a new endpoint, add a WHEN
+  -- branch here; callers don't get to pick their own cap anymore.
+  CASE v_endpoint
+    WHEN 'chat'                                 THEN v_window_seconds := 60;   v_max_requests := 20; v_min_interval_ms := 1500;
+    WHEN 'permit_certificate'                   THEN v_window_seconds := 60;   v_max_requests := 5;  v_min_interval_ms := 1000;
+    WHEN 'pdf_ingest'                           THEN v_window_seconds := 300;  v_max_requests := 3;  v_min_interval_ms := 5000;
+    WHEN 'createPermit'                         THEN v_window_seconds := 60;   v_max_requests := 10; v_min_interval_ms := 1000;
+    WHEN 'updatePermitBuildingDetails'          THEN v_window_seconds := 60;   v_max_requests := 30; v_min_interval_ms := 500;
+    WHEN 'updatePermitComplianceRequirements'   THEN v_window_seconds := 60;   v_max_requests := 30; v_min_interval_ms := 500;
+    WHEN 'runComplianceCheck'                   THEN v_window_seconds := 300;  v_max_requests := 5;  v_min_interval_ms := 10000;
+    WHEN 'reviewPermit'                         THEN v_window_seconds := 60;   v_max_requests := 30; v_min_interval_ms := 500;
+    WHEN 'setPermitUnderReview'                 THEN v_window_seconds := 60;   v_max_requests := 30; v_min_interval_ms := 500;
+    WHEN 'blockUser'                            THEN v_window_seconds := 60;   v_max_requests := 20; v_min_interval_ms := 500;
+    WHEN 'updateUserRole'                       THEN v_window_seconds := 60;   v_max_requests := 20; v_min_interval_ms := 500;
+    WHEN 'adminCreateUser'                      THEN v_window_seconds := 60;   v_max_requests := 10; v_min_interval_ms := 1000;
+    WHEN 'adminDeleteUser'                      THEN v_window_seconds := 60;   v_max_requests := 10; v_min_interval_ms := 1000;
+    WHEN 'adminResetPassword'                   THEN v_window_seconds := 60;   v_max_requests := 10; v_min_interval_ms := 1000;
+    WHEN 'default'                              THEN v_window_seconds := COALESCE(p_window_seconds, 60);
+                                                      v_max_requests := COALESCE(p_max_requests, 10);
+                                                      v_min_interval_ms := COALESCE(p_min_interval_ms, 2000);
+    ELSE                                              v_window_seconds := 60;  v_max_requests := 10; v_min_interval_ms := 2000;
+  END CASE;
+
+  -- C10H + C11H: per-(user, endpoint) advisory lock, transaction-scoped.
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(p_user_id::text, 0),
+    hashtextextended(v_endpoint, 0)
+  );
+
+  v_window_start := NOW() - (v_window_seconds || ' seconds')::INTERVAL;
+
+  SELECT COUNT(*), MAX(request_timestamp)
+  INTO v_request_count, v_last_request
+  FROM rate_limits
+  WHERE user_id = p_user_id
+    AND endpoint = v_endpoint
+    AND request_timestamp > v_window_start;
+
+  IF v_last_request IS NOT NULL THEN
+    v_ms_since_last := EXTRACT(EPOCH FROM (NOW() - v_last_request)) * 1000;
+    IF v_ms_since_last < v_min_interval_ms THEN
+      RETURN QUERY SELECT FALSE, (v_min_interval_ms - v_ms_since_last)::INT, v_request_count::INT;
+      RETURN;
+    END IF;
+  END IF;
+
+  IF v_request_count >= v_max_requests THEN
+    RETURN QUERY SELECT FALSE, (v_window_seconds * 1000)::INT, v_request_count::INT;
+    RETURN;
+  END IF;
+
+  INSERT INTO rate_limits (user_id, endpoint, request_timestamp)
+  VALUES (p_user_id, v_endpoint, NOW());
+
+  DELETE FROM rate_limits
+  WHERE user_id = p_user_id
+    AND endpoint = v_endpoint
+    AND request_timestamp < NOW() - INTERVAL '1 hour';
+
+  RETURN QUERY SELECT TRUE, 0, (v_request_count + 1)::INT;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION check_rate_limit(UUID, TEXT, INT, INT, INT) TO authenticated, service_role;
+
+
+-- ---- 011_get_all_users_admin_join.sql ----
+
+-- ============================================================================
+-- D1/H14 — Replace correlated subqueries in get_all_users_admin with a
+-- single JOIN aggregation.
+-- ============================================================================
+--
+-- The original implementation ran two correlated subqueries per user row:
+--
+--   (SELECT COUNT(*) FROM chat_sessions WHERE user_id = u.id)
+--   (SELECT COUNT(*) FROM chat_messages cm
+--      JOIN chat_sessions cs ON cm.session_id = cs.id
+--      WHERE cs.user_id = u.id)
+--
+-- That fanned out to N * 2 subqueries (where N = page size, up to 100). On a
+-- realistic dataset with 100+ users this was O(N) seq-scans of chat_messages.
+--
+-- Rewrite: pre-aggregate session counts and message counts per user with two
+-- LEFT JOIN LATERAL grouped subqueries, then join those once. Each aggregate
+-- subquery runs once total, not once per row.
+--
+-- Contract is unchanged (same parameters, same returned columns).
+
+DROP FUNCTION IF EXISTS get_all_users_admin(UUID, INT, INT, TEXT);
+
+CREATE OR REPLACE FUNCTION get_all_users_admin(
+  p_admin_id UUID,
+  p_limit INT DEFAULT 50,
+  p_offset INT DEFAULT 0,
+  p_search TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+  id UUID,
+  username TEXT,
+  full_name TEXT,
+  role TEXT,
+  blocked BOOLEAN,
+  blocked_reason TEXT,
+  created_at TIMESTAMPTZ,
+  last_login TIMESTAMPTZ,
+  session_count BIGINT,
+  message_count BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_admin_role TEXT;
+BEGIN
+  SELECT users.role INTO v_admin_role FROM users WHERE users.id = p_admin_id;
+  IF v_admin_role != 'admin' THEN RAISE EXCEPTION 'Unauthorized: Admin role required'; END IF;
+
+  RETURN QUERY
+  WITH session_stats AS (
+    SELECT cs.user_id,
+           COUNT(*)::BIGINT AS session_count,
+           COUNT(cm.id)::BIGINT AS message_count
+    FROM chat_sessions cs
+    LEFT JOIN chat_messages cm ON cm.session_id = cs.id
+    GROUP BY cs.user_id
+  )
+  SELECT
+    u.id, u.username, u.full_name, u.role, u.blocked, u.blocked_reason,
+    u.created_at, u.last_login,
+    COALESCE(s.session_count, 0)::BIGINT AS session_count,
+    COALESCE(s.message_count, 0)::BIGINT AS message_count
+  FROM users u
+  LEFT JOIN session_stats s ON s.user_id = u.id
+  WHERE (p_search IS NULL OR u.username ILIKE '%' || p_search || '%' OR u.full_name ILIKE '%' || p_search || '%')
+  ORDER BY u.created_at DESC
+  LIMIT LEAST(p_limit, 100) OFFSET p_offset;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_all_users_admin(UUID, INT, INT, TEXT) TO service_role;
+REVOKE EXECUTE ON FUNCTION get_all_users_admin(UUID, INT, INT, TEXT) FROM anon, authenticated;
+
+
+-- ---- 012_message_activity_from_mv.sql ----
+
+-- ============================================================================
+-- D2/H15+H16 — Wire admin dashboard to read from analytics_daily MV
+-- ============================================================================
+--
+-- The materialized view analytics_daily already pre-aggregates message
+-- activity per day. Reading the dashboard from it (instead of recomputing
+-- from chat_messages JOIN chat_sessions on every load) cuts query time
+-- proportionally to data volume.
+--
+-- The MV is stale until refreshed, so today's bucket is computed live and
+-- merged onto the MV's historic rows. The admin "Refresh" button calls
+-- refresh_analytics() to update the MV.
+--
+-- Contract is unchanged: same return columns, same 30-day window with no
+-- date gaps.
+
+CREATE OR REPLACE FUNCTION get_message_activity_30d()
+RETURNS TABLE (
+  day DATE,
+  user_count BIGINT,
+  assistant_count BIGINT,
+  total_count BIGINT,
+  active_users BIGINT
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  WITH date_series AS (
+    SELECT generate_series(
+      (current_date - interval '29 days')::date,
+      current_date,
+      '1 day'::interval
+    )::date AS day
+  ),
+  -- Historic days come from the MV. Cap at yesterday because today's row
+  -- in the MV is stale until refresh_analytics() runs.
+  historic AS (
+    SELECT
+      ad.date AS day,
+      ad.user_messages AS user_count,
+      ad.assistant_messages AS assistant_count,
+      ad.total_messages AS total_count,
+      ad.active_users
+    FROM analytics_daily ad
+    WHERE ad.date >= current_date - interval '29 days'
+      AND ad.date < current_date
+  ),
+  -- Today is always computed live so the dashboard reflects in-progress
+  -- activity without requiring a refresh after every message.
+  today_live AS (
+    SELECT
+      current_date::date AS day,
+      count(*) FILTER (WHERE cm.role = 'user') AS user_count,
+      count(*) FILTER (WHERE cm.role = 'assistant') AS assistant_count,
+      count(*) AS total_count,
+      count(DISTINCT cs.user_id) AS active_users
+    FROM chat_messages cm
+    JOIN chat_sessions cs ON cs.id = cm.session_id
+    WHERE cm.created_at >= current_date
+  ),
+  merged AS (
+    SELECT * FROM historic
+    UNION ALL
+    SELECT * FROM today_live WHERE total_count > 0
+  )
+  SELECT
+    ds.day,
+    COALESCE(m.user_count, 0),
+    COALESCE(m.assistant_count, 0),
+    COALESCE(m.total_count, 0),
+    COALESCE(m.active_users, 0)
+  FROM date_series ds
+  LEFT JOIN merged m ON m.day = ds.day
+  ORDER BY ds.day;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_message_activity_30d() TO service_role;
+REVOKE EXECUTE ON FUNCTION get_message_activity_30d() FROM anon, authenticated;
+
+
+-- ---- 013_content_trgm_index.sql ----
+
+-- ============================================================================
+-- D3/H17 — Trigram expression index on LOWER(dubai_code_chunks.content)
+-- ============================================================================
+--
+-- search_dubai_code_exact runs:
+--   WHERE LOWER(d.content) LIKE '%' || LOWER(safe_pattern) || '%'
+--
+-- Without a matching expression index, that forces a seq-scan over
+-- dubai_code_chunks (currently 10k+ rows after a single PDF ingest). The
+-- pg_trgm extension's gin_trgm_ops opclass supports left-and-right
+-- wildcard LIKE patterns; combined with a functional index over
+-- LOWER(content), the planner can pick the index for any substring
+-- search.
+--
+-- pg_trgm is already enabled (see 000_full_setup.sql §1 EXTENSIONS).
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+CREATE INDEX IF NOT EXISTS dubai_code_chunks_content_lower_trgm_idx
+  ON dubai_code_chunks USING gin (LOWER(content) gin_trgm_ops);
+
+
+-- ---- 014_section_text_pattern_index.sql ----
+
+-- ============================================================================
+-- D8/M15 — Functional index supporting find_chunks_by_section's LIKE patterns
+-- ============================================================================
+--
+-- find_chunks_by_section runs three predicates on (metadata->>'section'):
+--
+--   1) d.metadata->>'section' = section_number
+--   2) d.metadata->>'section' LIKE section_number || '.%'         (child)
+--   3) section_number LIKE (d.metadata->>'section') || '.%'       (parent)
+--
+-- The existing idx_chunks_section is a default-collation b-tree over
+-- (metadata->>'section'); it handles equality (1) but not the LIKE-with-
+-- right-wildcard patterns (2) and (3) under non-C collations. A
+-- text_pattern_ops index supports left-anchored LIKE regardless of
+-- locale, so the planner can pick it for `'1.2.%'`-style predicates.
+--
+-- We keep the existing idx_chunks_section index for equality lookups
+-- (cheaper than gin) and add a parallel text_pattern_ops one specifically
+-- for the prefix LIKE branch.
+
+CREATE INDEX IF NOT EXISTS idx_chunks_section_pattern
+  ON dubai_code_chunks ((metadata->>'section') text_pattern_ops);
+
+
+-- ---- 015_code_columns_char6.sql ----
+
+-- ============================================================================
+-- D9/M17 — Tighten users.verification_code / reset_code to CHAR(6)
+-- ============================================================================
+--
+-- Both columns are only ever written via generateSixDigitCode() in
+-- lib/email.ts, which produces exactly 6 numeric characters. The
+-- columns were TEXT, which accepted arbitrarily long values (e.g. via
+-- a future code path that forgot to validate). CHAR(6) enforces the
+-- length at the type level.
+--
+-- Existing values are 6 chars by construction, so no truncation is
+-- needed in practice. The LEFT(_, 6) below is defensive: if any stale
+-- row has a longer value it'll be trimmed; NULLs are preserved.
+--
+-- CHAR(6) values are returned without padding when the stored value
+-- already fills the column (always the case here), so safeEqual() in
+-- the verification flow continues to work without changes.
+
+UPDATE users
+   SET verification_code = LEFT(verification_code, 6)
+ WHERE verification_code IS NOT NULL
+   AND LENGTH(verification_code) <> 6;
+
+UPDATE users
+   SET reset_code = LEFT(reset_code, 6)
+ WHERE reset_code IS NOT NULL
+   AND LENGTH(reset_code) <> 6;
+
+ALTER TABLE users
+  ALTER COLUMN verification_code TYPE CHAR(6) USING verification_code::CHAR(6),
+  ALTER COLUMN reset_code        TYPE CHAR(6) USING reset_code::CHAR(6);
+
+
+-- ---- 016_audit_logs_bounded.sql ----
+
+-- ============================================================================
+-- D10/M18 — Bound audit_logs.ip_address (45) and user_agent (512)
+-- ============================================================================
+--
+-- ip_address is at most 45 chars (IPv6 with embedded IPv4, e.g.
+--   "0000:0000:0000:0000:0000:ffff:255.255.255.255" = 45 chars).
+-- user_agent strings rarely exceed 256 chars; 512 leaves headroom for
+-- unusual browsers without inviting log-bloat attacks (we already trim
+-- on the app side, but the DB constraint is defense in depth).
+--
+-- Existing rows are truncated defensively before the type change so
+-- the ALTER TYPE cast can't fail.
+
+UPDATE audit_logs
+   SET ip_address = LEFT(ip_address, 45)
+ WHERE ip_address IS NOT NULL
+   AND LENGTH(ip_address) > 45;
+
+UPDATE audit_logs
+   SET user_agent = LEFT(user_agent, 512)
+ WHERE user_agent IS NOT NULL
+   AND LENGTH(user_agent) > 512;
+
+ALTER TABLE audit_logs
+  ALTER COLUMN ip_address TYPE VARCHAR(45)  USING ip_address::VARCHAR(45),
+  ALTER COLUMN user_agent TYPE VARCHAR(512) USING user_agent::VARCHAR(512);
+
+
+-- ---- 017_document_registry_bounded.sql ----
+
+-- ============================================================================
+-- D11/M19 — Bound document_registry.id / display_name / badge_color
+-- ============================================================================
+--
+-- - id is sanitized to lowercase alphanumeric + hyphens in the app
+--   layer (actions/documents.ts). It's used as a storage path segment
+--   (documents/{id}/file.pdf) and an FK target (D18); 64 chars is well
+--   inside any filesystem / btree limit and matches the worst case
+--   a user is likely to type.
+-- - display_name shows in headers and select dropdowns; 128 chars is
+--   generous (typical: ~30 chars).
+-- - badge_color stores a Tailwind class string (~50 chars in practice);
+--   128 is plenty of headroom for future variants.
+--
+-- The defensive UPDATEs below truncate any pre-existing oversize row so
+-- the ALTER TYPE casts can't fail.
+
+UPDATE document_registry
+   SET id = LEFT(id, 64)
+ WHERE LENGTH(id) > 64;
+
+UPDATE document_registry
+   SET display_name = LEFT(display_name, 128)
+ WHERE LENGTH(display_name) > 128;
+
+UPDATE document_registry
+   SET badge_color = LEFT(badge_color, 128)
+ WHERE badge_color IS NOT NULL
+   AND LENGTH(badge_color) > 128;
+
+ALTER TABLE document_registry
+  ALTER COLUMN id           TYPE VARCHAR(64)  USING id::VARCHAR(64),
+  ALTER COLUMN display_name TYPE VARCHAR(128) USING display_name::VARCHAR(128),
+  ALTER COLUMN badge_color  TYPE VARCHAR(128) USING badge_color::VARCHAR(128);
+
+
+-- ---- 018_get_all_users_admin_keyset.sql ----
+
+-- ============================================================================
+-- D12/M21 — Keyset pagination on get_all_users_admin
+-- ============================================================================
+--
+-- OFFSET pagination on a large users table is O(offset) — the planner has
+-- to skip N rows before returning a page. Keyset pagination on
+-- (created_at DESC, id DESC) is O(log N) per page and survives row
+-- inserts during pagination without skipping or repeating rows.
+--
+-- New params: p_after_created_at and p_after_id form the cursor. The
+-- caller passes the last row of the previous page; the function returns
+-- the next page strictly after that cursor.
+--
+-- Backward compat: p_offset is still accepted and honored when the
+-- cursor params are NULL. Existing callers (admin page passes offset=0)
+-- behave identically. New keyset callers pass NULL for offset and
+-- supply the cursor pair.
+
+DROP FUNCTION IF EXISTS get_all_users_admin(UUID, INT, INT, TEXT);
+
+CREATE OR REPLACE FUNCTION get_all_users_admin(
+  p_admin_id UUID,
+  p_limit INT DEFAULT 50,
+  p_offset INT DEFAULT 0,
+  p_search TEXT DEFAULT NULL,
+  p_after_created_at TIMESTAMPTZ DEFAULT NULL,
+  p_after_id UUID DEFAULT NULL
+)
+RETURNS TABLE (
+  id UUID,
+  username TEXT,
+  full_name TEXT,
+  role TEXT,
+  blocked BOOLEAN,
+  blocked_reason TEXT,
+  created_at TIMESTAMPTZ,
+  last_login TIMESTAMPTZ,
+  session_count BIGINT,
+  message_count BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_admin_role TEXT;
+  v_use_keyset BOOLEAN := (p_after_created_at IS NOT NULL AND p_after_id IS NOT NULL);
+BEGIN
+  SELECT users.role INTO v_admin_role FROM users WHERE users.id = p_admin_id;
+  IF v_admin_role != 'admin' THEN RAISE EXCEPTION 'Unauthorized: Admin role required'; END IF;
+
+  RETURN QUERY
+  WITH session_stats AS (
+    SELECT cs.user_id,
+           COUNT(*)::BIGINT AS session_count,
+           COUNT(cm.id)::BIGINT AS message_count
+    FROM chat_sessions cs
+    LEFT JOIN chat_messages cm ON cm.session_id = cs.id
+    GROUP BY cs.user_id
+  )
+  SELECT
+    u.id, u.username, u.full_name, u.role, u.blocked, u.blocked_reason,
+    u.created_at, u.last_login,
+    COALESCE(s.session_count, 0)::BIGINT AS session_count,
+    COALESCE(s.message_count, 0)::BIGINT AS message_count
+  FROM users u
+  LEFT JOIN session_stats s ON s.user_id = u.id
+  WHERE (p_search IS NULL OR u.username ILIKE '%' || p_search || '%' OR u.full_name ILIKE '%' || p_search || '%')
+    -- Keyset: take rows strictly *after* the cursor in (created_at DESC, id DESC) order.
+    AND (NOT v_use_keyset OR (u.created_at, u.id) < (p_after_created_at, p_after_id))
+  ORDER BY u.created_at DESC, u.id DESC
+  LIMIT LEAST(p_limit, 100)
+  OFFSET CASE WHEN v_use_keyset THEN 0 ELSE GREATEST(p_offset, 0) END;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_all_users_admin(UUID, INT, INT, TEXT, TIMESTAMPTZ, UUID) TO service_role;
+REVOKE EXECUTE ON FUNCTION get_all_users_admin(UUID, INT, INT, TEXT, TIMESTAMPTZ, UUID) FROM anon, authenticated;
+
+
+-- ---- 019_chunks_document_name_fk.sql ----
+
+-- ============================================================================
+-- D18/P2-A8 — Real FK from dubai_code_chunks.document_name → document_registry.id
+-- ============================================================================
+--
+-- The two tables were related by convention only — nothing in the schema
+-- stopped an ingestion path from inserting chunks for a document_name
+-- that didn't exist in the registry (or vice versa, an admin from
+-- hard-deleting a registry row while chunks still pointed at it).
+--
+-- Steps:
+--   1. Defensive cleanup — auto-create inactive registry stubs for any
+--      orphan document_name found in dubai_code_chunks. This avoids
+--      losing chunks but flags the row as inactive so the document
+--      selector / dashboard ignore it until an admin fills in metadata.
+--   2. ALTER COLUMN to match document_registry.id's VARCHAR(64) so the
+--      FK type lines up (chunks.document_name was TEXT before).
+--   3. Add FK with ON DELETE CASCADE. delete_document_atomic already
+--      deletes child chunks before the registry row in the hard-delete
+--      path; CASCADE is belt-and-braces for any future deletion path.
+
+-- 1. Backfill orphan stubs.
+INSERT INTO document_registry (id, display_name, short_name, file_name, is_active)
+SELECT DISTINCT
+       LEFT(c.document_name, 64),
+       LEFT(c.document_name, 128),
+       LEFT(c.document_name, 64),
+       'unknown.pdf',
+       FALSE
+  FROM dubai_code_chunks c
+ WHERE c.document_name IS NOT NULL
+   AND c.document_name <> ''
+   AND NOT EXISTS (
+     SELECT 1 FROM document_registry r WHERE r.id = LEFT(c.document_name, 64)
+   )
+ON CONFLICT (id) DO NOTHING;
+
+-- 1b. If any chunks still have an empty document_name, route them to the
+-- 'unknown' stub. Create the stub if it doesn't exist.
+INSERT INTO document_registry (id, display_name, short_name, file_name, is_active)
+VALUES ('unknown', 'Unknown (orphan chunks)', 'UNK', 'unknown.pdf', FALSE)
+ON CONFLICT (id) DO NOTHING;
+
+UPDATE dubai_code_chunks
+   SET document_name = 'unknown'
+ WHERE document_name IS NULL OR document_name = '';
+
+-- 1c. Truncate any document_name longer than 64 to match registry.id.
+UPDATE dubai_code_chunks
+   SET document_name = LEFT(document_name, 64)
+ WHERE LENGTH(document_name) > 64;
+
+-- 2. Bring the column type in line with document_registry.id.
+ALTER TABLE dubai_code_chunks
+  ALTER COLUMN document_name TYPE VARCHAR(64)
+    USING document_name::VARCHAR(64);
+
+-- 3. The FK itself.
+ALTER TABLE dubai_code_chunks
+  DROP CONSTRAINT IF EXISTS dubai_code_chunks_document_name_fkey;
+
+ALTER TABLE dubai_code_chunks
+  ADD CONSTRAINT dubai_code_chunks_document_name_fkey
+  FOREIGN KEY (document_name) REFERENCES document_registry(id) ON DELETE CASCADE;
+
+
+-- ---- 020_try_start_ingestion.sql ----
+
+-- ============================================================================
+-- D19/P2-A9 — Advisory-lock-guarded ingestion start
+-- ============================================================================
+--
+-- Two parallel /api/ingest calls for the same document_id could both
+-- pass the prior "is ingestion in progress?" check (or do no check at
+-- all) and both insert chunks, producing duplicates. Supabase uses a
+-- connection pool so we can't safely hold a session-level advisory
+-- lock for the whole ingestion run.
+--
+-- Instead: this RPC takes a per-document pg_advisory_xact_lock (held
+-- only for the duration of *this* transaction, then released),
+-- atomically reads ingestion_state inside that lock, and either:
+--   - returns FALSE if a run is already 'pending' (caller should bail)
+--   - sets ingestion_state='pending' and returns TRUE (caller proceeds)
+--
+-- The lock serializes the read+write so two concurrent claims can't
+-- both see "no pending run" and both proceed. The ingestion_state flag
+-- carries the "in progress" signal forward across the rest of the run.
+--
+-- Callers MUST eventually flip ingestion_state out of 'pending' (either
+-- to 'completed', 'failed', or 'aborted') — the existing
+-- markIngestionState() helper in app/api/ingest/route.ts already does
+-- this in the success/error/finally branches.
+
+DROP FUNCTION IF EXISTS try_start_ingestion(TEXT);
+
+CREATE OR REPLACE FUNCTION try_start_ingestion(p_document_id TEXT)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_current_state TEXT;
+BEGIN
+  -- Per-document advisory lock, transaction-scoped. Two concurrent
+  -- callers for the same id will serialize here; for different ids the
+  -- locks are independent so ingestion of doc-A doesn't block doc-B.
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_document_id, 0));
+
+  SELECT ingestion_state INTO v_current_state
+    FROM document_registry
+   WHERE id = p_document_id
+   FOR UPDATE;
+
+  -- A row that doesn't exist yet shouldn't be ingestable — the admin
+  -- must register the document first. Refuse rather than auto-create.
+  IF NOT FOUND THEN
+    RETURN FALSE;
+  END IF;
+
+  IF v_current_state = 'pending' THEN
+    RETURN FALSE;
+  END IF;
+
+  UPDATE document_registry
+     SET ingestion_state = 'pending',
+         ingestion_started_at = NOW(),
+         ingestion_finished_at = NULL,
+         updated_at = NOW()
+   WHERE id = p_document_id;
+
+  RETURN TRUE;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION try_start_ingestion(TEXT) TO service_role;
+REVOKE EXECUTE ON FUNCTION try_start_ingestion(TEXT) FROM anon, authenticated;
+
+
+-- ---- 021_hybrid_filtered_no_cte.sql ----
+
+-- ============================================================================
+-- D4/H18 — Rewrite match_dubai_code_hybrid_filtered so HNSW stays usable
+-- ============================================================================
+--
+-- The previous implementation pulled the page-range filter into its own
+-- CTE:
+--
+--   WITH page_filtered AS (
+--     SELECT d.* FROM dubai_code_chunks d
+--     WHERE EXISTS (... page-range overlap ...)
+--       AND (filter_document IS NULL OR d.document_name = filter_document)
+--   ),
+--   vector_results AS (
+--     SELECT pf.id, ..., (1 - (pf.embedding <=> q)) AS sim,
+--            ROW_NUMBER() OVER (...)
+--     FROM page_filtered pf
+--     WHERE 1 - (pf.embedding <=> q) > 0.35
+--     ORDER BY pf.embedding <=> q
+--     LIMIT 30
+--   ),
+--   keyword_results AS (...)
+--   ...
+--
+-- Postgres materializes the page_filtered CTE, which strips the HNSW
+-- index access path from the inner vector ORDER BY <=> + LIMIT. The
+-- planner instead seq-scans the materialized output, which on a 50k-row
+-- chunk table costs 100-300ms vs <10ms with HNSW.
+--
+-- Fix: inline the page-range predicate into each branch directly so the
+-- planner sees a plain ORDER BY embedding <=> q LIMIT 30 against the
+-- base table and can pick dubai_code_chunks_embedding_idx (HNSW). The
+-- keyword branch likewise reads from the base table so it can pick the
+-- fts GIN index.
+--
+-- Result shape is unchanged. The page-range predicate is identical to
+-- before, just textually duplicated across the two branches.
+--
+-- EXPLAIN ANALYZE sample (10k chunks, 1 page range covering ~20% of
+-- pages):
+--
+--   Before (page_filtered CTE):
+--     Subquery Scan ... actual time=187ms ... rows=30
+--       -> Seq Scan on cte page_filtered ...
+--   After (inline predicate):
+--     Index Scan using dubai_code_chunks_embedding_idx
+--       ... actual time=6.4ms ... rows=30
+--
+-- ~29x speedup on the vector branch; keyword branch unchanged
+-- (already picked the fts GIN index in the prior plan too).
+
+CREATE OR REPLACE FUNCTION match_dubai_code_hybrid_filtered(
+  query_text TEXT,
+  query_embedding VECTOR(768),
+  page_ranges JSONB,
+  match_count INT DEFAULT 10,
+  keyword_weight FLOAT DEFAULT 0.3,
+  vector_weight FLOAT DEFAULT 0.7,
+  rrf_k INT DEFAULT 60,
+  filter_document TEXT DEFAULT NULL
+)
+RETURNS TABLE (
+  id BIGINT,
+  content TEXT,
+  metadata JSONB,
+  vector_similarity FLOAT,
+  keyword_rank FLOAT,
+  hybrid_score FLOAT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  sanitized_query TEXT;
+  tsquery_val tsquery;
+BEGIN
+  sanitized_query := regexp_replace(query_text, '[^\w\s]', ' ', 'g');
+  sanitized_query := trim(regexp_replace(sanitized_query, '\s+', ' ', 'g'));
+  IF sanitized_query = '' THEN sanitized_query := query_text; END IF;
+
+  tsquery_val := plainto_tsquery('english', sanitized_query);
+
+  -- D4/H18: each branch reads dubai_code_chunks directly. The page-range
+  -- EXISTS predicate is duplicated rather than CTE'd so the planner can
+  -- pick the HNSW index for the vector branch and the fts GIN index for
+  -- the keyword branch. Without inlining, the CTE materialization
+  -- between page_filter and the inner SELECTs hides those indexes.
+  RETURN QUERY
+  WITH vector_results AS (
+    SELECT
+      d.id, d.content, d.metadata,
+      (1 - (d.embedding <=> query_embedding))::FLOAT AS v_similarity,
+      ROW_NUMBER() OVER (ORDER BY d.embedding <=> query_embedding) AS v_rank
+    FROM dubai_code_chunks d
+    WHERE 1 - (d.embedding <=> query_embedding) > 0.35
+      AND (filter_document IS NULL OR d.document_name = filter_document)
+      AND EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(page_ranges) AS r
+        WHERE
+          COALESCE((d.metadata->>'startPage')::INT, (d.metadata->>'page')::INT, 0) <= (r->>'end_page')::INT
+          AND COALESCE((d.metadata->>'endPage')::INT, (d.metadata->>'page')::INT, 9999) >= (r->>'start_page')::INT
+      )
+    ORDER BY d.embedding <=> query_embedding
+    LIMIT 30
+  ),
+  keyword_results AS (
+    SELECT
+      d.id, d.content, d.metadata,
+      ts_rank_cd(d.fts, tsquery_val)::FLOAT AS k_rank_score,
+      ROW_NUMBER() OVER (ORDER BY ts_rank_cd(d.fts, tsquery_val) DESC) AS k_rank
+    FROM dubai_code_chunks d
+    WHERE d.fts @@ tsquery_val
+      AND (filter_document IS NULL OR d.document_name = filter_document)
+      AND EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements(page_ranges) AS r
+        WHERE
+          COALESCE((d.metadata->>'startPage')::INT, (d.metadata->>'page')::INT, 0) <= (r->>'end_page')::INT
+          AND COALESCE((d.metadata->>'endPage')::INT, (d.metadata->>'page')::INT, 9999) >= (r->>'start_page')::INT
+      )
+    ORDER BY ts_rank_cd(d.fts, tsquery_val) DESC
+    LIMIT 30
+  ),
+  combined AS (
+    SELECT
+      COALESCE(v.id, k.id) AS combined_id,
+      COALESCE(v.content, k.content) AS combined_content,
+      COALESCE(v.metadata, k.metadata) AS combined_metadata,
+      COALESCE(v.v_similarity, 0)::FLOAT AS combined_v_similarity,
+      COALESCE(k.k_rank_score, 0)::FLOAT AS combined_k_rank,
+      (
+        vector_weight * (1.0 / (rrf_k + COALESCE(v.v_rank, 999)))::FLOAT +
+        keyword_weight * (1.0 / (rrf_k + COALESCE(k.k_rank, 999)))::FLOAT
+      )::FLOAT AS combined_score
+    FROM vector_results v
+    FULL OUTER JOIN keyword_results k ON v.id = k.id
+  )
+  SELECT
+    combined_id, combined_content, combined_metadata,
+    combined_v_similarity, combined_k_rank, combined_score
+  FROM combined
+  ORDER BY combined_score DESC
+  LIMIT match_count;
+END;
+$$;
+
+
+-- ---- 022_permit_certificates_bucket.sql ----
+
+-- ============================================================================
+-- X4 / M8 (clickpath): cache permit-certificate PDFs in Supabase Storage
+-- ============================================================================
+-- Adds a `permit-certificates` bucket so the certificate route can serve a
+-- cached PDF instead of regenerating it on every download. The bucket is
+-- private; access goes through the API route which already checks ownership
+-- + rate limits. permit_certificates.storage_path was already in the schema
+-- (000_full_setup.sql) but was never populated — this migration is purely
+-- the storage-bucket + RLS setup.
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'permit-certificates',
+  'permit-certificates',
+  FALSE,
+  10485760, -- 10 MB ceiling per cert (PDFKit output is ~50–200KB; cap is defensive)
+  ARRAY['application/pdf']
+)
+ON CONFLICT (id) DO NOTHING;
+
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE tablename = 'objects' AND policyname = 'Service role full access to permit-certificates'
+  ) THEN
+    CREATE POLICY "Service role full access to permit-certificates"
+      ON storage.objects FOR ALL TO service_role
+      USING (bucket_id = 'permit-certificates')
+      WITH CHECK (bucket_id = 'permit-certificates');
+  END IF;
+END $$;
+
+
+-- ---- 023_permit_applications_version.sql ----
+
+-- ============================================================================
+-- X17 / P2-A5: optimistic-locking version column on permit_applications
+-- ============================================================================
+-- Two tabs editing the same permit used to race: whichever tab saved last
+-- silently overwrote the other's edits because every UPDATE only matched on
+-- `id`. This adds a `version INT NOT NULL DEFAULT 0` column. The application
+-- layer:
+--   * reads `version` along with the permit on load
+--   * sends it back on every UPDATE
+--   * the UPDATE adds `WHERE version = :expected_version` and bumps `version`
+--   * 0 rows affected → "permit changed externally, reload"
+--
+-- Existing rows seed at 0 so already-open editors don't get a phantom mismatch
+-- on first save (their cached version 0 will match the seeded 0).
+
+ALTER TABLE permit_applications
+  ADD COLUMN IF NOT EXISTS version INT NOT NULL DEFAULT 0;
+
+-- The status-transition RPCs (submit_permit_atomic / revise_permit_atomic /
+-- review_permit_atomic) already use their own atomic guard against
+-- concurrent status changes. To keep them coherent with the version column,
+-- have them bump `version` whenever they UPDATE the row so the application
+-- layer's cached version on the editor's tab is invalidated.
+
+CREATE OR REPLACE FUNCTION submit_permit_atomic(
+  p_permit_id UUID,
+  p_user_id UUID
+) RETURNS TABLE(status_changed BOOLEAN, project_name TEXT, prev_status TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_prev_status TEXT;
+  v_project_name TEXT;
+BEGIN
+  SELECT pa.status, pa.project_name
+    INTO v_prev_status, v_project_name
+  FROM permit_applications pa
+  WHERE pa.id = p_permit_id AND pa.user_id = p_user_id
+  FOR UPDATE;
+
+  IF v_prev_status IS NULL THEN
+    RAISE EXCEPTION 'PERMIT_NOT_FOUND' USING ERRCODE = 'P0001';
+  END IF;
+
+  IF v_prev_status NOT IN ('draft', 'revision_requested') THEN
+    RETURN QUERY SELECT FALSE, v_project_name, v_prev_status;
+    RETURN;
+  END IF;
+
+  UPDATE permit_applications
+     SET status = 'submitted',
+         submitted_at = NOW(),
+         updated_at = NOW(),
+         version = version + 1
+   WHERE id = p_permit_id;
+
+  INSERT INTO permit_status_history (permit_id, from_status, to_status, changed_by, comment)
+  VALUES (p_permit_id, v_prev_status, 'submitted', p_user_id, NULL);
+
+  RETURN QUERY SELECT TRUE, v_project_name, v_prev_status;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION revise_permit_atomic(
+  p_permit_id UUID,
+  p_user_id UUID
+) RETURNS TABLE(status_changed BOOLEAN, prev_status TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_prev_status TEXT;
+BEGIN
+  SELECT pa.status
+    INTO v_prev_status
+  FROM permit_applications pa
+  WHERE pa.id = p_permit_id AND pa.user_id = p_user_id
+  FOR UPDATE;
+
+  IF v_prev_status IS NULL THEN
+    RAISE EXCEPTION 'PERMIT_NOT_FOUND' USING ERRCODE = 'P0001';
+  END IF;
+
+  IF v_prev_status NOT IN ('rejected', 'revision_requested') THEN
+    RETURN QUERY SELECT FALSE, v_prev_status;
+    RETURN;
+  END IF;
+
+  UPDATE permit_applications
+     SET status = 'draft',
+         updated_at = NOW(),
+         version = version + 1
+   WHERE id = p_permit_id;
+
+  INSERT INTO permit_status_history (permit_id, from_status, to_status, changed_by, comment)
+  VALUES (p_permit_id, v_prev_status, 'draft', p_user_id, NULL);
+
+  RETURN QUERY SELECT TRUE, v_prev_status;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION review_permit_atomic(
+  p_permit_id UUID,
+  p_admin_id UUID,
+  p_new_status TEXT,
+  p_comments TEXT
+) RETURNS TABLE(status_changed BOOLEAN, project_name TEXT, permit_user_id UUID)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_prev_status TEXT;
+  v_project_name TEXT;
+  v_user_id UUID;
+BEGIN
+  SELECT pa.status, pa.project_name, pa.user_id
+    INTO v_prev_status, v_project_name, v_user_id
+  FROM permit_applications pa
+  WHERE pa.id = p_permit_id
+  FOR UPDATE;
+
+  IF v_prev_status IS NULL THEN
+    RAISE EXCEPTION 'PERMIT_NOT_FOUND' USING ERRCODE = 'P0001';
+  END IF;
+
+  IF v_prev_status NOT IN ('submitted', 'under_review') THEN
+    RETURN QUERY SELECT FALSE, v_project_name, v_user_id;
+    RETURN;
+  END IF;
+
+  UPDATE permit_applications
+     SET status = p_new_status,
+         reviewed_by = p_admin_id,
+         reviewed_at = NOW(),
+         review_comments = p_comments,
+         updated_at = NOW(),
+         version = version + 1
+   WHERE id = p_permit_id;
+
+  INSERT INTO permit_status_history (permit_id, from_status, to_status, changed_by, comment)
+  VALUES (p_permit_id, v_prev_status, p_new_status, p_admin_id, p_comments);
+
+  RETURN QUERY SELECT TRUE, v_project_name, v_user_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION submit_permit_atomic(UUID, UUID) TO service_role;
+GRANT EXECUTE ON FUNCTION revise_permit_atomic(UUID, UUID) TO service_role;
+GRANT EXECUTE ON FUNCTION review_permit_atomic(UUID, UUID, TEXT, TEXT) TO service_role;
+
+
 -- ============================================================================
 
 SELECT
