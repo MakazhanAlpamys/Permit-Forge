@@ -65,23 +65,12 @@ export async function getAllRegisteredDocuments(): Promise<{
   try {
     const supabase = createAdminClient();
 
-    // Try RPC first
+    // F8: get_all_documents RPC is seeded by 000_full_setup.sql — surface
+    // errors instead of silently masking them with a direct query fallback.
     const { data, error } = await supabase.rpc('get_all_documents');
 
     if (error) {
-      // Fallback: direct query
-      const { data: directData, error: directError } = await supabase
-        .from('document_registry')
-        .select('*')
-        .order('created_at');
-
-      if (directError) {
-        return { data: [], error: directError.message };
-      }
-
-      return {
-        data: (directData || []).map(mapDbRow),
-      };
+      return { data: [], error: error.message };
     }
 
     return {
@@ -125,6 +114,8 @@ export async function upsertDocument(
     // ingestion pipeline won't overwrite them with auto-extracted keywords.
     const keywordsManuallySet = (input.keywords?.length ?? 0) > 0;
 
+    // F8: upsert_document RPC is seeded by 000_full_setup.sql — surface
+    // errors instead of silently masking them with a direct upsert fallback.
     const { error } = await supabase.rpc('upsert_document', {
       p_id: sanitizedId,
       p_display_name: input.displayName,
@@ -140,28 +131,7 @@ export async function upsertDocument(
     });
 
     if (error) {
-      // Fallback: direct upsert
-      const { error: directError } = await supabase
-        .from('document_registry')
-        .upsert({
-          id: sanitizedId,
-          display_name: input.displayName,
-          short_name: input.shortName,
-          file_name: input.fileName,
-          source_url: input.sourceUrl || '',
-          authority: input.authority || '',
-          description: input.description || '',
-          badge_color: input.badgeColor || 'bg-gray-500/20 text-gray-400 border-gray-500/30',
-          keywords: input.keywords || [],
-          categories: input.categories || [],
-          keywords_auto_generated: !keywordsManuallySet,
-          is_active: true,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'id' });
-
-      if (directError) {
-        return { success: false, error: directError.message };
-      }
+      return { success: false, error: error.message };
     }
 
     // Invalidate caches so new document is visible immediately

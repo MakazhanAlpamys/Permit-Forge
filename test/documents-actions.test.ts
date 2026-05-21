@@ -157,27 +157,13 @@ describe('Document Registry Server Actions', () => {
       expect(result.error).toBe('Unauthorized');
     });
 
-    it('should fallback to direct query when RPC fails', async () => {
+    it('surfaces RPC errors instead of silently falling back (F8)', async () => {
       mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'RPC not found' } });
-      mockOrder.mockReturnValueOnce({
-        data: [
-          {
-            id: 'doc-1',
-            display_name: 'Fallback Doc',
-            short_name: 'FD',
-            file_name: 'fallback.pdf',
-            is_active: true,
-            created_at: '2024-01-01',
-            updated_at: '2024-01-01',
-          },
-        ],
-        error: null,
-      });
 
       const result = await getAllRegisteredDocuments();
 
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0].displayName).toBe('Fallback Doc');
+      expect(result.data).toEqual([]);
+      expect(result.error).toBe('RPC not found');
     });
   });
 
@@ -233,13 +219,13 @@ describe('Document Registry Server Actions', () => {
       expect(result.error).toContain('Missing required fields');
     });
 
-    it('should fallback to direct upsert when RPC fails', async () => {
+    it('surfaces RPC errors instead of silently falling back (F8)', async () => {
       mockRpc.mockResolvedValueOnce({ error: { message: 'RPC not found' } });
-      mockUpsert.mockReturnValueOnce({ error: null });
 
       const result = await upsertDocument(validInput, 'csrf-token');
 
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('RPC not found');
     });
 
     it('should sanitize document ID', async () => {
