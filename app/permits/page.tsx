@@ -4,7 +4,7 @@
 // Permit Applications Dashboard
 // ============================================================================
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Header } from '@/components/dashboard';
 import { PermitList } from '@/components/permits';
@@ -23,16 +23,51 @@ export default function PermitsPage() {
   const [permitToDelete, setPermitToDelete] = useState<string | null>(null);
   const [csrfToken, setCsrfToken] = useState<string | null>(null);
 
-  const loadPermits = useCallback(async () => {
-    setLoading(true);
+  const loadPermits = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) setLoading(true);
     const result = await getMyPermits();
     setPermits(result.data);
-    setLoading(false);
+    if (!options.silent) setLoading(false);
   }, []);
 
   useEffect(() => {
     loadPermits();
     getCSRFTokenAction().then(setCsrfToken);
+  }, [loadPermits]);
+
+  // X6: poll for status changes every 60s so an admin's approve/reject is
+  // visible without manual refresh. Polling pauses when the tab is hidden
+  // (battery / cost win) and the silent-flag avoids flashing the skeleton.
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const POLL_INTERVAL_MS = 60_000;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const tick = () => {
+      if (!isMountedRef.current) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+      void loadPermits({ silent: true });
+    };
+
+    timer = setInterval(tick, POLL_INTERVAL_MS);
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && !document.hidden) {
+        tick();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      if (timer) clearInterval(timer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [loadPermits]);
 
   const handleView = (id: string) => {
@@ -79,7 +114,7 @@ export default function PermitsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={loadPermits} disabled={loading}>
+            <Button variant="outline" size="icon" onClick={() => loadPermits()} disabled={loading}>
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             </Button>
             <Button onClick={() => router.push('/permits/new')}>

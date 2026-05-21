@@ -203,8 +203,8 @@ These are small enough that whichever track owner naturally touches the relevant
 - [x] **X2 — M2 (clickpath)** Persist `PermitManagement` filter to URL or localStorage. **Track B / F.** 🟢 — `d0d25c2`
 - [x] **X3 — M5 (clickpath)** `UserManagement` rapid actions — add request token / cancel previous fetch. **Track B / C.** 🟢 — `9cea4b9` (monotonic `actionTokenRef` + `beginAction()` checker; each handler drops its result if a newer action has fired).
 - [x] **X4 — M8 (clickpath)** Cache PDF certificate in storage instead of regenerating each download. **Track B / C.** 🟢 — `07b52ae` (migration 022 adds `permit-certificates` bucket; cert route streams stored PDF on cache-hit, uploads + backfills `storage_path` on miss).
-- [x] **X5 — M9 (clickpath)** Gate `<FileUploadZone>` `onDrop`/`onClick` on `uploading` flag. **Track B.** 🟢 — (pending commit)
-- [ ] **X6 — M10 (clickpath)** Add poll (or supabase realtime) on `/permits` so users see status change. **Track B.** 🟢
+- [x] **X5 — M9 (clickpath)** Gate `<FileUploadZone>` `onDrop`/`onClick` on `uploading` flag. **Track B.** 🟢 — `f04f6b4`
+- [x] **X6 — M10 (clickpath)** Add poll (or supabase realtime) on `/permits` so users see status change. **Track B.** 🟢 — (pending commit) — 60s silent poll, pauses when tab hidden, refreshes on visibility-restore.
 - [ ] **X7 — L4 (clickpath)** Add jitter to NotificationBell 30s poll. **Track B / F.** 🟢
 - [ ] **X8 — L5 (clickpath)** Move `setActionLoading(null)` into a `finally` in `handleDownloadCertificate`. **Track B / F.** 🟢
 - [ ] **X9 — L6 (clickpath)** Replace `window.confirm` in `document-management.tsx` with shadcn `<Dialog>` (uses the `<ConfirmDialog>` from F18). **Track F (after F18).** 🟢
