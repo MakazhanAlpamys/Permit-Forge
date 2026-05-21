@@ -55,6 +55,35 @@ interface PipelineResult {
 }
 
 // -----------------------------------------------------------------------------
+// Singleflight (X18 / P2-A7)
+// -----------------------------------------------------------------------------
+// Per-process Map keyed by normalised query string. While a pipeline call for
+// the same query is in flight, subsequent callers wait on its Promise instead
+// of running their own embedding + LLM + DB roundtrips. This is the standard
+// fix for the cache-stampede problem where N concurrent requests for the
+// same cold query each pay the full pipeline cost before any of them
+// populates the semantic cache.
+//
+// Scoped to the Node process — if you scale to N replicas, each replica gets
+// its own in-flight map. That's still an N× speedup vs unbounded fan-out.
+//
+// Map entries are removed in the pipeline's `finally`, so a thrown pipeline
+// failure does NOT leak a rejected promise to future callers.
+
+const inflightPipelines = new Map<string, Promise<PipelineResult>>();
+
+/** Visible for tests — number of in-flight singleflight entries right now. */
+export function _inflightPipelineCount(): number {
+  return inflightPipelines.size;
+}
+
+function singleflightKey(query: string): string {
+  // Same normalisation as semantic cache lookup so the dedup window covers
+  // whitespace + casing variations that already collapse to the same cache hit.
+  return query.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// -----------------------------------------------------------------------------
 // Response Templates
 // -----------------------------------------------------------------------------
 
@@ -87,7 +116,28 @@ export async function getGreetingResponse(): Promise<string> {
 // -----------------------------------------------------------------------------
 
 /**
- * Execute the RAG pipeline:
+ * Public entry point — wraps the pipeline worker with a per-query singleflight
+ * (X18). N concurrent requests for the same query collapse to one pipeline run.
+ */
+export async function executeRAGPipeline(query: string): Promise<PipelineResult> {
+  const key = singleflightKey(query);
+  const inflight = inflightPipelines.get(key);
+  if (inflight) {
+    return inflight;
+  }
+
+  const promise = runRAGPipeline(query).finally(() => {
+    // Always clean up — both on success and on rejection — so a transient
+    // failure doesn't poison the slot for the next caller.
+    inflightPipelines.delete(key);
+  });
+  inflightPipelines.set(key, promise);
+  return promise;
+}
+
+/**
+ * Internal pipeline worker — kept as a private function so the singleflight
+ * is the only public path. Steps:
  *
  *   [1] Generate embedding (reused for cache + search)
  *   [2] Semantic Cache check
@@ -100,7 +150,7 @@ export async function getGreetingResponse(): Promise<string> {
  *
  * Total: 1 embedding call. Cache hit = 0 more calls.
  */
-export async function executeRAGPipeline(query: string): Promise<PipelineResult> {
+async function runRAGPipeline(query: string): Promise<PipelineResult> {
   // Step 0: Ensure registry cache and search profiles are loaded
   await getAllDocuments(); // populates registry cache for sync lookups
   await loadSearchProfiles(); // populates document selector profiles
