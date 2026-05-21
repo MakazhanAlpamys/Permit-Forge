@@ -39,18 +39,24 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // A5/H1: reading the per-request nonce header here is what tells Next.js to
-  // stamp `nonce="..."` onto every framework-managed inline <script> (RSC
-  // payload, hydration bootstrap, route prefetch). Without this call Next.js
-  // doesn't know a nonce policy is in effect and the strict-dynamic CSP from
-  // middleware.ts blocks every inline script it injects.
-  const nonce = (await headers()).get("x-nonce") ?? undefined;
+  // A5/H1: touching headers() opts the layout into dynamic rendering, which
+  // is what tells Next.js to stamp the per-request `x-nonce` (set by
+  // middleware) onto every framework-injected inline <script>. We don't need
+  // the value here — just the side-effect of reading the request headers is
+  // enough. try/catch is defensive: in error-page render paths (e.g. when a
+  // server action throws), Next.js may invoke this layout without a live
+  // request context, and we don't want the CSP nonce hookup to mask the
+  // original error.
+  try {
+    await headers();
+  } catch {
+    // No-op: nonce detection is best-effort.
+  }
 
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body
         className={`${inter.variable} font-sans antialiased min-h-screen bg-background text-foreground`}
-        {...(nonce ? { "data-nonce": nonce } : {})}
       >
         <ThemeProvider>{children}</ThemeProvider>
       </body>
