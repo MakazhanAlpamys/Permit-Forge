@@ -3881,6 +3881,13 @@ ALTER TABLE permit_applications
 -- concurrent status changes. To keep them coherent with the version column,
 -- have them bump `version` whenever they UPDATE the row so the application
 -- layer's cached version on the editor's tab is invalidated.
+--
+-- DROP first because return-table shape changes between earlier migrations
+-- (003/009) and this one — CREATE OR REPLACE can't change OUT/return type.
+
+DROP FUNCTION IF EXISTS submit_permit_atomic(UUID, UUID);
+DROP FUNCTION IF EXISTS revise_permit_atomic(UUID, UUID);
+DROP FUNCTION IF EXISTS review_permit_atomic(UUID, UUID, TEXT, TEXT);
 
 CREATE OR REPLACE FUNCTION submit_permit_atomic(
   p_permit_id UUID,
