@@ -57,33 +57,28 @@ export type ProgressCallback = (progress: IngestionProgress) => Promise<void>;
 // -----------------------------------------------------------------------------
 
 /**
- * Split text while tracking which pages each chunk spans
- * This ensures accurate page range attribution
+ * Shared text-splitting + page-attribution worker (F12 / Simplify #12).
+ * Both `splitWithPageTracking` (child chunks) and `createParentChunks`
+ * (parent chunks) need the same algorithm:
+ *   1. Concatenate non-empty pages, recording char-offset → pageNumber boundaries.
+ *   2. Run the RecursiveCharacterTextSplitter at the requested chunkSize.
+ *   3. For each chunk, locate it in the fullText and map start/end offsets
+ *      back to start/end page numbers using the precomputed boundaries.
+ *
+ * Returns an array of { content, startPage, endPage } with raw page ranges
+ * — callers attach their own section / contentType metadata.
  */
-export async function splitWithPageTracking(
+async function chunkPagesAtSize(
   pages: PDFPageContent[],
-  parser: PDFParser
-): Promise<ChunkWithPageRange[]> {
-  const { CHILD_CHUNK_SIZE, CHUNK_OVERLAP, MIN_CHUNK_LENGTH } = PDF_INGESTION_CONFIG;
-
+  chunkSize: number,
+  chunkOverlap: number,
+): Promise<Array<{ content: string; startPage: number; endPage: number }>> {
   const textSplitter = new RecursiveCharacterTextSplitter({
-    chunkSize: CHILD_CHUNK_SIZE,
-    chunkOverlap: CHUNK_OVERLAP,
-    separators: [
-      '\n\n\n',   // Major section breaks
-      '\n\n',      // Paragraph breaks
-      '\n',        // Line breaks
-      '. ',        // Sentence breaks
-      '; ',        // Clause breaks
-      ', ',        // List items
-      ' ',         // Words
-      '',          // Characters
-    ],
+    chunkSize,
+    chunkOverlap,
+    separators: ['\n\n\n', '\n\n', '\n', '. ', '; ', ', ', ' ', ''],
   });
 
-  // Build fullText and record exact char-offset boundaries for each page so that
-  // page-range attribution is based on actual positions, not on recomputed lengths
-  // (which can drift when page.text has trailing whitespace / newlines).
   const pageBoundaries: Array<{ start: number; end: number; pageNumber: number }> = [];
   let fullText = '';
 
@@ -94,39 +89,52 @@ export async function splitWithPageTracking(
     pageBoundaries.push({ start, end: fullText.length, pageNumber: page.pageNumber });
   }
 
-  // Split the full text
   const rawChunks = await textSplitter.splitText(fullText);
-
-  // For each chunk, determine which pages it spans using precomputed boundaries.
-  const chunksWithPages: ChunkWithPageRange[] = [];
+  const out: Array<{ content: string; startPage: number; endPage: number }> = [];
   let currentPosition = 0;
 
   for (const chunkContent of rawChunks) {
-    if (chunkContent.trim().length < MIN_CHUNK_LENGTH) continue;
+    if (chunkContent.trim().length < PDF_INGESTION_CONFIG.MIN_CHUNK_LENGTH) continue;
 
     const chunkStart = fullText.indexOf(chunkContent, currentPosition);
     if (chunkStart === -1) continue;
     const chunkEnd = chunkStart + chunkContent.length;
 
-    // Find start page: first boundary whose end exceeds chunkStart
     let startPage = pageBoundaries[0]?.pageNumber ?? 1;
     for (const pb of pageBoundaries) {
       if (chunkStart < pb.end) { startPage = pb.pageNumber; break; }
     }
 
-    // Find end page: last boundary that the chunk overlaps
     let endPage = startPage;
     for (const pb of pageBoundaries) {
       if (pb.start < chunkEnd) endPage = pb.pageNumber;
       if (pb.end >= chunkEnd) break;
     }
 
-    const sectionInfo = parser.findSectionForPage(startPage);
-    const contentType = parser.detectContentType(chunkContent);
-    const isTable = contentType === 'table';
+    out.push({ content: chunkContent.trim(), startPage, endPage });
+    currentPosition = chunkStart + 1;
+  }
 
-    chunksWithPages.push({
-      content: chunkContent.trim(),
+  return out;
+}
+
+/**
+ * Split text while tracking which pages each chunk spans
+ * This ensures accurate page range attribution
+ */
+export async function splitWithPageTracking(
+  pages: PDFPageContent[],
+  parser: PDFParser
+): Promise<ChunkWithPageRange[]> {
+  const { CHILD_CHUNK_SIZE, CHUNK_OVERLAP } = PDF_INGESTION_CONFIG;
+  const sized = await chunkPagesAtSize(pages, CHILD_CHUNK_SIZE, CHUNK_OVERLAP);
+
+  return sized.map(({ content, startPage, endPage }) => {
+    const sectionInfo = parser.findSectionForPage(startPage);
+    const contentType = parser.detectContentType(content);
+    const isTable = contentType === 'table';
+    return {
+      content,
       startPage,
       endPage,
       section: sectionInfo.section,
@@ -134,12 +142,8 @@ export async function splitWithPageTracking(
       sectionPath: sectionInfo.sectionPath,
       isTable,
       contentType,
-    });
-
-    currentPosition = chunkStart + 1;
-  }
-
-  return chunksWithPages;
+    };
+  });
 }
 
 // -----------------------------------------------------------------------------
@@ -523,73 +527,19 @@ async function createParentChunks(
   pages: PDFPageContent[],
   parser: PDFParser
 ): Promise<ParentChunkData[]> {
-  const { PARENT_CHUNK_SIZE, MIN_CHUNK_LENGTH } = PDF_INGESTION_CONFIG;
+  const { PARENT_CHUNK_SIZE } = PDF_INGESTION_CONFIG;
+  const sized = await chunkPagesAtSize(pages, PARENT_CHUNK_SIZE, 200);
 
-  const textSplitter = new RecursiveCharacterTextSplitter({
-    chunkSize: PARENT_CHUNK_SIZE,
-    chunkOverlap: 200,
-    separators: ['\n\n\n', '\n\n', '\n', '. ', '; ', ', ', ' ', ''],
-  });
-
-  let fullText = '';
-  const segments: Array<{ text: string; pageNumber: number }> = [];
-
-  for (const page of pages) {
-    if (page.text.trim().length === 0) continue;
-    fullText += page.text + '\n\n';
-    segments.push({ text: page.text, pageNumber: page.pageNumber });
-  }
-
-  const rawChunks = await textSplitter.splitText(fullText);
-  const parentChunks: ParentChunkData[] = [];
-  let currentPosition = 0;
-
-  for (const chunkContent of rawChunks) {
-    if (chunkContent.trim().length < MIN_CHUNK_LENGTH) continue;
-
-    const chunkStart = fullText.indexOf(chunkContent, currentPosition);
-    if (chunkStart === -1) continue; // Skip chunks not found (duplicate content)
-    const chunkEnd = chunkStart + chunkContent.length;
-
-    let position = 0;
-    let startPage = 1;
-    let endPage = 1;
-    let foundStart = false;
-
-    for (const segment of segments) {
-      const segmentEnd = position + segment.text.length + 2;
-
-      if (!foundStart && chunkStart < segmentEnd) {
-        startPage = segment.pageNumber;
-        foundStart = true;
-      }
-
-      if (chunkEnd <= segmentEnd) {
-        endPage = segment.pageNumber;
-        break;
-      }
-
-      if (foundStart) {
-        endPage = segment.pageNumber;
-      }
-
-      position = segmentEnd;
-    }
-
+  return sized.map(({ content, startPage, endPage }) => {
     const sectionInfo = parser.findSectionForPage(startPage);
-
-    parentChunks.push({
-      content: chunkContent.trim(),
+    return {
+      content,
       startPage,
       endPage,
       section: sectionInfo.section,
       sectionTitle: sectionInfo.sectionTitle,
-    });
-
-    currentPosition = chunkStart + 1;
-  }
-
-  return parentChunks;
+    };
+  });
 }
 
 /**
