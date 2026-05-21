@@ -117,25 +117,29 @@ describe('createUserContextClient', () => {
     }
   });
 
-  it('mints a Supabase JWT and uses Authorization header when SUPABASE_JWT_SECRET is set', async () => {
+  it('mints a Supabase JWT and uses Authorization header when SUPABASE_JWT_SECRET is set and ENABLE_USER_CONTEXT_RLS=1', async () => {
     process.env.SUPABASE_JWT_SECRET =
       'unit-test-supabase-jwt-secret-must-be-long-enough-for-hs256';
+    process.env.ENABLE_USER_CONTEXT_RLS = '1';
     try {
       const mod = await freshModule();
       await mod.createUserContextClient('550e8400-e29b-41d4-a716-446655440000');
 
-      // First call: admin singleton wasn't built yet in this fresh module, so
-      // the very first call should be the context client itself.
-      const [, , opts] = mockCreateClient.mock.calls.at(-1) as unknown as [
-        unknown,
-        unknown,
-        { global: { headers: Record<string, string> } },
-      ];
+      // The user-context client is the createClient call carrying the
+      // Authorization header. The admin singleton (if it was built first) does
+      // not, so we filter by the header presence rather than picking the last.
+      const userContextCall = mockCreateClient.mock.calls.find((args) => {
+        const o = args[2] as { global?: { headers?: Record<string, string> } } | undefined;
+        return !!o?.global?.headers?.Authorization;
+      });
+      expect(userContextCall, 'no createClient call carried an Authorization header').toBeDefined();
+      const opts = userContextCall![2] as { global: { headers: Record<string, string> } };
       expect(opts.global.headers.Authorization).toMatch(/^Bearer /);
       // JWT has 3 dot-separated parts.
       expect(opts.global.headers.Authorization.split(' ')[1].split('.')).toHaveLength(3);
     } finally {
       delete process.env.SUPABASE_JWT_SECRET;
+      delete process.env.ENABLE_USER_CONTEXT_RLS;
     }
   });
 });
