@@ -6,6 +6,7 @@
 
 import { getQuickSession, logAuditEvent, getRequestMetadata, validateCSRFToken } from '@/lib/auth';
 import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
+import type { ZodSchema } from 'zod';
 
 /**
  * Per-action rate-limit gate (C8H/H11). Each `action` gets its own bucket
@@ -185,4 +186,95 @@ export async function requireCSRF(token: string | undefined | null): Promise<{ v
   }
 
   return { valid: true };
+}
+
+// -----------------------------------------------------------------------------
+// withMutation — boilerplate-elimination wrapper (F1 / Simplify #1)
+// -----------------------------------------------------------------------------
+
+/**
+ * Standard shape returned by every server-action mutation. Helper wraps:
+ *   - requireAuth / requireAdmin gate
+ *   - requireCSRF check
+ *   - Optional Zod input validation
+ *   - Optional per-action rate limit
+ *   - try/catch with generic fail-safe error
+ *
+ * Use for any mutation that returns `{ success, error, ...rest }`. Query-style
+ * actions returning `{ data, error }` should keep their bespoke shape.
+ */
+export interface WithMutationOptions<T> {
+  /** Require admin role. Defaults to false (any authenticated user). */
+  admin?: boolean;
+  /** CSRF token from the client (required). */
+  csrfToken: string | undefined | null;
+  /** Optional Zod schema. The parsed value is passed to the handler. */
+  schema?: ZodSchema<T>;
+  /** Raw input to validate. Only used when `schema` is provided. */
+  input?: unknown;
+  /** Per-action rate-limit bucket (e.g. 'updatePermit'). */
+  rateLimitAction?: string;
+  /** Free-form error message for unexpected catch-all failures. */
+  fallbackErrorMessage?: string;
+}
+
+export interface MutationResult<R extends object = object> {
+  success: boolean;
+  error?: string;
+  data?: R;
+}
+
+export async function withMutation<T, R extends object = object>(
+  options: WithMutationOptions<T>,
+  handler: (ctx: { user: AuthenticatedUser; parsed: T }) => Promise<R | { success: false; error: string }>,
+): Promise<MutationResult<R>> {
+  try {
+    // Auth gate
+    const authCheck = options.admin ? await requireAdmin() : await requireAuth();
+    if (!authCheck.success || !authCheck.user) {
+      return { success: false, error: authCheck.error || 'Unauthorized' };
+    }
+
+    // CSRF gate
+    const csrf = await requireCSRF(options.csrfToken);
+    if (!csrf.valid) {
+      return { success: false, error: csrf.error || 'CSRF token invalid' };
+    }
+
+    // Per-action rate limit
+    if (options.rateLimitAction) {
+      const rl = await requireActionRateLimit(authCheck.user.id, options.rateLimitAction);
+      if (!rl.allowed) {
+        return { success: false, error: rl.error || 'Too many requests' };
+      }
+    }
+
+    // Schema validation (when supplied)
+    let parsed: T = undefined as T;
+    if (options.schema) {
+      const validation = options.schema.safeParse(options.input);
+      if (!validation.success) {
+        return {
+          success: false,
+          error: validation.error.issues[0]?.message || 'Validation failed',
+        };
+      }
+      parsed = validation.data as T;
+    }
+
+    const result = await handler({ user: authCheck.user, parsed });
+
+    // Handlers may short-circuit with their own typed error result.
+    if ('success' in result && result.success === false) {
+      return { success: false, error: result.error };
+    }
+
+    return { success: true, data: result as R };
+  } catch (error) {
+    console.error('withMutation caught error:', error);
+    return {
+      success: false,
+      error: options.fallbackErrorMessage || 'Operation failed',
+    };
+  }
 }
