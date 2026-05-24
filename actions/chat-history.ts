@@ -4,7 +4,19 @@
 // Chat History Server Actions (with Access Control)
 // ============================================================================
 
-import DOMPurify from 'isomorphic-dompurify';
+// C18H/M8: chat-session titles are plain text — no HTML rendering. Strip any
+// HTML-looking sequences with a regex pass instead of DOMPurify. Bringing in
+// isomorphic-dompurify on the server pulls jsdom → html-encoding-sniffer →
+// @exodus/bytes, the last of which became ESM-only and crashes the Vercel
+// Lambda with ERR_REQUIRE_ESM on every POST.
+function sanitizeTitleText(input: string): string {
+  return input
+    .replace(/<[^>]*>/g, '')        // strip any complete HTML tag
+    .replace(/&[a-zA-Z0-9#]+;?/g, '') // strip HTML entity references
+    .replace(/[<>]/g, '')             // strip any leftover angle brackets
+    .slice(0, 100)
+    .trim();
+}
 import { createAdminClient, createUserContextClient } from '@/lib/supabase-server';
 import { getQuickSession, logAuditEvent } from '@/lib/auth';
 import { requireAuth, requireCSRF, verifyOwnership } from '@/lib/security';
@@ -374,13 +386,9 @@ export async function updateSessionTitle(sessionId: string, title: string, csrfT
       return { success: false, error: 'Access denied' };
     }
     
-    // Sanitize title — DOMPurify strips any HTML so a malicious user can't
-    // store an active payload in their session title that would then render
-    // inside the sidebar (C18H/M8). slice + trim keep the length cap.
-    const sanitizedTitle = DOMPurify.sanitize(title, {
-      ALLOWED_TAGS: [],
-      ALLOWED_ATTR: [],
-    }).slice(0, 100).trim();
+    // Sanitize title — see sanitizeTitleText above. We never render this as
+    // HTML (sidebar uses {title}), so stripping tags + entities is enough.
+    const sanitizedTitle = sanitizeTitleText(title);
     
     const supabase = createAdminClient();
     const { error } = await supabase
