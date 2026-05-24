@@ -3,7 +3,8 @@
 // ============================================================================
 
 import { NextRequest } from 'next/server';
-import { getQuickSession, validateCSRFToken } from '@/lib/auth';
+import { validateCSRFToken } from '@/lib/auth';
+import { requireAdmin } from '@/lib/security';
 import { checkRateLimit } from '@/lib/supabase-server';
 import { runIngestionPipeline, type IngestionProgress } from '@/lib/pdf-ingestion';
 import { createAdminClient } from '@/lib/supabase-server';
@@ -23,11 +24,15 @@ function jsonError(payload: Record<string, unknown>, status: number): Response {
 // -----------------------------------------------------------------------------
 
 export async function POST(request: NextRequest) {
-  // Check authentication
-  const user = await getQuickSession();
-  if (!user || user.role !== 'admin') {
-    return jsonError({ error: 'Unauthorized' }, 401);
+  // AUTH-C1 / v1.0.0 Part E: route through `requireAdmin` so JWT.tv vs.
+  // users.token_version is enforced AND unauthorized attempts are audit-logged.
+  // A demoted admin can't keep triggering full embedding-pipeline runs for the
+  // 7-day token lifetime.
+  const auth = await requireAdmin();
+  if (!auth.success || !auth.user) {
+    return jsonError({ error: auth.error || 'Unauthorized' }, 401);
   }
+  const user = auth.user;
 
   // CSRF validation
   const csrfToken = request.headers.get('x-csrf-token');
@@ -37,7 +42,10 @@ export async function POST(request: NextRequest) {
   }
 
   // Rate limiting
-  const rateLimitResult = await checkRateLimit(user.id);
+  // S-H-1 / v1.0.0 Part F: PDF ingestion runs heavy embedding work — keep it
+  // in its own per-endpoint bucket so a stuck ingestion doesn't starve other
+  // admin actions on the 'default' bucket.
+  const rateLimitResult = await checkRateLimit(user.id, { endpoint: 'ingest' });
   if (!rateLimitResult.allowed) {
     return jsonError({ error: 'Rate limited', retryAfter: rateLimitResult.retryAfterMs }, 429);
   }

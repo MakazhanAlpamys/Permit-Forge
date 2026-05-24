@@ -69,6 +69,101 @@ describe('lib/security', () => {
       expect(result.success).toBe(false);
       expect(result.error).toBe('Authentication failed');
     });
+
+    // AUTH-C1 / v1.0.0 Part E: middleware checks tv on every page nav, but the
+    // middleware matcher excludes /api/*. requireAuth gates every API route, so
+    // it must re-check tv too — otherwise a stolen JWT survives a forced password
+    // reset until natural expiry (7 days) on the API surface.
+    it('rejects session when JWT tv is older than users.token_version', async () => {
+      const supabaseServer = await import('@/lib/supabase-server');
+      mockGetQuickSession.mockResolvedValue({
+        id: 'user-1',
+        username: 'u',
+        role: 'user' as const,
+        tokenVersion: 3,
+      });
+      vi.mocked(supabaseServer.createAdminClient).mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({
+                data: { blocked: false, token_version: 5 },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+        rpc: vi.fn(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      const result = await requireAuth();
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/session.*(revoked|invalid)/i);
+    });
+
+    it('accepts session when JWT tv matches users.token_version', async () => {
+      const supabaseServer = await import('@/lib/supabase-server');
+      mockGetQuickSession.mockResolvedValue({
+        id: 'user-1',
+        username: 'u',
+        role: 'user' as const,
+        tokenVersion: 5,
+      });
+      vi.mocked(supabaseServer.createAdminClient).mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({
+                data: { blocked: false, token_version: 5 },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+        rpc: vi.fn(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      const result = await requireAuth();
+
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts session when JWT tv is ahead of DB (defensive; new JWT minted in this request)', async () => {
+      // Edge case: an action in the same request just bumped tv and minted a
+      // new JWT, but the response cookie hasn't reached the client yet. The
+      // current request's JWT is the *new* one (ahead), the DB is also new —
+      // tv == db.tv. The "ahead of DB" path should not fire because the JWT
+      // and DB advance together. We still check it does not over-fire when
+      // tv > db.tv (cache lag scenario).
+      const supabaseServer = await import('@/lib/supabase-server');
+      mockGetQuickSession.mockResolvedValue({
+        id: 'user-1',
+        username: 'u',
+        role: 'user' as const,
+        tokenVersion: 7,
+      });
+      vi.mocked(supabaseServer.createAdminClient).mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              single: vi.fn().mockResolvedValue({
+                data: { blocked: false, token_version: 5 },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+        rpc: vi.fn(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      const result = await requireAuth();
+
+      expect(result.success).toBe(true);
+    });
   });
 
   describe('requireAdmin', () => {

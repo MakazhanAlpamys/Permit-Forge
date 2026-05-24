@@ -3,7 +3,8 @@
 // ============================================================================
 
 import { NextRequest } from 'next/server';
-import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
+import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
+import { requireAuth } from '@/lib/security';
 import { uuidSchema } from '@/lib/validations';
 import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 import { generateCertificateNumber, generateCertificatePDF, type CertificateData } from '@/lib/permit-certificate';
@@ -15,10 +16,16 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<Response> {
   try {
-    const user = await getQuickSession();
-    if (!user) {
-      return applySecurityHeaders(Response.json({ error: 'Not authenticated' }, { status: 401 }));
+    // AUTH-C1 / v1.0.0 Part E: route through `requireAuth` so JWT.tv vs.
+    // users.token_version is enforced — a revoked admin can't keep pulling
+    // certificates for the 7-day token lifetime.
+    const auth = await requireAuth();
+    if (!auth.success || !auth.user) {
+      return applySecurityHeaders(
+        Response.json({ error: auth.error || 'Not authenticated' }, { status: 401 }),
+      );
     }
+    const user = auth.user;
 
     // C11H/H21: dedicated bucket so certificate downloads don't share the
     // chat / mutation rate-limit budget. Tight cap because cert PDFs are

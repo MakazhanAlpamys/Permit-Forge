@@ -148,15 +148,25 @@ export async function getSessionFromToken(): Promise<JWTPayload | null> {
 /**
  * Quick token-only session check (no DB call)
  * Returns user info from token, or null
+ *
+ * AUTH-C1 / v1.0.0 Part E: also exposes `tokenVersion` from the JWT so
+ * downstream gates (`requireAuth`) can compare it against `users.token_version`
+ * and revoke sessions on the API surface where Edge middleware doesn't run.
  */
-export async function getQuickSession(): Promise<{ id: string; username: string; role: 'admin' | 'user' } | null> {
+export async function getQuickSession(): Promise<{
+  id: string;
+  username: string;
+  role: 'admin' | 'user';
+  tokenVersion: number;
+} | null> {
   const payload = await getSessionFromToken();
   if (!payload) return null;
-  
+
   return {
     id: payload.sub,
     username: payload.username,
     role: payload.role,
+    tokenVersion: payload.tv ?? 0,
   };
 }
 

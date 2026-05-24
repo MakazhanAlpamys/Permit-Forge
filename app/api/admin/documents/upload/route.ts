@@ -8,7 +8,8 @@
 // ============================================================================
 
 import { NextRequest } from 'next/server';
-import { getQuickSession, validateCSRFToken, getRequestMetadata } from '@/lib/auth';
+import { validateCSRFToken, getRequestMetadata } from '@/lib/auth';
+import { requireAdmin } from '@/lib/security';
 import { applySecurityHeaders } from '@/lib/api-security-headers';
 import { uploadDocumentPdfShared } from '@/lib/document-pdf-upload';
 
@@ -22,10 +23,14 @@ function jsonResponse(payload: Record<string, unknown>, status: number): Respons
 }
 
 export async function POST(request: NextRequest) {
-  const user = await getQuickSession();
-  if (!user || user.role !== 'admin') {
-    return jsonResponse({ success: false, error: 'Unauthorized' }, 401);
+  // AUTH-C1 / v1.0.0 Part E: route through `requireAdmin` so JWT.tv vs.
+  // users.token_version is enforced — privilege-boundary endpoint, the
+  // highest-impact instance of the bypass.
+  const auth = await requireAdmin();
+  if (!auth.success || !auth.user) {
+    return jsonResponse({ success: false, error: auth.error || 'Unauthorized' }, 401);
   }
+  const user = auth.user;
 
   const csrfToken = request.headers.get('x-csrf-token');
   const csrfValid = csrfToken ? await validateCSRFToken(csrfToken) : false;

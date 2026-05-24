@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { NextRequest } from 'next/server';
-import { getQuickSession } from '@/lib/auth';
+import { requireAuth } from '@/lib/security';
 import { createAdminClient } from '@/lib/supabase-server';
 import { uuidSchema } from '@/lib/validations';
 import { applySecurityHeaders } from '@/lib/api-security-headers';
@@ -20,10 +20,15 @@ function mdEscape(s: string): string {
 
 export async function GET(request: NextRequest) {
   try {
-    const user = await getQuickSession();
-    if (!user) {
-      return applySecurityHeaders(Response.json({ error: 'Unauthorized' }, { status: 401 }));
+    // AUTH-C1 / v1.0.0 Part E: route through `requireAuth` so JWT.tv vs.
+    // users.token_version is enforced here too (Edge matcher skips `/api/*`).
+    const auth = await requireAuth();
+    if (!auth.success || !auth.user) {
+      return applySecurityHeaders(
+        Response.json({ error: auth.error || 'Unauthorized' }, { status: 401 }),
+      );
     }
+    const user = auth.user;
 
     const sessionId = request.nextUrl.searchParams.get('sessionId');
     if (!sessionId || !uuidSchema.safeParse(sessionId).success) {

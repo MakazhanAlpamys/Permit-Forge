@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
-import { getQuickSession, validateCSRFToken } from '@/lib/auth';
+import { validateCSRFToken } from '@/lib/auth';
+import { requireAuth } from '@/lib/security';
 import { chatMessageSchema } from '@/lib/validations';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
 import { COMPLIANCE_SYSTEM_PROMPT, getStreamingModel } from '@/lib/gemini';
@@ -32,10 +33,14 @@ export async function POST(request: NextRequest) {
     // =========================================================================
     // SECURITY: Authentication check
     // =========================================================================
-    const user = await getQuickSession();
-    if (!user) {
-      return jsonError({ error: 'Unauthorized' }, 401);
+    // AUTH-C1 / v1.0.0 Part E: route through `requireAuth` so the same JWT.tv
+    // vs. users.token_version comparison the Edge middleware does on page nav
+    // also fires on this API surface (matcher excludes `/api/*`).
+    const auth = await requireAuth();
+    if (!auth.success || !auth.user) {
+      return jsonError({ error: auth.error || 'Unauthorized' }, 401);
     }
+    const user = auth.user;
 
     // =========================================================================
     // SECURITY: Origin/Referer validation + CSRF (mandatory)
@@ -72,7 +77,10 @@ export async function POST(request: NextRequest) {
     // =========================================================================
     // SECURITY: Rate limiting
     // =========================================================================
-    const rateLimitResult = await checkRateLimit(user.id);
+    // S-H-1 / v1.0.0 Part F: hit the dedicated 'chat' bucket (C11H/C22H), not
+    // the shared 'default' bucket — otherwise chat bursts can starve any
+    // other endpoint that lands in 'default' (and vice versa).
+    const rateLimitResult = await checkRateLimit(user.id, { endpoint: 'chat' });
     if (!rateLimitResult.allowed) {
       return jsonError({ error: 'Rate limited', retryAfter: rateLimitResult.retryAfterMs }, 429);
     }

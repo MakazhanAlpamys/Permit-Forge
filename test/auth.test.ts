@@ -240,7 +240,14 @@ describe('Auth Library', () => {
       } as any);
 
       const result = await getQuickSession();
-      expect(result).toEqual({ id: VALID_UUID, username: 'alice', role: 'user' });
+      // AUTH-C1 / v1.0.0 Part E: getQuickSession exposes tokenVersion from
+      // the JWT so requireAuth can compare against users.token_version.
+      expect(result).toEqual({
+        id: VALID_UUID,
+        username: 'alice',
+        role: 'user',
+        tokenVersion: 0,
+      });
     });
 
   });

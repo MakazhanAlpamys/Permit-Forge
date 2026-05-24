@@ -39,10 +39,14 @@ async function verifySessionOwnership(sessionId: string, userId: string): Promis
 
 export async function createChatSession(title?: string): Promise<{ sessionId: string | null; error?: string }> {
   try {
-    const user = await getQuickSession();
-    if (!user) {
-      return { sessionId: null, error: 'Not authenticated' };
+    // AUTH-C1 / v1.0.0 Part E: chat-session creation is a mutation — must go
+    // through requireAuth so a revoked JWT (post-password-reset / role change)
+    // can't keep planting rows for 7 days.
+    const auth = await requireAuth();
+    if (!auth.success || !auth.user) {
+      return { sessionId: null, error: auth.error || 'Not authenticated' };
     }
+    const user = auth.user;
 
     const supabase = createAdminClient();
     
@@ -83,10 +87,13 @@ export async function saveMessageToSession(params: {
   complianceStatus?: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
-    const user = await getQuickSession();
-    if (!user) {
-      return { success: false, error: 'Not authenticated' };
+    // AUTH-C1 / v1.0.0 Part E: message persistence is a mutation — gate on
+    // requireAuth so revoked sessions can't keep planting messages.
+    const auth = await requireAuth();
+    if (!auth.success || !auth.user) {
+      return { success: false, error: auth.error || 'Not authenticated' };
     }
+    const user = auth.user;
 
     const { sessionId, role, content, citations, complianceStatus } = params;
     

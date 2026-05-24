@@ -18,6 +18,25 @@ vi.mock('@/lib/auth', () => ({
   getRequestMetadata: (...args: unknown[]) => mockGetRequestMetadata(...args),
 }));
 
+// AUTH-C1 / v1.0.0 Part E: API routes now boot through `requireAuth` /
+// `requireAdmin` so the JWT.tv check fires. Mock the security helpers as a
+// thin passthrough over getQuickSession so per-test session state still
+// drives behaviour but we don't have to teach every single() chain about the
+// new users-row lookup.
+vi.mock('@/lib/security', () => ({
+  requireAuth: vi.fn(async () => {
+    const user = await mockGetQuickSession();
+    if (!user) return { success: false, error: 'Authentication required' };
+    return { success: true, user };
+  }),
+  requireAdmin: vi.fn(async () => {
+    const user = await mockGetQuickSession();
+    if (!user) return { success: false, error: 'Authentication required' };
+    if (user.role !== 'admin') return { success: false, error: 'Unauthorized: Admin access required' };
+    return { success: true, user };
+  }),
+}));
+
 const mockCheckRateLimit = vi.fn();
 const mockSingle = vi.fn();
 const mockOrder = vi.fn();
@@ -126,7 +145,9 @@ describe('GET /api/chat/export', () => {
     const data = await response.json();
 
     expect(response.status).toBe(401);
-    expect(data.error).toBe('Unauthorized');
+    // AUTH-C1 / v1.0.0 Part E: requireAuth surfaces 'Authentication required'
+    // instead of the route's previous bespoke 'Unauthorized' string.
+    expect(data.error).toBe('Authentication required');
   });
 
   it('should return 400 for invalid session ID', async () => {
@@ -187,7 +208,8 @@ describe('GET /api/permits/[id]/certificate', () => {
 
     expect(response.status).toBe(401);
     const data = await response.json();
-    expect(data.error).toBe('Not authenticated');
+    // AUTH-C1 / v1.0.0 Part E: requireAuth surfaces 'Authentication required'.
+    expect(data.error).toBe('Authentication required');
   });
 
   it('should return 400 for invalid permit ID', async () => {

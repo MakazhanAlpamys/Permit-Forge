@@ -56,7 +56,11 @@ export async function uploadPermitAttachment(
     if (!csrf.valid) return { success: false, error: csrf.error };
 
     // Rate limiting
-    const rateLimitResult = await checkRateLimit(authCheck.user.id);
+    // S-H-1 / v1.0.0 Part F: attachment uploads get their own bucket so they
+    // don't starve other actions in 'default'.
+    const rateLimitResult = await checkRateLimit(authCheck.user.id, {
+      endpoint: 'permit-attachment',
+    });
     if (!rateLimitResult.allowed) {
       return { success: false, error: 'Too many requests. Please wait before uploading again.' };
     }

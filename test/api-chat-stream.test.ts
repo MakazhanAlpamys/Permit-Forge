@@ -12,6 +12,17 @@ vi.mock('@/lib/auth', () => ({
   validateCSRFToken: (...args: unknown[]) => mockValidateCSRFToken(...args),
 }));
 
+// AUTH-C1 / v1.0.0 Part E: chat-stream now boots through requireAuth. Mock
+// as a thin passthrough over getQuickSession so existing tests still drive
+// behaviour via mockGetQuickSession.
+vi.mock('@/lib/security', () => ({
+  requireAuth: vi.fn(async () => {
+    const user = await mockGetQuickSession();
+    if (!user) return { success: false, error: 'Authentication required' };
+    return { success: true, user };
+  }),
+}));
+
 // Mock rate limiting
 const mockCheckRateLimit = vi.fn();
 vi.mock('@/lib/supabase-server', () => {
@@ -103,7 +114,8 @@ describe('POST /api/chat/stream', () => {
 
     expect(response.status).toBe(401);
     const data = await response.json();
-    expect(data.error).toBe('Unauthorized');
+    // AUTH-C1 / v1.0.0 Part E: surface requireAuth's 'Authentication required'.
+    expect(data.error).toBe('Authentication required');
   });
 
   it('should return 429 when rate limited', async () => {
@@ -117,6 +129,22 @@ describe('POST /api/chat/stream', () => {
     const data = await response.json();
     expect(data.error).toBe('Rate limited');
     expect(data.retryAfter).toBe(5000);
+  });
+
+  // S-H-1 / v1.0.0 Part F: chat-stream must hit its dedicated 'chat' bucket,
+  // not 'default', otherwise a chat burst silently shares the bucket with
+  // every other endpoint and the per-endpoint limits (C11H/C22H) become moot.
+  it('checks the dedicated chat rate-limit bucket', async () => {
+    mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+    mockCheckRateLimit.mockResolvedValue({ allowed: false, retryAfterMs: 5000 });
+
+    const request = createRequest({ message: 'Hello' }, { 'x-csrf-token': 'valid-token' });
+    await POST(request);
+
+    expect(mockCheckRateLimit).toHaveBeenCalledWith(
+      'user-1',
+      expect.objectContaining({ endpoint: 'chat' }),
+    );
   });
 
   it('should return 400 on invalid input (empty message)', async () => {
@@ -222,7 +250,10 @@ describe('POST /api/chat/stream', () => {
     const request = createRequest({ message: 'Hello' }, { 'x-csrf-token': 'valid-token' });
     await POST(request);
 
-    expect(mockCheckRateLimit).toHaveBeenCalledWith('user-123');
+    expect(mockCheckRateLimit).toHaveBeenCalledWith(
+      'user-123',
+      expect.objectContaining({ endpoint: 'chat' }),
+    );
   });
 
   it('should return 403 when no CSRF token provided', async () => {

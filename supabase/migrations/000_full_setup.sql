@@ -1697,15 +1697,16 @@ CREATE POLICY "Users access own permit_certificates" ON permit_certificates
 CREATE POLICY "Service role full access to permit_certificates" ON permit_certificates
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- parent_chunks: read for authenticated, full for service_role
-CREATE POLICY "Allow read parent_chunks" ON parent_chunks
-  FOR SELECT TO authenticated USING (true);
+-- parent_chunks: service_role only (DB-C-5 / v1.0.0 Part D). The user-facing
+-- chat path reads parents via createAdminClient (service_role), so the broad
+-- "Allow read parent_chunks" policy that previously existed only leaked
+-- chunk content to direct PostgREST callers — removed.
 CREATE POLICY "Service role full access to parent_chunks" ON parent_chunks
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
--- semantic_cache: read for authenticated, full for service_role
-CREATE POLICY "Allow read semantic_cache" ON semantic_cache
-  FOR SELECT TO authenticated USING (true);
+-- semantic_cache: service_role only (DB-C-5 / v1.0.0 Part D). The "Allow read
+-- semantic_cache" policy that previously existed exposed verbatim user queries
+-- and AI responses to any logged-in user via the anon REST endpoint.
 CREATE POLICY "Service role full access to semantic_cache" ON semantic_cache
   FOR ALL TO service_role USING (true) WITH CHECK (true);
 
@@ -2666,6 +2667,11 @@ ALTER TABLE users
 -- Helper for TS callers (password changes) so the increment is atomic and
 -- can't be skipped by writing UPDATE ... SET password_hash=... and forgetting
 -- the bump.
+--
+-- DB-H-7 / v1.0.0 Part A: in-body admin guard. service_role (the only legitimate
+-- caller from app code) has auth.uid() = NULL → bypass. PostgREST-as-authenticated
+-- callers must be admin OR be bumping their own row (self-logout). Without this,
+-- any logged-in user could force-log-out any other user.
 CREATE OR REPLACE FUNCTION bump_user_token_version(p_user_id UUID)
 RETURNS INT
 LANGUAGE plpgsql
@@ -2675,6 +2681,15 @@ AS $$
 DECLARE
   v_new INT;
 BEGIN
+  IF auth.uid() IS NOT NULL AND auth.uid() <> p_user_id THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM users
+       WHERE id = auth.uid() AND role = 'admin' AND blocked = FALSE
+    ) THEN
+      RAISE EXCEPTION 'Unauthorized: admin role required' USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
   UPDATE users
      SET token_version = COALESCE(token_version, 0) + 1
    WHERE id = p_user_id
@@ -2682,8 +2697,6 @@ BEGIN
   RETURN COALESCE(v_new, 0);
 END;
 $$;
-
-GRANT EXECUTE ON FUNCTION bump_user_token_version(UUID) TO authenticated, service_role;
 
 -- Re-create admin_update_user_role with token_version bump; keep BOOLEAN
 -- return type and existing guards so callers don't need to change.
@@ -2885,6 +2898,9 @@ GRANT EXECUTE ON FUNCTION clear_code_attempt(TEXT) TO authenticated, service_rol
 
 DROP FUNCTION IF EXISTS create_permit_atomic(UUID, TEXT, TEXT, TEXT, TEXT, TEXT);
 
+-- DB-H-6 / v1.0.0 Part A: in-body identity guard. service_role calls have
+-- auth.uid() = NULL → bypass. PostgREST authenticated callers can only attribute
+-- a permit to themselves (auth.uid() = p_user_id) unless they are admin.
 CREATE OR REPLACE FUNCTION create_permit_atomic(
   p_user_id UUID,
   p_project_name TEXT,
@@ -2901,6 +2917,15 @@ AS $$
 DECLARE
   v_id UUID;
 BEGIN
+  IF auth.uid() IS NOT NULL AND auth.uid() <> p_user_id THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM users
+       WHERE id = auth.uid() AND role = 'admin' AND blocked = FALSE
+    ) THEN
+      RAISE EXCEPTION 'Unauthorized: cannot create permit for another user' USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
   INSERT INTO permit_applications (
     user_id, status, project_name, project_type, project_address,
     plot_number, project_description
@@ -2917,8 +2942,6 @@ BEGIN
   RETURN QUERY SELECT v_id;
 END;
 $$;
-
-GRANT EXECUTE ON FUNCTION create_permit_atomic(UUID, TEXT, TEXT, TEXT, TEXT, TEXT) TO authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- review_permit_atomic: status update + history insert in one transaction.
@@ -2994,6 +3017,10 @@ GRANT EXECUTE ON FUNCTION review_permit_atomic(UUID, UUID, TEXT, TEXT) TO authen
 
 DROP FUNCTION IF EXISTS delete_document_atomic(TEXT, BOOLEAN);
 
+-- DB-C-3 / v1.0.0 Part A: in-body admin guard. With p_clear_chunks=TRUE this
+-- wipes every chunk and registry row for a document — catastrophic if any
+-- logged-in user could call it via PostgREST. service_role bypass:
+-- auth.uid() = NULL.
 CREATE OR REPLACE FUNCTION delete_document_atomic(
   p_document_id TEXT,
   p_clear_chunks BOOLEAN DEFAULT FALSE
@@ -3004,6 +3031,15 @@ SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 BEGIN
+  IF auth.uid() IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM users
+       WHERE id = auth.uid() AND role = 'admin' AND blocked = FALSE
+    ) THEN
+      RAISE EXCEPTION 'Unauthorized: admin role required' USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
   IF p_clear_chunks THEN
     DELETE FROM dubai_code_chunks WHERE document_name = p_document_id;
     DELETE FROM parent_chunks WHERE document_name = p_document_id;
@@ -3016,8 +3052,6 @@ BEGIN
   END IF;
 END;
 $$;
-
-GRANT EXECUTE ON FUNCTION delete_document_atomic(TEXT, BOOLEAN) TO authenticated, service_role;
 
 
 -- ---- 010_drop_max_requests_param.sql ----
@@ -3984,6 +4018,22 @@ DECLARE
   v_project_name TEXT;
   v_user_id UUID;
 BEGIN
+  -- DB-C-2 / v1.0.0 Part A: defense-in-depth admin guard. service_role calls
+  -- (the only legitimate caller) have auth.uid() = NULL → bypass. A direct
+  -- PostgREST hit as authenticated must come from a non-blocked admin AND the
+  -- p_admin_id parameter must match auth.uid() so attribution can't be forged.
+  IF auth.uid() IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM users
+       WHERE id = auth.uid() AND role = 'admin' AND blocked = FALSE
+    ) THEN
+      RAISE EXCEPTION 'Unauthorized: admin role required' USING ERRCODE = '42501';
+    END IF;
+    IF auth.uid() <> p_admin_id THEN
+      RAISE EXCEPTION 'Unauthorized: p_admin_id must match caller' USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
   SELECT pa.status, pa.project_name, pa.user_id
     INTO v_prev_status, v_project_name, v_user_id
   FROM permit_applications pa
@@ -4018,6 +4068,82 @@ $$;
 GRANT EXECUTE ON FUNCTION submit_permit_atomic(UUID, UUID) TO service_role;
 GRANT EXECUTE ON FUNCTION revise_permit_atomic(UUID, UUID) TO service_role;
 GRANT EXECUTE ON FUNCTION review_permit_atomic(UUID, UUID, TEXT, TEXT) TO service_role;
+
+
+-- ============================================================================
+-- v1.0.0 "Auth Lockdown" (audit 2026-05-21)
+-- ============================================================================
+-- Closes DB-C-1 (RLS on code_attempts), DB-C-4 (REVOKE atomic RPCs from
+-- authenticated), DB-C-5 (semantic_cache SELECT lockdown), DB-H-6/7/8 (in-body
+-- guards above are belt; these REVOKEs are suspenders).
+--
+-- RPC ACL policy for this migration (apply per function below):
+--   - anon         : only the public search/document-registry read RPCs
+--   - authenticated: nothing in this block — every atomic mutation goes
+--                    through service_role from a Next.js server action
+--   - service_role : every block-listed function (used by createAdminClient)
+-- ============================================================================
+
+-- --------------------------------------------------------------------------
+-- DB-C-4 / DB-H-6/7/8: REVOKE the atomic RPCs from authenticated. Body
+-- guards above are defense in depth — these REVOKEs are the primary fix.
+-- DROP FUNCTION earlier in this migration also removed grants but recreating
+-- with `CREATE OR REPLACE FUNCTION` does NOT drop prior grants, so we issue
+-- the REVOKEs explicitly here for any function that wasn't dropped.
+-- --------------------------------------------------------------------------
+
+REVOKE EXECUTE ON FUNCTION submit_permit_atomic(UUID, UUID) FROM anon, authenticated, PUBLIC;
+REVOKE EXECUTE ON FUNCTION revise_permit_atomic(UUID, UUID) FROM anon, authenticated, PUBLIC;
+REVOKE EXECUTE ON FUNCTION review_permit_atomic(UUID, UUID, TEXT, TEXT) FROM anon, authenticated, PUBLIC;
+REVOKE EXECUTE ON FUNCTION create_permit_atomic(UUID, TEXT, TEXT, TEXT, TEXT, TEXT) FROM anon, authenticated, PUBLIC;
+REVOKE EXECUTE ON FUNCTION delete_document_atomic(TEXT, BOOLEAN) FROM anon, authenticated, PUBLIC;
+REVOKE EXECUTE ON FUNCTION bump_user_token_version(UUID) FROM anon, authenticated, PUBLIC;
+REVOKE EXECUTE ON FUNCTION incr_code_attempt(TEXT, INT, INT) FROM anon, authenticated, PUBLIC;
+REVOKE EXECUTE ON FUNCTION clear_code_attempt(TEXT) FROM anon, authenticated, PUBLIC;
+
+GRANT EXECUTE ON FUNCTION create_permit_atomic(UUID, TEXT, TEXT, TEXT, TEXT, TEXT) TO service_role;
+GRANT EXECUTE ON FUNCTION delete_document_atomic(TEXT, BOOLEAN) TO service_role;
+GRANT EXECUTE ON FUNCTION bump_user_token_version(UUID) TO service_role;
+GRANT EXECUTE ON FUNCTION incr_code_attempt(TEXT, INT, INT) TO service_role;
+GRANT EXECUTE ON FUNCTION clear_code_attempt(TEXT) TO service_role;
+
+-- --------------------------------------------------------------------------
+-- DB-C-1: enable RLS on code_attempts. service_role bypasses RLS by design,
+-- so legitimate server-action callers are unaffected. Without this any anon
+-- key holder could enumerate the table to confirm whether an email is in a
+-- pending verification/reset flow.
+-- --------------------------------------------------------------------------
+
+ALTER TABLE code_attempts ENABLE ROW LEVEL SECURITY;
+
+-- No policies for anon/authenticated → table is invisible to them. The grant
+-- in 008_code_attempts.sql already limited table privileges to service_role,
+-- but RLS gives the deny path a second guarantee in case grants drift.
+DROP POLICY IF EXISTS "Service role full access to code_attempts" ON code_attempts;
+CREATE POLICY "Service role full access to code_attempts" ON code_attempts
+  FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+-- --------------------------------------------------------------------------
+-- DB-C-5: drop the "Allow read semantic_cache" policy that exposed every
+-- user's query text + AI response to any authenticated caller. Cache hits
+-- already go through service_role via createAdminClient, so reads stay
+-- functional. Authenticated direct REST access now returns zero rows.
+-- --------------------------------------------------------------------------
+
+DROP POLICY IF EXISTS "Allow read semantic_cache" ON semantic_cache;
+
+-- Same defense for parent_chunks — the LLM context fetcher uses service_role
+-- via the parent-expansion path; no user-facing read happens at this layer.
+DROP POLICY IF EXISTS "Allow read parent_chunks" ON parent_chunks;
+
+-- Belt to the RLS-policy suspenders above: revoke EXECUTE on the wrapper RPCs
+-- that wrap reads of these tables. Without this an authenticated PostgREST
+-- caller can still hit the function (returns zero rows under the new RLS but
+-- the function is callable). Surfaced by the v1.0.0 db re-audit.
+REVOKE EXECUTE ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) FROM anon, authenticated, PUBLIC;
+GRANT EXECUTE ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) TO service_role;
+REVOKE EXECUTE ON FUNCTION get_parent_chunks(BIGINT[]) FROM anon, authenticated, PUBLIC;
+GRANT EXECUTE ON FUNCTION get_parent_chunks(BIGINT[]) TO service_role;
 
 
 -- ============================================================================

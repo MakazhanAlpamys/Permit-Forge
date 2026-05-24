@@ -220,3 +220,109 @@ describe('migration search_path — SECURITY DEFINER analytics functions (A7 / M
     });
   }
 });
+
+// =============================================================================
+// v1.0.0 "Auth Lockdown" — Parts A/B/C/D defenses against direct PostgREST calls
+// =============================================================================
+//
+// Pattern below: extract the *final* (last) CREATE OR REPLACE block for the
+// function name — Postgres applies whichever definition wins. The body must
+// reference `auth.uid()` somewhere so the function refuses calls made via
+// PostgREST as authenticated (auth.uid() is non-null) without an admin or
+// matching-self user. service_role calls have auth.uid() = NULL and bypass
+// the guard.
+
+function getLastFunctionBody(fn: string): string {
+  const re = new RegExp(
+    `CREATE\\s+OR\\s+REPLACE\\s+FUNCTION\\s+${fn}\\b[\\s\\S]*?\\$\\$;`,
+    'gi',
+  );
+  const matches = sql.match(re);
+  if (!matches || matches.length === 0) {
+    throw new Error(`Function ${fn} not found in migration`);
+  }
+  return matches[matches.length - 1];
+}
+
+describe('v1.0.0 Part A — RPC admin guards inside function bodies (DB-C-2/3, DB-H-6/7)', () => {
+  it('review_permit_atomic guards admin role inside the function body', () => {
+    // DB-C-2: even if grant accidentally lets authenticated in, the body
+    // must refuse non-admin callers. service_role bypass: auth.uid() = NULL.
+    const body = getLastFunctionBody('review_permit_atomic');
+    expect(body).toMatch(/auth\.uid\(\)/i);
+    expect(body).toMatch(/role\s*=\s*'admin'/i);
+  });
+
+  it('delete_document_atomic guards admin role inside the function body', () => {
+    // DB-C-3: same shape — admin or service_role only.
+    const body = getLastFunctionBody('delete_document_atomic');
+    expect(body).toMatch(/auth\.uid\(\)/i);
+    expect(body).toMatch(/role\s*=\s*'admin'/i);
+  });
+
+  it('create_permit_atomic guards p_user_id against the caller identity', () => {
+    // DB-H-6: a logged-in user must not be able to attribute permits to
+    // other users. Either auth.uid() = NULL (service_role) or
+    // auth.uid() = p_user_id (or admin).
+    const body = getLastFunctionBody('create_permit_atomic');
+    expect(body).toMatch(/auth\.uid\(\)/i);
+    expect(body).toMatch(/p_user_id/i);
+  });
+
+  it('bump_user_token_version is callable only by admins (or self via service_role)', () => {
+    // DB-H-7: any user could force-log-out any other user without this guard.
+    const body = getLastFunctionBody('bump_user_token_version');
+    expect(body).toMatch(/auth\.uid\(\)/i);
+    expect(body).toMatch(/role\s*=\s*'admin'/i);
+  });
+});
+
+describe('v1.0.0 Part B — REVOKE EXECUTE on sensitive atomic RPCs from authenticated (DB-C-4 / DB-H-6/7/8)', () => {
+  // DB-C-4: the final create/replace cycle should leave these callable only by
+  // service_role. App code always invokes them through createAdminClient.
+  const FUNCTIONS = [
+    'submit_permit_atomic',
+    'revise_permit_atomic',
+    'review_permit_atomic',
+    'create_permit_atomic',
+    'delete_document_atomic',
+    'bump_user_token_version',
+    'incr_code_attempt',
+    'clear_code_attempt',
+  ] as const;
+
+  for (const fn of FUNCTIONS) {
+    it(`explicitly REVOKEs EXECUTE on ${fn} from authenticated`, () => {
+      const re = new RegExp(
+        `REVOKE[^;]*EXECUTE[^;]*ON\\s+FUNCTION\\s+${fn}[^;]*\\bauthenticated\\b[^;]*;`,
+        'i',
+      );
+      expect(sql, `${fn} should REVOKE EXECUTE from authenticated`).toMatch(re);
+    });
+  }
+});
+
+describe('v1.0.0 Part C — code_attempts has Row Level Security enabled (DB-C-1)', () => {
+  it('ALTER TABLE code_attempts ENABLE ROW LEVEL SECURITY appears', () => {
+    expect(sql).toMatch(
+      /ALTER\s+TABLE\s+code_attempts\s+ENABLE\s+ROW\s+LEVEL\s+SECURITY/i,
+    );
+  });
+});
+
+describe('v1.0.0 Part D — semantic_cache SELECT lockdown (DB-C-5)', () => {
+  it('does NOT grant SELECT on semantic_cache to authenticated via policy', () => {
+    // The previous "Allow read semantic_cache" policy let any authenticated
+    // user read every other user's queries + AI responses. Must be removed.
+    const offending =
+      /CREATE\s+POLICY\s+"Allow read semantic_cache"\s+ON\s+semantic_cache\s+FOR\s+SELECT\s+TO\s+authenticated/i;
+    expect(sql).not.toMatch(offending);
+  });
+
+  it('keeps service_role full access policy on semantic_cache', () => {
+    // service_role still needs full access for cache hits via createAdminClient.
+    expect(sql).toMatch(
+      /CREATE\s+POLICY\s+"Service role full access to semantic_cache"\s+ON\s+semantic_cache\s+FOR\s+ALL\s+TO\s+service_role/i,
+    );
+  });
+});

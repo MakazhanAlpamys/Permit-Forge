@@ -122,7 +122,9 @@ describe('Chat History Server Actions', () => {
     });
 
     it('should return error when not authenticated', async () => {
-      mockGetQuickSession.mockResolvedValue(null);
+      // AUTH-C1 / v1.0.0 Part E: createChatSession is now gated by requireAuth
+      // (was getQuickSession). Drive the unauth path via the requireAuth mock.
+      mockRequireAuth.mockResolvedValueOnce({ success: false, error: 'Not authenticated' });
 
       const result = await createChatSession();
 
@@ -162,7 +164,8 @@ describe('Chat History Server Actions', () => {
     });
 
     it('should return error when not authenticated', async () => {
-      mockGetQuickSession.mockResolvedValue(null);
+      // AUTH-C1 / v1.0.0 Part E: saveMessageToSession is now gated by requireAuth.
+      mockRequireAuth.mockResolvedValueOnce({ success: false, error: 'Not authenticated' });
 
       const result = await saveMessageToSession({
         sessionId: validUUID,

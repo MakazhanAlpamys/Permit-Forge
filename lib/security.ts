@@ -47,11 +47,19 @@ export interface SecurityCheckResult {
 /**
  * Verify user is authenticated
  * Returns user data or error
+ *
+ * AUTH-C1 / v1.0.0 Part E: the Edge middleware re-checks JWT.tv against
+ * users.token_version on every page nav, but its matcher excludes `/api/*`.
+ * Every API route boots through `requireAuth`, so the same comparison happens
+ * here on the same DB hop that already reads `blocked` (no extra round-trip).
+ * If `tv < users.token_version` the session has been revoked
+ * (admin password reset, role change, forced logout) and we reject — without
+ * this a stolen JWT survives on the API surface for the full 7-day expiry.
  */
 export async function requireAuth(): Promise<SecurityCheckResult> {
   try {
     const user = await getQuickSession();
-    
+
     if (!user) {
       return {
         success: false,
@@ -59,11 +67,12 @@ export async function requireAuth(): Promise<SecurityCheckResult> {
       };
     }
 
-    // Verify user is not blocked (JWT alone doesn't reflect current block status)
+    // Verify user is not blocked AND JWT.tv hasn't been left behind by an
+    // admin-side token_version bump. JWT alone doesn't reflect either.
     const supabase = createAdminClient();
     const { data: dbUser } = await supabase
       .from('users')
-      .select('blocked')
+      .select('blocked, token_version')
       .eq('id', user.id)
       .single();
 
@@ -74,15 +83,27 @@ export async function requireAuth(): Promise<SecurityCheckResult> {
       };
     }
 
+    const dbTokenVersion: number =
+      typeof (dbUser as { token_version?: number } | null | undefined)?.token_version === 'number'
+        ? (dbUser as { token_version: number }).token_version
+        : 0;
+    if (user.tokenVersion < dbTokenVersion) {
+      return {
+        success: false,
+        error: 'Session revoked',
+      };
+    }
+
+    const { tokenVersion: _tv, ...userForReturn } = user;
     return {
       success: true,
-      user
+      user: userForReturn,
     };
   } catch (error) {
     console.error('Auth check error:', error);
-    return { 
-      success: false, 
-      error: 'Authentication failed' 
+    return {
+      success: false,
+      error: 'Authentication failed'
     };
   }
 }
