@@ -833,8 +833,8 @@ Update after every release ships:
 | v1.3.0 | `783de45` | 4 | 1 | 1 | 0 | Pipeline resilience — A/B/C/D + re-audit Part E (PR1/PR2/PR4/PR5/PR6 folded in before push). v1.3.0 tag. |
 | v1.4.0 | `8bab47c` | 10 (coverage) | 0 | 0 | 0 | Coverage foundation — Parts A/B/C/E + re-audit Part F (PT1 fixed). +101 net tests, 72.9% lines, 60.4% branches. Part D Playwright deferred. v1.4.0 tag. |
 | v1.5.0 | `688cb23` | 0 | 11 | 18 | 0 | Security + DB cleanup — Parts B/C/D/E/F + re-audit Part G (PSE1 Crit + PSE2 High + PSE3 Med + PSE4/PSE5 Low fixed before push). +30 net tests. Part A wontfix. v1.5.0 tag. |
-| v1.6.0 | — | 0 | 5 | 4 | 0 | TypeScript safety — Parts A/B/C/D/E/F shipped. TS-M-1/3/8 deferred (low-impact polish + withMutation belongs to v1.8). Pending push. |
-| v1.7.0 | — | 0 | 7 | 5 | 0 | Architecture cleanup — Parts A/B/C/D/E/F/G + re-audit Part H (M-1 log flood dedup + M-2 embed-dim drift warn). A-H-4 (TTL respect in bulk fetch) + A-H-5 (state-machine split, was already pure) deferred. A-M-6 deferred to v1.8 SIM-class. A-M-7 deferred to v1.9. A-M-8 unreachable. +49 net tests, 73.04% lines, 60.91% branches. Pending push. |
+| v1.6.0 | `8f270d1` | 0 | 5 | 4 | 0 | TypeScript safety — Parts A/B/C/D/E/F shipped. TS-M-1/3/8 deferred (low-impact polish + withMutation belongs to v1.8). |
+| v1.7.0 | `b12a0bc` | 0 | 7 | 5 | 0 | Architecture cleanup — Parts A/B/C/D/E/F/G + re-audit Part H (M-1 log flood dedup + M-2 embed-dim drift warn). A-H-4 (TTL respect in bulk fetch) + A-H-5 (state-machine split, was already pure) deferred. A-M-6 deferred to v1.8 SIM-class. A-M-7 deferred to v1.9. A-M-8 unreachable. +49 net tests, 73.04% lines, 60.91% branches. |
 | v1.8.0 | — | 0 | 12 | 16 | 0 | Refactor + simplify |
 | v1.9.0 | — | 0 | 0 | 15 | 0 | Medium kitchen sink |
 | v1.10.0 | — | 0 | 0 | 0 | 64 | Low + demo polish |
