@@ -261,4 +261,39 @@ describe('document-registry cache — error path (B2 / C7)', () => {
     expect(out[0].id).toBe('doc-b');
     expect(mockFrom).toHaveBeenCalledTimes(2);
   });
+
+  // A-H-2 / v1.7.0 Part C: surface cold-misses so the "Building Code"
+  // fallback label in rag.buildContext is observable in production logs.
+  it('getDocumentByIdSync warns once per id when the cache is cold', async () => {
+    const reg = await freshModule();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // No prior getAllDocuments call → cache is empty → cold miss.
+    expect(reg.getDocumentByIdSync('missing-doc')).toBeUndefined();
+    expect(reg.getDocumentByIdSync('missing-doc')).toBeUndefined();
+
+    // Exactly one warn for the repeated id (rate-limited via internal Set).
+    const cold = warnSpy.mock.calls.filter((c) =>
+      typeof c[0] === 'string' && c[0].includes('cold miss for "missing-doc"'),
+    );
+    expect(cold.length).toBe(1);
+
+    warnSpy.mockRestore();
+  });
+
+  it('invalidateRegistryCache resets the cold-miss warn dedup', async () => {
+    const reg = await freshModule();
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    reg.getDocumentByIdSync('id-x'); // warn #1
+    reg.invalidateRegistryCache();
+    reg.getDocumentByIdSync('id-x'); // warn #2 — new window
+
+    const cold = warnSpy.mock.calls.filter((c) =>
+      typeof c[0] === 'string' && c[0].includes('cold miss for "id-x"'),
+    );
+    expect(cold.length).toBe(2);
+
+    warnSpy.mockRestore();
+  });
 });

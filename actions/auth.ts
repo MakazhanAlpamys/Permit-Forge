@@ -521,7 +521,24 @@ export async function forgotPasswordAction(
       })
       .eq('id', user.id);
 
-    await sendPasswordResetEmail(user.email, code);
+    // A-H-6 / v1.7.0 Part D: inspect the SMTP result. Pre-v1.7 we fired and
+    // forgot — a SMTP-down window left users staring at "code sent" with no
+    // code arriving, with a live reset_code in the DB that an attacker who
+    // later compromised the table could redeem. Failure path: wipe the
+    // reset_code so the half-completed reset can't be exploited, and surface
+    // an error so the user retries (instead of waiting forever).
+    //
+    // Email enumeration safety is preserved by the no-such-user / blocked /
+    // unverified branch above (always-success). Reaching this point means
+    // we already confirmed the account exists for this email.
+    const emailSent = await sendPasswordResetEmail(user.email, code);
+    if (!emailSent) {
+      await supabase
+        .from('users')
+        .update({ reset_code: null, reset_code_expires_at: null })
+        .eq('id', user.id);
+      return { error: 'Failed to send reset email. Please try again in a few minutes.' };
+    }
 
     return { success: true };
   } catch (error) {

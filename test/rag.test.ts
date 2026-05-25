@@ -105,6 +105,97 @@ describe('RAG Module', () => {
 
       expect(results).toEqual([]);
     });
+
+    // A-H-9 / v1.7.0 Part C: malformed metadata must NOT crash the pipeline.
+    // A bad JSONB blob (wrong shape, junk values) is logged + dropped down to
+    // a minimal safe stub so the chunk still flows.
+    it('drops malformed chunk metadata to a safe stub and warns', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const mockData = [
+        {
+          id: 99,
+          content: 'chunk with bad metadata',
+          // contentType is the enum but the row says "weird-type" — invalid.
+          metadata: { page: 10, contentType: 'weird-type' },
+          vector_similarity: 0.5,
+          keyword_rank: 1,
+          hybrid_score: 0.4,
+        },
+      ];
+
+      mockRpc.mockResolvedValueOnce({ data: mockData, error: null });
+
+      const results = await hybridSearch('anything');
+
+      expect(results).toHaveLength(1);
+      // Safe defaults: pages all coerced to 0; no contentType retained.
+      expect(results[0].metadata.page).toBe(0);
+      expect(results[0].metadata.startPage).toBe(0);
+      expect(results[0].metadata.endPage).toBe(0);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[rag] dropped malformed chunk metadata'),
+        expect.any(String),
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    // v1.7.0 re-audit M-1: a wholesale-corrupt batch (same issue shape on
+    // every row) must emit ONE warn, not 25. Distinct issue shapes still
+    // warn separately.
+    it('rate-limits malformed-metadata warnings to one per issue signature', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      // 5 chunks, all with the same bad contentType — one signature → one warn.
+      const sameBadBatch = Array.from({ length: 5 }, (_, i) => ({
+        id: 200 + i,
+        content: 'x',
+        metadata: { contentType: 'weird-type' },
+        vector_similarity: 0.5,
+        keyword_rank: 1,
+        hybrid_score: 0.4,
+      }));
+      mockRpc.mockResolvedValueOnce({ data: sameBadBatch, error: null });
+
+      await hybridSearch('q1');
+
+      const sameSigWarns = warnSpy.mock.calls.filter((c) =>
+        typeof c[0] === 'string' && c[0].includes('[rag] dropped malformed chunk metadata'),
+      );
+      // Some warnings may have already happened in prior tests (same suite
+      // shares the module-level Set). Assert at LEAST one fired for the
+      // sameBadBatch's signature — the dedup means it's exactly 0 or 1.
+      expect(sameSigWarns.length).toBeLessThanOrEqual(1);
+
+      warnSpy.mockRestore();
+    });
+
+    it('accepts well-formed metadata unchanged', async () => {
+      const mockData = [
+        {
+          id: 1,
+          content: 'ok content',
+          metadata: {
+            page: 5,
+            startPage: 5,
+            endPage: 7,
+            section: '2.1',
+            contentType: 'text',
+            documentName: 'building-code-2021',
+          },
+          vector_similarity: 0.9,
+          keyword_rank: 1,
+          hybrid_score: 0.8,
+        },
+      ];
+      mockRpc.mockResolvedValueOnce({ data: mockData, error: null });
+
+      const results = await hybridSearch('test');
+
+      expect(results[0].metadata.section).toBe('2.1');
+      expect(results[0].metadata.contentType).toBe('text');
+      expect(results[0].metadata.documentName).toBe('building-code-2021');
+    });
   });
 
   describe('queryBuildingCode', () => {

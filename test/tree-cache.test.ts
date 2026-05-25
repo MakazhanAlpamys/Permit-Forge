@@ -261,3 +261,73 @@ describe('clearDocumentTreeCache', () => {
     expect(mod._getCacheState()).toBeNull();
   });
 });
+
+// ----------------------------------------------------------------------------
+// A-H-3 / v1.7.0 Part B: LRU eviction + dead-entry pruning
+// ----------------------------------------------------------------------------
+
+describe('LRU eviction (A-H-3)', () => {
+  it('evicts the oldest entry when the cache exceeds MAX_CACHED_DOCS', async () => {
+    const mod = await freshModule();
+    const max = mod.MAX_CACHED_DOCS;
+    expect(typeof max).toBe('number');
+    expect(max).toBeGreaterThan(0);
+
+    // Pre-populate the cache up to the cap.
+    for (let i = 0; i < max; i++) {
+      mod._setCacheEntry(`doc-${i}`, {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: sampleTree as any,
+        updatedAt: 'x',
+        cachedAt: Date.now() + i, // each later entry is newer
+      });
+    }
+    expect(mod._cacheSize()).toBe(max);
+
+    // Adding one more must evict the oldest (doc-0).
+    mod._setCacheEntry('doc-new', {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: sampleTree as any,
+      updatedAt: 'x',
+      cachedAt: Date.now() + max,
+    });
+    expect(mod._cacheSize()).toBe(max);
+    expect(mod._hasCacheEntry('doc-0')).toBe(false);
+    expect(mod._hasCacheEntry('doc-new')).toBe(true);
+  });
+});
+
+describe('dead-entry pruning (A-L-2)', () => {
+  it('drops cache entries for documents not in the L2 SELECT result', async () => {
+    const mod = await freshModule();
+    // Seed entries for two docs.
+    mod._setCacheEntry('doc-a', {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: sampleTree as any,
+      updatedAt: 'x',
+      cachedAt: Date.now(),
+    });
+    mod._setCacheEntry('doc-ghost', {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: sampleTree as any,
+      updatedAt: 'x',
+      cachedAt: Date.now(),
+    });
+    expect(mod._cacheSize()).toBe(2);
+
+    // L2 returns only doc-a — doc-ghost was deleted from the registry.
+    mockSelect.mockReturnValueOnce(
+      Promise.resolve({
+        data: [
+          { document_name: 'doc-a', tree_data: sampleTree, updated_at: '2025-06-01T00:00:00Z' },
+        ],
+        error: null,
+      }),
+    );
+
+    await mod.getAllCachedDocumentTrees();
+
+    expect(mod._hasCacheEntry('doc-a')).toBe(true);
+    expect(mod._hasCacheEntry('doc-ghost')).toBe(false);
+  });
+});

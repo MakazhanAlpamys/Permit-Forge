@@ -82,6 +82,12 @@ vi.mock('@/lib/document-selector', () => ({
   invalidateProfileCache: () => mockInvalidateProfile(),
 }));
 
+// v1.7.0 Part B: lib/pdf-ingestion now invalidates via the centralized helper.
+const mockInvalidateAll = vi.fn();
+vi.mock('@/lib/document-cache', () => ({
+  invalidateAllDocumentCaches: (...args: unknown[]) => mockInvalidateAll(...args),
+}));
+
 import { createAdminClient } from '@/lib/supabase-server';
 import {
   runIngestionPipeline,
@@ -405,8 +411,9 @@ describe('runIngestionPipeline — happy path', () => {
     // document_registry.update was called with keywords + categories
     const registryFromCalls = supa.from.mock.calls.filter((c) => c[0] === 'document_registry');
     expect(registryFromCalls.length).toBeGreaterThan(0);
-    expect(mockInvalidateRegistry).toHaveBeenCalled();
-    expect(mockInvalidateProfile).toHaveBeenCalled();
+    // v1.7.0 Part B: invalidation now flows through the centralized helper,
+    // scoped to the document just ingested.
+    expect(mockInvalidateAll).toHaveBeenCalledWith('doc-a');
   });
 
   it('does NOT overwrite admin-edited keywords when keywords_auto_generated=false', async () => {

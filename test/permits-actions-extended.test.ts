@@ -394,6 +394,18 @@ describe('Permits Server Actions Extended', () => {
   // ---------------------------------------------------------------------------
 
   describe('runComplianceCheck', () => {
+    // A-H-1 / v1.7.0 Part A: the conditional UPDATE now does
+    // `.update(...).eq(...).eq(...).eq('version', v).select('id')` so
+    // the await target is the .select('id') Promise, not the .eq chain.
+    function mockComplianceUpdateSelectResult(rows: Array<{ id: string }>) {
+      mockSelect.mockImplementation((col: string) => {
+        if (col === 'id') {
+          return Promise.resolve({ data: rows, error: null });
+        }
+        return { eq: mockEq, single: mockSingle, order: mockOrder };
+      });
+    }
+
     it('should run compliance check on draft permit with building details', async () => {
       const complianceResult = {
         overallStatus: 'compliant',
@@ -405,24 +417,58 @@ describe('Permits Server Actions Extended', () => {
       // Mock ownership
       mockSingle
         .mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null })
-        // Mock permit data
+        // Mock permit data (v1.7.0 Part A: selects version too)
         .mockResolvedValueOnce({
           data: {
             status: 'draft',
             building_details: { numberOfFloors: 5, totalBuiltUpArea: 2000 },
             compliance_requirements: { fireSafety: true },
             project_type: 'residential',
+            version: 7,
           },
           error: null,
         })
-        // B3 re-check: permit still in draft after the LLM call returned
-        .mockResolvedValueOnce({ data: { status: 'draft' }, error: null });
+        // B3 re-check: permit still in draft, same version
+        .mockResolvedValueOnce({ data: { status: 'draft', version: 7 }, error: null });
+      mockComplianceUpdateSelectResult([{ id: validUUID }]);
 
       const result = await runComplianceCheck(validUUID, 'csrf-token');
 
       expect(result.success).toBe(true);
       expect(result.data).toEqual(complianceResult);
       expect(mockCheckPermitCompliance).toHaveBeenCalled();
+      // Conditional UPDATE includes the version snapshot.
+      expect(mockEq).toHaveBeenCalledWith('version', 7);
+    });
+
+    // A-H-1 / v1.7.0 Part A: version-check TOCTOU. If the user edits
+    // building_details or compliance_requirements while the 60s LLM call
+    // is in flight, the version column moves and the compliance result
+    // describes a stale shape — must NOT be persisted.
+    it('discards the result if the permit version moved while LLM was thinking (A-H-1)', async () => {
+      const complianceResult = { overallStatus: 'compliant', checks: [], summary: 'OK' };
+      mockCheckPermitCompliance.mockResolvedValue(complianceResult);
+
+      mockSingle
+        .mockResolvedValueOnce({ data: { user_id: testUser.id }, error: null })
+        .mockResolvedValueOnce({
+          data: {
+            status: 'draft',
+            building_details: { numberOfFloors: 5, totalBuiltUpArea: 2000 },
+            compliance_requirements: {},
+            project_type: 'residential',
+            version: 3,
+          },
+          error: null,
+        })
+        // Same status but version bumped — user edited building_details
+        // in another tab.
+        .mockResolvedValueOnce({ data: { status: 'draft', version: 4 }, error: null });
+
+      const result = await runComplianceCheck(validUUID, 'csrf-token');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/content changed|edited/i);
     });
 
     it('discards the result if the permit was submitted while LLM was thinking (B3)', async () => {
@@ -437,11 +483,12 @@ describe('Permits Server Actions Extended', () => {
             building_details: { numberOfFloors: 5, totalBuiltUpArea: 2000 },
             compliance_requirements: {},
             project_type: 'residential',
+            version: 1,
           },
           error: null,
         })
         // Permit transitioned to 'submitted' in another tab while LLM ran
-        .mockResolvedValueOnce({ data: { status: 'submitted' }, error: null });
+        .mockResolvedValueOnce({ data: { status: 'submitted', version: 1 }, error: null });
 
       const result = await runComplianceCheck(validUUID, 'csrf-token');
 

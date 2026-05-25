@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { PermitStatusBadge } from './permit-status-badge';
 import { PROJECT_TYPES } from '@/lib/constants';
 import { MapPin, Building2, Trash2, ChevronRight } from 'lucide-react';
+import { isOperationAllowed } from '@/lib/permit-state-machine';
 import type { PermitApplication } from '@/types';
 
 interface PermitCardProps {
@@ -59,7 +60,11 @@ export function PermitCard({ permit, onView, onDelete }: PermitCardProps) {
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
-            {permit.status === 'draft' && onDelete && (
+            {/* A-M-2 / v1.7.0 Part A: client-side hint backed by the same
+                state-machine rule the server action enforces. A future
+                status transition rule change is now picked up here
+                automatically. */}
+            {isOperationAllowed(permit.status, 'delete') && onDelete && (
               <Button
                 variant="ghost"
                 size="icon"

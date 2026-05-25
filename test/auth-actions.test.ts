@@ -493,6 +493,7 @@ describe('Auth Server Actions', () => {
         },
         error: null,
       });
+      mockSendPasswordResetEmail.mockResolvedValueOnce(true);
 
       const result = await forgotPasswordAction('test@example.com');
 
@@ -501,6 +502,39 @@ describe('Auth Server Actions', () => {
       expect(mockUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ reset_code: '123456' })
       );
+    });
+
+    // A-H-6 / v1.7.0 Part D: when the SMTP send returns false (transient
+    // outage) for a REAL user, we must wipe reset_code so a never-emailed
+    // code can't be used later, AND surface an error message so the user
+    // knows the reset didn't actually arrive. Email-enumeration safety is
+    // preserved for the no-such-user branch above (always-success).
+    it('clears reset_code and returns an error when email send fails', async () => {
+      mockSingle.mockResolvedValueOnce({
+        data: {
+          id: 'user-456',
+          email: 'real@example.com',
+          blocked: false,
+          email_verified: true,
+        },
+        error: null,
+      });
+      mockSendPasswordResetEmail.mockResolvedValueOnce(false);
+
+      const result = await forgotPasswordAction('real@example.com');
+
+      expect(result.success).toBeUndefined();
+      expect(result.error).toMatch(/email|send|try again/i);
+      // First update sets the reset_code; second update wipes it after the
+      // email send failed.
+      const setCodeCall = mockUpdate.mock.calls.find(
+        (c) => (c[0] as { reset_code?: string | null })?.reset_code === '123456',
+      );
+      const wipeCodeCall = mockUpdate.mock.calls.find(
+        (c) => (c[0] as { reset_code?: string | null })?.reset_code === null,
+      );
+      expect(setCodeCall).toBeDefined();
+      expect(wipeCodeCall).toBeDefined();
     });
 
     it('should return success for nonexistent email (anti-enumeration)', async () => {

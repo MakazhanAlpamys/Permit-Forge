@@ -7,8 +7,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { generateEmbedding, DailyQuotaExhaustedError } from '@/lib/gemini';
 import { createPDFParser, PDFParser } from '@/lib/pdf-parser';
 import { extractKeywords } from '@/lib/keyword-extractor';
-import { invalidateRegistryCache } from '@/lib/document-registry';
-import { invalidateProfileCache } from '@/lib/document-selector';
+import { invalidateAllDocumentCaches } from '@/lib/document-cache';
 import type {
   ChunkMetadata,
   PDFPageContent,
@@ -285,8 +284,10 @@ async function persistKeywordsStage(
     })
     .eq('id', documentId);
 
-  invalidateRegistryCache();
-  invalidateProfileCache();
+  // v1.7.0 Part B: single throat — also nukes the tree cache so a
+  // re-ingest of a document is visible to chat queries immediately, even
+  // if runIngestionPipeline ever gets called outside the SSE action.
+  invalidateAllDocumentCaches(documentId);
 }
 
 async function planChunksStage(

@@ -4,6 +4,7 @@
 
 import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { GoogleGenAI } from '@google/genai';
+import { GEMINI_MODEL_CHAT, GEMINI_MODEL_EMBED, GEMINI_EMBED_DIMS } from '@/lib/llm-config';
 
 // -----------------------------------------------------------------------------
 // Lazy model initialization — avoids crashing non-AI pages when key is absent
@@ -27,7 +28,9 @@ let _genaiClient: GoogleGenAI | null = null;
 export function getChatModel(): ChatGoogleGenerativeAI {
   if (!_chatModel) {
     _chatModel = new ChatGoogleGenerativeAI({
-      model: 'gemini-2.5-flash',
+      // v1.7.0 Part F / A-H-8: model id sourced from lib/llm-config so a
+      // provider rename is a one-edit job. Same for getStreamingModel below.
+      model: GEMINI_MODEL_CHAT,
       apiKey: getApiKey(),
       temperature: 0,
       maxOutputTokens: 4096,
@@ -40,7 +43,7 @@ export function getChatModel(): ChatGoogleGenerativeAI {
 export function getStreamingModel(): ChatGoogleGenerativeAI {
   if (!_streamingModel) {
     _streamingModel = new ChatGoogleGenerativeAI({
-      model: 'gemini-2.5-flash',
+      model: GEMINI_MODEL_CHAT,
       apiKey: getApiKey(),
       temperature: 0,
       maxOutputTokens: 4096,
@@ -106,9 +109,10 @@ export async function generateEmbedding(
     }
     try {
       const result = await getGenaiClient().models.embedContent({
-        model: 'gemini-embedding-001',
+        // v1.7.0 Part F / A-H-8: embedding model + output dim from llm-config.
+        model: GEMINI_MODEL_EMBED,
         contents: text,
-        config: { outputDimensionality: 768 },
+        config: { outputDimensionality: GEMINI_EMBED_DIMS },
       });
       const values = result.embeddings?.[0]?.values;
       if (!values || values.length === 0) {

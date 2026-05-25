@@ -7,9 +7,7 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { requireAdmin, requireCSRF } from '@/lib/security';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
-import { clearDocumentTreeCache } from '@/lib/tree-cache';
-import { invalidateRegistryCache } from '@/lib/document-registry';
-import { invalidateProfileCache } from '@/lib/document-selector';
+import { invalidateAllDocumentCaches } from '@/lib/document-cache';
 import { DOCUMENT_PDF_LIMITS } from '@/lib/constants';
 import { uploadDocumentPdfShared } from '@/lib/document-pdf-upload';
 
@@ -154,9 +152,10 @@ export async function upsertDocument(
       return { success: false, error: error.message };
     }
 
-    // Invalidate caches so new document is visible immediately
-    invalidateRegistryCache();
-    invalidateProfileCache();
+    // Invalidate caches so new document is visible immediately. v1.7.0 Part B:
+    // single throat through invalidateAllDocumentCaches — no tree-cache
+    // bound to a new registration yet, so omit the documentName arg.
+    invalidateAllDocumentCaches();
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({
@@ -229,21 +228,20 @@ export async function deleteDocument(
       return { success: false, error: error.message };
     }
 
-    if (clearChunks) {
-      clearDocumentTreeCache(documentId);
-      if (storagePath) {
-        try {
-          await supabase.storage
-            .from(DOCUMENT_PDF_LIMITS.storageBucket)
-            .remove([storagePath]);
-        } catch (storageErr) {
-          console.error('Storage cleanup failed (orphan left):', storageErr);
-        }
+    if (clearChunks && storagePath) {
+      try {
+        await supabase.storage
+          .from(DOCUMENT_PDF_LIMITS.storageBucket)
+          .remove([storagePath]);
+      } catch (storageErr) {
+        console.error('Storage cleanup failed (orphan left):', storageErr);
       }
     }
 
-    invalidateRegistryCache();
-    invalidateProfileCache();
+    // v1.7.0 Part B: single throat. Scopes the tree-cache eviction to this
+    // document; soft-delete still benefits from clearing the per-doc tree
+    // since the document is now invisible to chat queries either way.
+    invalidateAllDocumentCaches(documentId);
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({
@@ -296,8 +294,9 @@ export async function restoreDocument(
       return { success: false, error: error.message };
     }
 
-    invalidateRegistryCache();
-    invalidateProfileCache();
+    // v1.7.0 Part B: single throat. Tree cache may already be empty for a
+    // soft-deleted document; harmless no-op when so.
+    invalidateAllDocumentCaches(documentId);
 
     // CP-C-5 (v1.2.0 Part B): log restoration so the admin audit log shows
     // a document was re-activated. Reuse `pdf_ingested` action type with a

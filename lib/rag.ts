@@ -3,11 +3,13 @@
 // Hybrid Search with pre-computed embeddings, document filtering, CRAG check
 // ============================================================================
 
+import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase-server';
 import { embeddingsModel } from '@/lib/gemini';
 import { getDocumentByIdSync } from '@/lib/document-registry';
 import { KEYWORD_WEIGHT, VECTOR_WEIGHT } from '@/lib/constants';
 import { EXACT_REFERENCE_REGEX } from '@/lib/agents';
+import { CHAT_PIPELINE_CONFIG } from '@/lib/chat-pipeline-config';
 import type { MatchedChunk, RAGQuery, RAGResult, ChunkMetadata, HybridSearchResult } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -30,7 +32,10 @@ const MAX_CHUNK_LENGTH = 1500;
 // 0.08 is calibrated against the empirical hybrid score range: rank-1 hits
 // in both vector + keyword pass; weak (no-vector-match + rank-20+ keyword)
 // hits fail. The exact-search path returns similarity=1.0 so it always passes.
-const CRAG_THRESHOLD = 0.08;
+//
+// v1.7.0 Part G (A-M-4): value lives in CHAT_PIPELINE_CONFIG so operators
+// can tune it together with the reranker weights.
+const CRAG_THRESHOLD = CHAT_PIPELINE_CONFIG.CRAG_THRESHOLD;
 
 // -----------------------------------------------------------------------------
 // Row mappers (F11 / Simplify #11)
@@ -40,20 +45,79 @@ const CRAG_THRESHOLD = 0.08;
 // must be numbers, never undefined. These helpers centralize that rule and
 // the row → MatchedChunk / HybridSearchResult mapping.
 
+/**
+ * A-H-9 / v1.7.0 Part C — Zod schema for the JSONB `metadata` column on
+ * dubai_code_chunks. Permissive on purpose: missing fields default to safe
+ * values (page=0, content='text') rather than throwing, because chunks
+ * ingested before later schema fields existed must still be searchable. A
+ * parse failure logs a warning and we fall back to a minimal stub metadata
+ * so the row still flows through the pipeline — losing one chunk's
+ * citations is strictly better than crashing the request.
+ */
+const ChunkMetadataSchema = z.object({
+  page: z.number().optional(),
+  startPage: z.number().optional(),
+  endPage: z.number().optional(),
+  chapter: z.string().optional(),
+  section: z.string().optional(),
+  sectionTitle: z.string().optional(),
+  sectionPath: z.array(z.string()).optional(),
+  tableId: z.string().optional(),
+  tableName: z.string().optional(),
+  isTable: z.boolean().optional(),
+  contentType: z.enum(['text', 'table', 'list', 'heading']).optional(),
+  documentName: z.string().optional(),
+});
+
+/**
+ * v1.7.0 re-audit (M-1): bounded dedup so a wholesale-corrupt batch (25
+ * chunks × hybrid + reranker pass-throughs ≈ 75 emits/request) cannot
+ * flood Vercel log volume. We key on the JOINED issue signature so two
+ * distinct schemas still both emit, but the same shape only emits once.
+ * Bounded at 100 entries — past that we evict the oldest, on the
+ * assumption a long-running process won't see more than a handful of
+ * distinct corruption shapes in its lifetime.
+ */
+const MAX_WARNED_ISSUE_SIGNATURES = 100;
+const warnedIssueSignatures = new Set<string>();
+
 /** Ensure page-tracking fields on chunk metadata are numbers (default 0). */
-function normalizeChunkMetadata(metadata: ChunkMetadata | null | undefined): ChunkMetadata {
+function normalizeChunkMetadata(metadata: unknown): ChunkMetadata {
+  const parsed = ChunkMetadataSchema.safeParse(metadata ?? {});
+  let base: z.infer<typeof ChunkMetadataSchema>;
+  if (parsed.success) {
+    base = parsed.data;
+  } else {
+    // Don't crash the pipeline on one malformed metadata blob — log + degrade.
+    const signature = parsed.error.issues
+      .map((i) => `${i.path.join('.')}:${i.code}`)
+      .join('|');
+    if (!warnedIssueSignatures.has(signature)) {
+      if (warnedIssueSignatures.size >= MAX_WARNED_ISSUE_SIGNATURES) {
+        // Evict oldest (insertion-order Set iteration); keeps the set bounded.
+        const oldest = warnedIssueSignatures.values().next().value;
+        if (oldest !== undefined) warnedIssueSignatures.delete(oldest);
+      }
+      warnedIssueSignatures.add(signature);
+      console.warn(
+        '[rag] dropped malformed chunk metadata:',
+        parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+      );
+    }
+    base = {};
+  }
   return {
-    ...(metadata || {}),
-    page: metadata?.page ?? 0,
-    startPage: metadata?.startPage ?? 0,
-    endPage: metadata?.endPage ?? 0,
+    ...base,
+    page: base.page ?? 0,
+    startPage: base.startPage ?? 0,
+    endPage: base.endPage ?? 0,
   } as ChunkMetadata;
 }
 
 interface HybridRpcRow {
   id: number;
   content: string;
-  metadata: ChunkMetadata;
+  metadata: unknown;
   vector_similarity: number;
   keyword_rank: number;
   hybrid_score: number;
@@ -73,7 +137,7 @@ function mapHybridRow(row: HybridRpcRow): HybridSearchResult {
 interface ExactRpcRow {
   id: number;
   content: string;
-  metadata: ChunkMetadata;
+  metadata: unknown;
   match_position: number;
 }
 

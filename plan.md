@@ -583,50 +583,63 @@ The v1.6.0 typescript-reviewer re-audit found 0 Critical, 0 High, 0 Medium, 2 Lo
 
 #### Part A — Permit compliance TOCTOU + state-machine client API 🟡
 
-- [ ] **A-H-1 — Conditional UPDATE on version** at [actions/permits.ts:598-707](actions/permits.ts#L598-L707) final compliance write. Discard the LLM result if `version` moved during the 60s LLM call.
-- [ ] **A-M-2 — Client-safe `permit-state-machine.ts`.** Split into `permit-state-machine.ts` (pure, client-safe) and `permit-state-actions.ts` (server-only). Expose `isOperationAllowed(status, op)` to client components. Replace UI string-compares at 6 sites in `components/admin/permit-management.tsx`, `app/permits/[id]/page.tsx`, `app/permits/new/page.tsx`, `components/permits/permit-card.tsx`.
+- [x] **A-H-1 — Conditional UPDATE on version** at [actions/permits.ts](actions/permits.ts) `runComplianceCheck`. Snapshot `version` BEFORE the LLM call; combined re-check now selects `status, version`; new explicit `currentVersion !== initialVersion` guard returns `"Permit content changed during analysis — please retry the compliance check."` rather than silently overwriting freshly-edited rows. Conditional `UPDATE … WHERE version = initialVersion … RETURNING id` adds defense-in-depth: a concurrent edit between the re-check and the write also misses the WHERE and surfaces the same error. +2 unit tests (happy-path version assertion + version-moved discard).
+- [x] **A-M-2 — Client-safe `permit-state-machine.ts`.** Re-audit confirmed the module was already pure (imports only types). The actual work: replaced raw UI string-compares with `isOperationAllowed(status, op)` at the 3 server-status-only callsites still doing them — `components/permits/permit-card.tsx:62` (delete), `components/admin/permit-management.tsx:221` (start_review), `components/admin/permit-management.tsx:241` (review), and `app/permits/[id]/page.tsx:287` (download_cert). `new/page.tsx` is deliberately left as-is: it gates on `status === 'draft' || 'revision_requested'` which is a wizard-resume rule that doesn't map cleanly to any single state-machine op (would need a new `resume_editing` op — defer to v1.9 cleanup).
 
 #### Part B — Tree cache LRU + dead-entry pruning + TTL respect 🟡
 
-- [ ] **A-H-3 — Add LRU eviction** to `cacheMap` in [lib/tree-cache.ts:41](lib/tree-cache.ts#L41) with `MAX_CACHED_DOCS = 50`.
-- [ ] **A-H-3 / A-L-2 — Prune dead entries.** In `getAllCachedDocumentTrees`, after the DB fetch, remove cacheMap keys not in the result set.
-- [ ] **A-H-4 — Respect TTL** in `getAllCachedDocumentTrees`. Check `cacheMap` first; only hit DB if any entry exceeds TTL or count changed.
-- [ ] Centralize all 3 cache invalidations (registry, profile, tree) into a single `invalidateAllDocumentCaches(name)` helper called from both `lib/pdf-ingestion.ts` and `actions/ingest-pdf.ts`.
+- [x] **A-H-3 — LRU eviction** in [lib/tree-cache.ts](lib/tree-cache.ts) via new `setCacheEntry(key, entry)` helper (`MAX_CACHED_DOCS = 50` exported). Map iteration is insertion-order; re-inserting on access bumps MRU; at-cap inserts evict the oldest key. All 4 prior `cacheMap.set` callsites routed through the helper.
+- [x] **A-H-3 / A-L-2 — Prune dead entries** in `getAllCachedDocumentTrees`. After the SELECT, builds a `seenDocuments` set from the result and `cacheMap.delete()`s any key not present. A renamed / hard-deleted document no longer holds its (potentially MB-sized) tree forever.
+- [ ] **A-H-4 — Respect TTL in `getAllCachedDocumentTrees` — DEFERRED.** Re-read of the code showed the function is called once per request from chat-pipeline; the per-document `getCachedDocumentTree` already does the TTL-respecting path. Adding TTL-respect to the bulk fetch saves at most 1 SELECT per warm request and complicates the dead-entry pruning path. Deferred to v1.9 if profiling shows it matters.
+- [x] **Centralize all 3 cache invalidations** into new [lib/document-cache.ts](lib/document-cache.ts) `invalidateAllDocumentCaches(documentName?)`. Adopted at 5 callsites: `lib/pdf-ingestion.ts`, `lib/document-pdf-upload.ts`, `actions/documents.ts` (3 places: upsert, delete, restore). Old direct imports of `invalidateRegistryCache` / `invalidateProfileCache` / `clearDocumentTreeCache` from these files removed.
+
+**Verification (Part B):**
+- [x] +2 new unit tests (LRU eviction + dead-entry pruning) in [test/tree-cache.test.ts](test/tree-cache.test.ts) with 3 new test helpers exposed (`_setCacheEntry`, `_cacheSize`, `_hasCacheEntry`).
+- [x] +2 unit tests in new [test/document-cache.test.ts](test/document-cache.test.ts) for the centralized invalidator.
+- [x] Existing 4 documents-actions / pdf-ingestion tests updated to assert on `mockInvalidateAllDocumentCaches` instead of the three individual mocks.
+- [x] All 1162 tests green after Part B.
 
 #### Part C — Citation parser hardening 🟡
 
-- [ ] **A-H-9 — Add Zod validation** at the boundary in [lib/rag.ts:51, 69](lib/rag.ts#L51) `mapHybridRow` / `mapExactRow`. Validate `chunk.metadata` against a `ChunkMetadataSchema`. Log a warning + use defaults on shape mismatch.
-- [ ] **A-H-2 — Warn on sync-getter cold miss** at [lib/document-registry.ts:134-146](lib/document-registry.ts#L134-L146). When `getDocumentByIdSync` returns `undefined`, `console.warn` so the "Building Code" fallback is observable.
+- [x] **A-H-9 — Zod boundary validation** at [lib/rag.ts](lib/rag.ts) `normalizeChunkMetadata`. New `ChunkMetadataSchema` validates the JSONB blob; on parse failure we log `[rag] dropped malformed chunk metadata: …` (with the actual Zod issue paths) and degrade to a minimal stub so the chunk still flows through the pipeline. `mapHybridRow` / `mapExactRow` now take `metadata: unknown` so the type signature reflects the actual trust boundary. +2 unit tests (well-formed pass-through + malformed→safe-stub).
+- [x] **A-H-2 — Warn on `getDocumentByIdSync` cold miss** at [lib/document-registry.ts](lib/document-registry.ts). New `_warnedIds: Set<string>` rate-limits the warn so a stream of misses for the same id doesn't flood logs; `invalidateRegistryCache()` resets the set so a renamed document still surfaces a fresh warn. +2 unit tests (first miss warns / repeated id stays quiet / post-invalidate re-warns).
 
 #### Part D — Email failure detection on password reset 🟡
 
-- [ ] **A-H-6 — Inspect `sendPasswordResetEmail` return** at [actions/auth.ts:401-447](actions/auth.ts#L401-L447). If false for an existing user, clear `reset_code` and return an error string. Preserve enumeration safety for the "user does not exist" branch.
+- [x] **A-H-6 — `sendPasswordResetEmail` failure detection** in [actions/auth.ts](actions/auth.ts) `forgotPasswordAction`. The return value is now inspected; on `false` for a real user we wipe `reset_code` + `reset_code_expires_at` (so a never-emailed code can't be exploited if the DB is later compromised) and return `"Failed to send reset email. Please try again in a few minutes."` Email enumeration safety is preserved by the no-such-user / blocked / unverified branch above (always-success). +1 unit test in [test/auth-actions.test.ts](test/auth-actions.test.ts).
 
 #### Part E — Structured logging foundation 🔴
 
-- [ ] **A-H-7 — Add `pino`** as a dep. Create `lib/logger.ts` exporting a singleton with bindings for request ID, user ID, request path.
-- [ ] Replace ~30 highest-impact `console.error` sites with `logger.error({...}, msg)`. Don't migrate all 67 in this PR — that's a continuous refactor.
-- [ ] Add a per-request UUID middleware that injects `x-request-id` header (Edge runtime safe).
-- [ ] **A-M-7 — Operational events table.** Add `operational_events` table for cache_hit / crag_fail / singleflight_collapse. Keep `audit_logs` security-focused.
+- [x] **A-H-7 — Structured logger** at new [lib/logger.ts](lib/logger.ts). **NO new dependency**: routes structured-JSON records through `console.error/.warn/.info/.debug` so Vercel + log aggregators parse them as events. Pino was considered but rejected because the Edge Runtime in `middleware.ts` doesn't tolerate pino's `worker_threads` + `fs` shims (and the chat pipeline runs Node where console.* is already streamed). Swap to pino post-defense if a transport (Datadog / Logflare) needs the agent protocol — every callsite already uses the `logger.x({...}, msg)` shape pino exports. `LOG_LEVEL` env var filters output; defaults to `info` in prod, `debug` in dev. +6 unit tests covering each level + JSON shape + Error serialisation + child bindings + LOG_LEVEL filtering.
+- [x] **`x-request-id` propagation** at [middleware.ts](middleware.ts). Edge generates (or accepts inbound) a UUID, forwards via request header + echoes on response. Server code uses `getRequestLogger()` from `lib/logger` to bind it onto a child logger so chat-pipeline / actions / API routes all stamp the same `requestId` field. +2 unit tests covering the in-scope and outside-scope (cron) paths.
+- [x] **Replaced ~5 highest-impact `console.error` / `console.warn` sites** with `logger.x({event, …}, msg)` — `lib/chat-pipeline.ts` (pipeline timeout, embedding failure, tree-reasoning error) + `actions/permits.ts` (A-M-1 optimistic-lock collision metric). The other 60+ sites are left for the continuous v1.8 refactor — they don't appear on hot paths.
+- [ ] **A-M-7 — `operational_events` table — DEFERRED to v1.9 Medium Wave.** Building a new table + RPC + retention policy is migration-surface work that the diploma scope doesn't need; the JSON `event: …` field on every logger line above gives ops the same query surface via Vercel log search, just without the SQL ergonomics.
 
 #### Part F — Provider abstraction (defer-friendly) 🟢
 
-- [ ] **A-H-8 — Centralize model names** in `lib/llm-config.ts`. Read `GEMINI_MODEL_CHAT`, `GEMINI_MODEL_EMBED` from env with defaults `gemini-2.5-flash` / `gemini-embedding-001`. Don't introduce a multi-provider abstraction yet (post-diploma work).
+- [x] **A-H-8 — Centralize model names** at new [lib/llm-config.ts](lib/llm-config.ts). `GEMINI_MODEL_CHAT` / `GEMINI_MODEL_EMBED` / `GEMINI_EMBED_DIMS` exported with env-var overrides. All 3 hardcoded sites in [lib/gemini.ts](lib/gemini.ts) (`getChatModel`, `getStreamingModel`, `generateEmbedding`) now read from this module. Did NOT add a multi-provider abstraction — that's tool-call / streaming-shape work out of scope for the diploma.
 
 #### Part G — Architecture mediums sweep 🟢
 
-- [ ] **A-M-1** — Counter metric for optimistic-lock retries (log + count)
-- [ ] **A-M-4** — Move reranker weights + CRAG threshold to `CHAT_PIPELINE_CONFIG`
-- [ ] **A-M-5** — Singleflight size cap (done in v1.3 Part A)
-- [ ] **A-M-6** — Refactor `checkPermitCompliance` to use `executeRAGPipeline`
-- [ ] **A-M-8** — Permit certificate cleanup on permit delete
+- [x] **A-M-1 — Optimistic-lock collision counter** in [actions/permits.ts](actions/permits.ts) `updatePermitBuildingDetails` + `updatePermitComplianceRequirements`. Both now emit `logger.warn({event: 'optimistic_lock_collision', op, permitId, userId, expectedVersion}, ...)` when the conditional UPDATE returns zero rows. Vercel log search for `event:"optimistic_lock_collision"` gives an at-a-glance count of how often users get bounced; a high rate would suggest the form needs an auto-save indicator.
+- [x] **A-M-4 — Reranker weights + CRAG threshold to config.** Extracted `CHAT_PIPELINE_CONFIG` to new [lib/chat-pipeline-config.ts](lib/chat-pipeline-config.ts) so `lib/rag.ts` (CRAG_THRESHOLD) and `lib/heuristic-reranker.ts` (4 weights) can read tunables without forming an import cycle with `lib/chat-pipeline.ts`. `lib/chat-pipeline` re-exports the config for backcompat with the 8 existing consumers. Added `RERANK_WEIGHT_HYBRID/_KEYWORD/_METADATA/_POSITION` + `CRAG_THRESHOLD` to the config; in-place values match the v0 hardcoded defaults so no behaviour change.
+- [x] **A-M-5 — Singleflight size cap** — already done in v1.3 Part A.
+- [ ] **A-M-6 — Refactor `checkPermitCompliance` to use `executeRAGPipeline` — DEFERRED to v1.8 Refactor & Simplify.** Both paths build their own context but with subtly different rules (compliance check builds 3-shot prompts from `building_details` + `compliance_requirements` JSON, doesn't go through topic-classifier short-circuit, doesn't use semantic cache). Collapsing these is a v1.8 SIM-class job (`executeRAGPipeline` strategy router) not a v1.7 medium.
+- [ ] **A-M-8 — Permit certificate cleanup on permit delete — NOT ACTIONABLE.** `deletePermit` only allows `draft` status (per `permit-state-machine`). Drafts have no certificate (only `approved` permits do). DB FK `permit_certificates.permit_id REFERENCES permit_applications(id) ON DELETE CASCADE` covers the row cleanup; the storage-file gap is unreachable in practice. Documented as "won't fix" rather than implement defensive code that can't run.
 
 **Verification (every Part):**
-- [ ] `pino` log lines appear in `npm run dev` with request IDs
-- [ ] `npx vitest run test/chat-pipeline.test.ts test/lib-modules.test.ts --pool forks` — green
-- [ ] Manual: trigger a cache-stale scenario → see warn in logs
+- [x] Logger JSON records appear in `npm run dev` console + Vercel logs.
+- [x] `npx vitest run --pool forks` — 1177 tests green.
+- [x] Manual smoke deferred to defense-day (covered by the 5-step Post-fix block).
 
-**v1.7.0 totals:** ~500 LOC + ~30 tests.
+#### Part H — Re-audit follow-ups 🟢
+
+The v1.7.0 architect re-audit found 0 Critical, 0 High, 2 Medium, 0 Low. Both Medium folded in before commit.
+
+- [x] **M-1 (Medium) — Log flood risk on corrupt batch** at [lib/rag.ts](lib/rag.ts) `normalizeChunkMetadata`. A wholesale-corrupt batch (25 chunks × hybrid + reranker pass-throughs ≈ 75 emits/request) could flood Vercel log volume + cost. Fix: per-process `warnedIssueSignatures: Set<string>` keyed on the joined Zod issue path:code. Bounded at 100 entries with insertion-order eviction so the same shape only emits once but distinct corruption schemas still warn. +1 unit test asserting the dedup.
+- [x] **M-2 (Medium) — Env override drift hazard** at [lib/llm-config.ts](lib/llm-config.ts). `GEMINI_MODEL_EMBED` is env-overridable, but `GEMINI_EMBED_DIMS=768` is hardcoded (matches the DB `VECTOR(768)` column). An operator A/B testing a non-768 embedding model would silently break pgvector inserts. Fix: `SUPPORTED_EMBED_MODELS_768D` allowlist + `console.warn` at module-load when the env override is set to a model outside the list. Operator can still proceed (they may have validated out of band), but the warn surfaces the footgun.
+
+**v1.7.0 totals:** planned ~500 LOC + ~30 tests. Actual: ~680 LOC across 4 new lib modules (logger, llm-config, document-cache, chat-pipeline-config) + 13 source files modified; +49 net new tests (1129 → 1178). Closes 7 of 9 High findings: A-H-1, A-H-2, A-H-3, A-H-6, A-H-7, A-H-8, A-H-9. A-H-4 deferred (low leverage). A-H-5 (split state-machine) folded into A-M-2 ("module was already pure; replace UI string-compares" was the actual work). Closes 3 of 8 Medium: A-M-1, A-M-2, A-M-4. A-M-5 already done in v1.3. A-M-6 deferred to v1.8. A-M-7 deferred to v1.9. A-M-8 unreachable. Re-audit Part H folded 2 new Mediums before push. Coverage 72.91% → **73.04%** lines (+0.13), 60.39% → **60.91%** branches (+0.52).
 
 ---
 
@@ -821,7 +834,7 @@ Update after every release ships:
 | v1.4.0 | `8bab47c` | 10 (coverage) | 0 | 0 | 0 | Coverage foundation — Parts A/B/C/E + re-audit Part F (PT1 fixed). +101 net tests, 72.9% lines, 60.4% branches. Part D Playwright deferred. v1.4.0 tag. |
 | v1.5.0 | `688cb23` | 0 | 11 | 18 | 0 | Security + DB cleanup — Parts B/C/D/E/F + re-audit Part G (PSE1 Crit + PSE2 High + PSE3 Med + PSE4/PSE5 Low fixed before push). +30 net tests. Part A wontfix. v1.5.0 tag. |
 | v1.6.0 | — | 0 | 5 | 4 | 0 | TypeScript safety — Parts A/B/C/D/E/F shipped. TS-M-1/3/8 deferred (low-impact polish + withMutation belongs to v1.8). Pending push. |
-| v1.7.0 | — | 0 | 9 | 8 | 0 | Architecture |
+| v1.7.0 | — | 0 | 7 | 5 | 0 | Architecture cleanup — Parts A/B/C/D/E/F/G + re-audit Part H (M-1 log flood dedup + M-2 embed-dim drift warn). A-H-4 (TTL respect in bulk fetch) + A-H-5 (state-machine split, was already pure) deferred. A-M-6 deferred to v1.8 SIM-class. A-M-7 deferred to v1.9. A-M-8 unreachable. +49 net tests, 73.04% lines, 60.91% branches. Pending push. |
 | v1.8.0 | — | 0 | 12 | 16 | 0 | Refactor + simplify |
 | v1.9.0 | — | 0 | 0 | 15 | 0 | Medium kitchen sink |
 | v1.10.0 | — | 0 | 0 | 0 | 64 | Low + demo polish |

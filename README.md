@@ -855,8 +855,13 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 | `SMTP_PORT` | — | SMTP port (default: `587`) |
 | `SMTP_USER` | — | Gmail address for sending emails |
 | `SMTP_PASS` | — | Gmail App Password (16 chars) |
-| `LOG_LEVEL` | — | Logging verbosity: `debug` / `info` / `warn` / `error` |
+| `LOG_LEVEL` | — | Logging verbosity for `lib/logger`: `debug` / `info` / `warn` / `error`. Default: `info` in prod, `debug` in dev. |
 | `NODE_ENV` | — | `development` / `production` |
+| `SUPABASE_JWT_SECRET` | Conditional | Required when `ENABLE_USER_CONTEXT_RLS=1`. Must match the project's Supabase JWT secret. When the flag is off (default), unused. |
+| `ENABLE_USER_CONTEXT_RLS` | — | Set to `1` to route user-context reads through the anon key + minted JWT so RLS engages as defense-in-depth. Default: off (server uses admin singleton). |
+| `DEV_INSECURE_COOKIES` | — | Local-dev only: set to `1` to drop the `Secure` flag so cookies survive plain-HTTP `localhost`. |
+| `GEMINI_MODEL_CHAT` | — | Override the chat model (default `gemini-2.5-flash`). Useful for A/B without a deploy. (v1.7.0 / A-H-8) |
+| `GEMINI_MODEL_EMBED` | — | Override the embedding model (default `gemini-embedding-001`). Changing requires re-ingesting all documents. (v1.7.0 / A-H-8) |
 
 <br />
 

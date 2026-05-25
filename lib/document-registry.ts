@@ -45,6 +45,10 @@ function isCacheValid(): boolean {
 /** Force-invalidate the registry cache (call after admin edits documents) */
 export function invalidateRegistryCache(): void {
   cache = null;
+  // A-H-2: reset the warn dedup set so any post-invalidation cold-miss
+  // still surfaces in logs (otherwise a renamed document would silently
+  // re-trip the fallback for the remainder of the process lifetime).
+  _warnedIds.clear();
   // Don't cancel an in-flight refresh; it will complete and overwrite with fresh data
 }
 
@@ -132,8 +136,30 @@ export async function getDocumentPdfPath(docId: string): Promise<string> {
 
 /** Get document by ID from cache (sync, no DB call). Returns undefined if cache empty. */
 export function getDocumentByIdSync(id: string): DocumentInfo | undefined {
-  return cache?.byId.get(id);
+  const hit = cache?.byId.get(id);
+  if (!hit) {
+    // A-H-2 / v1.7.0 Part C: surface cold-misses so the "Building Code"
+    // fallback label in rag.buildContext is OBSERVABLE. Callers SHOULD
+    // ensure the cache is warmed (await getAllDocuments() at the start of
+    // the pipeline) before reaching this getter; a cold miss in the chat
+    // hot path means citations land with a generic doc name instead of
+    // the real displayName + badge color. Rate-limited via _warnedIds
+    // so a quiet stream of misses doesn't flood Vercel logs.
+    if (!_warnedIds.has(id)) {
+      _warnedIds.add(id);
+      console.warn(
+        `[document-registry] getDocumentByIdSync cold miss for "${id}" — ` +
+          'cache empty or id unknown. Citations will use the generic label.',
+      );
+    }
+  }
+  return hit;
 }
+
+// A-H-2 — bounded set so repeated misses for the same id don't spam. Reset
+// from invalidateRegistryCache() so the next mutation gets a fresh window
+// to surface real changes.
+const _warnedIds = new Set<string>();
 
 /** Get all documents from cache (sync). Returns empty array if cache empty. */
 export function getAllDocumentsSync(): DocumentInfo[] {

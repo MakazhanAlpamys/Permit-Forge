@@ -23,6 +23,7 @@ import type {
 import { rowToPermit, rowsToPermits } from '@/lib/transforms';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
 import { canPerformOperation, type PermitStatus } from '@/lib/permit-state-machine';
+import { logger } from '@/lib/logger';
 
 // Re-export input types for components
 export type { CreatePermitInput, UpdateBuildingDetailsInput, UpdateComplianceRequirementsInput };
@@ -166,6 +167,20 @@ export async function updatePermitBuildingDetails(
 
     if (error) throw error;
     if (typeof expectedVersion === 'number' && (!updated || updated.length === 0)) {
+      // A-M-1 / v1.7.0 Part G: count optimistic-lock collisions so we can
+      // track how often users get bounced. A high rate would suggest the
+      // form needs an auto-save indicator, or that the version check should
+      // diff fields instead of comparing the whole row.
+      logger.warn(
+        {
+          event: 'optimistic_lock_collision',
+          op: 'updatePermitBuildingDetails',
+          permitId: validation.data.permitId,
+          userId: authCheck.user.id,
+          expectedVersion,
+        },
+        'Optimistic lock collision — user edited in another tab',
+      );
       return {
         success: false,
         error: 'This permit was changed in another tab. Reload the page to see the latest version.',
@@ -248,6 +263,17 @@ export async function updatePermitComplianceRequirements(
 
     if (error) throw error;
     if (typeof expectedVersion === 'number' && (!updated || updated.length === 0)) {
+      // A-M-1 / v1.7.0 Part G: same counter as updatePermitBuildingDetails.
+      logger.warn(
+        {
+          event: 'optimistic_lock_collision',
+          op: 'updatePermitComplianceRequirements',
+          permitId: validation.data.permitId,
+          userId: authCheck.user.id,
+          expectedVersion,
+        },
+        'Optimistic lock collision — user edited in another tab',
+      );
       return {
         success: false,
         error: 'This permit was changed in another tab. Reload the page to see the latest version.',
@@ -643,7 +669,7 @@ export async function runComplianceCheck(
     const supabase = createAdminClient();
     const { data: permit } = await supabase
       .from('permit_applications')
-      .select('status, building_details, compliance_requirements, project_type')
+      .select('status, building_details, compliance_requirements, project_type, version')
       .eq('id', permitId)
       .single();
 
@@ -660,6 +686,14 @@ export async function runComplianceCheck(
     if (!bd || !bd.numberOfFloors || !bd.totalBuiltUpArea) {
       return { success: false, error: 'Please complete building details before running compliance check' };
     }
+
+    // A-H-1 / v1.7.0 Part A: snapshot the version BEFORE the LLM call so we
+    // can detect (and discard) the result if the user edited building_details
+    // or compliance_requirements mid-flight. The LLM described the shape that
+    // was current at LLM-call time; writing it back over a freshly-edited row
+    // would surface a stale result the user already invalidated.
+    const initialVersion: number =
+      typeof permit.version === 'number' ? permit.version : 0;
 
     // B3: server-side budget so a hung LLM call eventually frees the request
     // slot and doesn't keep burning Gemini quota forever. AbortSignal.timeout
@@ -687,25 +721,51 @@ export async function runComplianceCheck(
 
     // B3: re-check that the permit still exists in a state where writing the
     // result is correct. A user could have deleted the permit, or submitted it,
-    // while the LLM call was in flight.
-    const { data: stillDraft } = await supabase
+    // while the LLM call was in flight. Status transitions go through atomic
+    // RPCs that don't bump `version`, so the version check below does NOT
+    // cover the submitted-mid-flight case — keep both guards.
+    const { data: stillCheckable } = await supabase
       .from('permit_applications')
-      .select('status')
+      .select('status, version')
       .eq('id', permitId)
       .eq('user_id', authCheck.user.id)
       .single();
-    if (!stillDraft || !canPerformOperation(stillDraft.status as PermitStatus, 'run_compliance').allowed) {
+    if (
+      !stillCheckable ||
+      !canPerformOperation(stillCheckable.status as PermitStatus, 'run_compliance').allowed
+    ) {
       return { success: false, error: 'Permit state changed during analysis — result discarded.' };
     }
 
-    // Store result
-    const { error } = await supabase
+    // A-H-1: explicit pre-write version comparison so the user-facing message
+    // distinguishes "you edited the form" from "you submitted in another tab".
+    const currentVersion: number =
+      typeof stillCheckable.version === 'number' ? stillCheckable.version : 0;
+    if (currentVersion !== initialVersion) {
+      return {
+        success: false,
+        error: 'Permit content changed during analysis — please retry the compliance check.',
+      };
+    }
+
+    // Store result — conditional UPDATE on version so the write itself fails
+    // if a concurrent edit slipped between the re-check and here. Defense in
+    // depth on top of the explicit comparison above.
+    const { data: updated, error } = await supabase
       .from('permit_applications')
       .update({ compliance_check_result: result })
       .eq('id', permitId)
-      .eq('user_id', authCheck.user.id);
+      .eq('user_id', authCheck.user.id)
+      .eq('version', initialVersion)
+      .select('id');
 
     if (error) throw error;
+    if (!updated || updated.length === 0) {
+      return {
+        success: false,
+        error: 'Permit content changed during analysis — please retry the compliance check.',
+      };
+    }
 
     const metadata = await getRequestMetadata();
     await logAuditEvent({

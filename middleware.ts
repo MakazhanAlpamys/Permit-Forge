@@ -220,6 +220,14 @@ export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-nonce', nonce);
 
+  // A-H-7 / v1.7.0 Part E — propagate a per-request UUID so downstream
+  // server actions / API routes can bind it onto their `logger.child({...})`
+  // and the same request can be correlated across cache miss → embedding →
+  // hybrid search → LLM call. Honour an inbound x-request-id (some
+  // platforms inject one at the edge) so we don't break upstream tracing.
+  const requestId = request.headers.get('x-request-id') ?? crypto.randomUUID();
+  requestHeaders.set('x-request-id', requestId);
+
   const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const { pathname } = request.nextUrl;
 
@@ -235,10 +243,9 @@ export async function middleware(request: NextRequest) {
         nonce,
       );
     }
-    return applyCommonSecurityHeaders(
-      NextResponse.next({ request: { headers: requestHeaders } }),
-      nonce,
-    );
+    const publicResponse = NextResponse.next({ request: { headers: requestHeaders } });
+    publicResponse.headers.set('x-request-id', requestId);
+    return applyCommonSecurityHeaders(publicResponse, nonce);
   }
 
   // Verify JWT token (NO DATABASE CALL!)
@@ -301,6 +308,10 @@ export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set('x-user-id', userId);
   response.headers.set('x-user-role', role);
+  // A-H-7 / v1.7.0 Part E: echo the request id on the response too so
+  // browser DevTools can correlate a slow user-visible action with the
+  // matching server log line.
+  response.headers.set('x-request-id', requestId);
   return applyCommonSecurityHeaders(response, nonce);
 }
 

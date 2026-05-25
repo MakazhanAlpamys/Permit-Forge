@@ -14,6 +14,7 @@ import { PermitStatusBadge } from '@/components/permits/permit-status-badge';
 import { PROJECT_TYPES, PERMIT_STATUS_FILTERS } from '@/lib/constants';
 import { reviewPermit, setPermitUnderReview } from '@/actions/admin-permits';
 import { useCsrfAction } from '@/hooks/use-csrf-action';
+import { isOperationAllowed } from '@/lib/permit-state-machine';
 import {
   ClipboardCheck,
   Eye,
@@ -218,7 +219,11 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      {permit.status === 'submitted' && (
+                      {/* A-M-2 / v1.7.0 Part A: route show/hide decisions
+                          through the central state machine so adding (or
+                          renaming) a status only requires touching
+                          permit-state-machine.ts. */}
+                      {isOperationAllowed(permit.status, 'start_review') && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -238,7 +243,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                           )}
                         </Button>
                       )}
-                      {(permit.status === 'submitted' || permit.status === 'under_review') && (
+                      {isOperationAllowed(permit.status, 'review') && (
                         <>
                           <Button
                             variant="outline"

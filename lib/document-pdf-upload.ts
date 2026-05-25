@@ -13,7 +13,7 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { logAuditEvent } from '@/lib/auth';
-import { invalidateRegistryCache } from '@/lib/document-registry';
+import { invalidateAllDocumentCaches } from '@/lib/document-cache';
 import { DOCUMENT_PDF_LIMITS } from '@/lib/constants';
 import { sniffMagic } from '@/lib/file-magic';
 
@@ -109,7 +109,9 @@ export async function uploadDocumentPdfShared(
       return { success: false, error: `DB update failed: ${updateError.message}` };
     }
 
-    invalidateRegistryCache();
+    // v1.7.0 Part B: single throat. Old PDF is replaced by the new upload so
+    // the prior tree is also stale — scope the eviction to this document.
+    invalidateAllDocumentCaches(documentId);
 
     await logAuditEvent({
       userId: uploadedByUserId,

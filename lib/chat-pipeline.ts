@@ -14,6 +14,7 @@ import { getAllCachedDocumentTrees } from '@/lib/tree-cache';
 import { generateEmbedding } from '@/lib/gemini';
 import { getAllDocuments } from '@/lib/document-registry';
 import { debugLog } from '@/lib/debug-log';
+import { logger } from '@/lib/logger';
 import type { Citation, MatchedChunk } from '@/types';
 
 // Re-export classifyTopic for backward compatibility
@@ -24,35 +25,13 @@ export { buildContext } from '@/lib/rag';
 // -----------------------------------------------------------------------------
 // Configuration
 // -----------------------------------------------------------------------------
+//
+// v1.7.0 Part G (A-M-4): tunables extracted to lib/chat-pipeline-config so
+// the rag.ts / heuristic-reranker.ts modules can read them without forming
+// a cycle with this file. Re-exported so existing consumers stay green.
 
-export const CHAT_PIPELINE_CONFIG = {
-  // Semantic cache
-  ENABLE_CACHE: true,
-
-  // Search settings
-  RERANK_TOP_K: 7,
-  INITIAL_MATCH_COUNT: 25,
-
-  // Tree Reasoning
-  ENABLE_TREE_REASONING: true,
-  TREE_REASONING_MIN_CONFIDENCE: 45,
-  TREE_REASONING_MAX_NODES: 5,
-  TREE_REASONING_FALLBACK: true,
-
-  // Parent chunk expansion
-  ENABLE_PARENT_EXPANSION: true,
-
-  // v1.3.0 Part A (A-C-1) — Hard ceiling on a single pipeline run. If Gemini
-  // wedges (429 retry-after of 7 minutes, socket hang, etc.) the singleflight
-  // would otherwise stall every concurrent waiter on the same key indefinitely.
-  PIPELINE_TIMEOUT_MS: 30_000,
-
-  // v1.3.0 Part A (A-M-5) — Bound the singleflight map. Past this many
-  // concurrent distinct queries we bypass the dedup so the map can't grow
-  // unbounded under adversarial fan-out. New callers still run their own
-  // pipeline (with its own AbortController + timeout), they just aren't tracked.
-  INFLIGHT_MAX: 100,
-} as const;
+export { CHAT_PIPELINE_CONFIG } from '@/lib/chat-pipeline-config';
+import { CHAT_PIPELINE_CONFIG } from '@/lib/chat-pipeline-config';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -192,8 +171,9 @@ async function runRAGPipelineWithTimeout(query: string): Promise<PipelineResult>
     ]);
   } catch (err) {
     if (err instanceof Error && err.message === 'pipeline_timeout') {
-      console.warn(
-        `RAG pipeline timed out after ${CHAT_PIPELINE_CONFIG.PIPELINE_TIMEOUT_MS}ms`,
+      logger.warn(
+        { timeoutMs: CHAT_PIPELINE_CONFIG.PIPELINE_TIMEOUT_MS, event: 'pipeline_timeout' },
+        'RAG pipeline timed out',
       );
       return { chunks: [], queryEmbedding: [], fromCache: false };
     }
@@ -229,7 +209,7 @@ async function runRAGPipeline(query: string, signal?: AbortSignal): Promise<Pipe
   try {
     queryEmbedding = await generateEmbedding(query, 7, signal);
   } catch (error) {
-    console.error('Embedding generation failed:', error);
+    logger.error({ err: error, event: 'embedding_failed' }, 'Embedding generation failed');
     return { chunks: [], queryEmbedding: [], fromCache: false };
   }
 
@@ -345,7 +325,7 @@ async function executeTreePath(
 
     return result.chunks;
   } catch (error) {
-    console.error('Tree reasoning error, falling back:', error);
+    logger.error({ err: error, event: 'tree_reasoning_error' }, 'Tree reasoning error — falling back');
     return null;
   }
 }

@@ -283,8 +283,8 @@ export default function PermitDetailPage() {
               </>
             )}
 
-            {/* Approved — Download Certificate */}
-            {permit.status === 'approved' && (
+            {/* Approved — Download Certificate (A-M-2 / v1.7.0 Part A) */}
+            {isOperationAllowed(status, 'download_cert') && (
               <Button
                 variant="outline"
                 size="sm"

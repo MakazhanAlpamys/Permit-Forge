@@ -94,7 +94,7 @@ User Query
           ├─ Scope-filtered search if page ranges detected
           ├─ Tree Reasoning path for structural queries
           └─ Standard hybrid search with document filter
-        [6] CRAG Check (top score < 0.3 → "info not found", 0 API)
+        [6] CRAG Check (top score < CRAG_THRESHOLD → "info not found", 0 API)
         [7] Heuristic Rerank (0 API, ~1ms, diversity-aware)
         [8] Parent Chunk Expansion (DB lookup, 0 API)
         → Context Building ([SOURCE N] formatted chunks)
@@ -114,6 +114,16 @@ timeout already fired. The singleflight map is capped at `INFLIGHT_MAX = 100`;
 past that, callers run independently rather than collapsing. The chat-stream
 SSE route plumbs `request.signal` into LangChain's `stream({ signal })` so a
 client tab close stops Gemini token consumption immediately.
+
+**Pipeline tunables (v1.7.0 Part G / A-M-4):** all configuration lives in
+[lib/chat-pipeline-config.ts](lib/chat-pipeline-config.ts) (re-exported from
+`lib/chat-pipeline.ts` for backcompat). This includes the reranker weights
+(`RERANK_WEIGHT_HYBRID/_KEYWORD/_METADATA/_POSITION`) and the
+`CRAG_THRESHOLD` — previously hardcoded inside `lib/heuristic-reranker.ts`
+and `lib/rag.ts`, now in one place so an operator can A/B test the
+recall/precision trade-off without touching multiple modules. The extraction
+also broke the import cycle between `chat-pipeline.ts` ↔ `rag.ts`
+↔ `heuristic-reranker.ts`.
 
 **API calls per scenario:**
 | Scenario | Embedding | LLM | Total |
@@ -164,9 +174,12 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | Module | Purpose |
 |--------|---------|
 | `lib/chat-pipeline.ts` | RAG orchestration: cache → select → search → CRAG → rerank → expand |
-| `lib/rag.ts` | Hybrid search with pre-computed embeddings, document filter, CRAG check, parent expansion |
+| `lib/chat-pipeline-config.ts` | Tunables (timeouts, reranker weights, CRAG_THRESHOLD) extracted from chat-pipeline (v1.7.0 Part G / A-M-4) so rag + heuristic-reranker can read them without an import cycle. |
+| `lib/rag.ts` | Hybrid search with pre-computed embeddings, document filter, CRAG check, parent expansion. Chunk metadata is Zod-validated at the boundary (v1.7.0 Part C / A-H-9): a malformed JSONB blob falls back to a minimal safe stub + `console.warn` instead of crashing the pipeline. |
 | `lib/agents.ts` | Topic classifier, query type detector, tree reasoner (no more expander/reranker/verifier) |
-| `lib/gemini.ts` | Gemini model configuration: `chatModel` (temp=0), `streamingModel`, `generateEmbedding()` with retry/quota handling |
+| `lib/gemini.ts` | Gemini model configuration: `chatModel` (temp=0), `streamingModel`, `generateEmbedding()` with retry/quota handling. Model IDs sourced from `lib/llm-config` (v1.7.0 Part F / A-H-8). |
+| `lib/llm-config.ts` | Single source of truth for Gemini model names + embedding dimensionality (v1.7.0 Part F / A-H-8). `GEMINI_MODEL_CHAT` / `GEMINI_MODEL_EMBED` overridable via env vars for A/B testing without code changes. |
+| `lib/logger.ts` | Structured JSON logger (v1.7.0 Part E / A-H-7). Zero dependency: routes through `console.error/.warn/.info/.debug` so Vercel + log aggregators parse records as JSON. `logger.child({...})` for per-request bindings; `getRequestLogger()` async helper reads `x-request-id` from middleware-forwarded headers. Pino was deliberately NOT added (Edge Runtime + worker_threads compatibility). |
 | `lib/citation-parser.ts` | Chunk-based citations from DB metadata (0 API, 100% accurate) |
 | `lib/semantic-cache.ts` | Semantic query caching via pgvector (cosine > 0.95, 1hr TTL) |
 | `lib/document-selector.ts` | Keyword-based document scoring from DB profiles (0 API) |
@@ -175,8 +188,9 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/heuristic-reranker.ts` | Deterministic reranking: hybrid*0.4 + keyword*0.3 + metadata*0.2 + position*0.1 |
 | `lib/pdf-ingestion.ts` | PDF chunking, embedding generation, batch DB insert with resume support |
 | `lib/pdf-parser.ts` | PDF.js-based text extraction with TOC/outline parsing |
-| `lib/tree-cache.ts` | Two-tier cache: L1 in-memory (5-min TTL) + L2 Supabase |
-| `lib/document-registry.ts` | Fully DB-driven document registry with in-memory cache (5-min TTL) |
+| `lib/tree-cache.ts` | Two-tier cache: L1 in-memory (5-min TTL, LRU-capped at `MAX_CACHED_DOCS = 50`) + L2 Supabase. v1.7.0 Part B / A-H-3 added the cap; A-L-2 prunes dead entries after each `getAllCachedDocumentTrees` SELECT. |
+| `lib/document-registry.ts` | Fully DB-driven document registry with in-memory cache (5-min TTL). `getDocumentByIdSync` cold misses now `console.warn` once per id (v1.7.0 Part C / A-H-2) so the generic "Building Code" fallback label is observable in Vercel logs. |
+| `lib/document-cache.ts` | `invalidateAllDocumentCaches(documentName?)` (v1.7.0 Part B) — single throat for registry + selector profile + tree cache invalidation. Called by every path that mutates documents (ingestion, register, deactivate, restore, PDF upload). |
 | `lib/permit-compliance.ts` | RAG-powered compliance checking → structured JSON from Gemini |
 | `lib/permit-certificate.ts` | PDF certificate generation via PDFKit |
 | `lib/constants.ts` | All app constants: cookie names, rate limits, file upload limits, status configs |
@@ -200,6 +214,7 @@ Edge Runtime auth — runs on every non-static request:
 3. Role-based redirects: admins → `/admin`, users → `/`, blocked → clear session + redirect
 4. Generates a per-request CSP nonce, forwards it via `x-nonce` request header. `app/layout.tsx` reads `headers()` so Next.js auto-stamps the nonce on every framework-injected inline script.
 5. Security headers: nonce-based CSP with `'strict-dynamic'` (no `'unsafe-inline'` in prod), `Strict-Transport-Security` (HSTS, prod only), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (camera/mic/geo disabled). Applied to both app routes and `/api/*`.
+6. **Request-id propagation (v1.7.0 Part E / A-H-7):** generates (or accepts inbound) `x-request-id`, forwards to downstream RSC + API routes via request header, and echoes it on the response. Server code calls `getRequestLogger()` from `lib/logger` to bind it to every log line so a slow user-visible action can be traced across cache miss → embedding → hybrid search → LLM stream.
 
 Public paths (no auth required): `/login`, `/register`, `/verify-email`, `/forgot-password`.
 
@@ -242,7 +257,7 @@ Schema in `supabase/migrations/000_full_setup.sql` (single idempotent migration 
 
 ## Testing
 
-66 test suites in `test/` (1129 tests, ~72.9% line / ~60.4% branch coverage). Run with `--pool forks` on Windows for reliability. v1.4.0 added route-level coverage for `app/api/ingest` (80.8% lines) and `app/api/admin/documents/upload` (95.2% lines), plus component coverage for permit-card / compliance-check-panel / message-bubble / source-citation / permit-management (66.7%). Coverage config in `vitest.config.ts` now includes `app/api/**/*.ts`; global Supabase mock in `test/setup.ts` exposes `upsert/in/order/limit/range/maybeSingle/storage`.
+71 test suites in `test/` (1177 tests, ~73.0% line / ~60.9% branch coverage as of v1.7.0). Run with `--pool forks` on Windows for reliability. v1.4.0 added route-level coverage for `app/api/ingest` (80.8% lines) and `app/api/admin/documents/upload` (95.2% lines), plus component coverage for permit-card / compliance-check-panel / message-bubble / source-citation / permit-management (66.7%). v1.7.0 added coverage for tree-cache LRU eviction + dead-entry pruning, rag.ts Zod metadata validation, document-registry cold-miss warn, document-cache helper, and lib/logger. Coverage config in `vitest.config.ts` now includes `app/api/**/*.ts`; global Supabase mock in `test/setup.ts` exposes `upsert/in/order/limit/range/maybeSingle/storage`.
 
 **Suites:** auth, auth-actions (login/register/verify/reset), profile-actions (profile CRUD, password change), validations, validations-new (10 schemas), citation-parser, admin, admin-actions (7 admin functions), admin-permits-actions (review workflow), agents, tree-reasoning, rag, chat-pipeline, api-chat-stream, api-routes (health, export, certificate), permit-compliance, permits-actions, permits-actions-extended (building details, compliance, revise), permit-attachments (file upload/delete), chat-history (session CRUD, search), documents-actions (registry CRUD + PDF upload), analytics-actions (5 stats endpoints), email (Nodemailer SMTP + code generation), notifications-actions (read/mark), lib-modules (security, file-upload, reranker, scope-detector).
 
@@ -279,6 +294,9 @@ Optional:
 - `SMTP_PASS` — Gmail App Password (16 chars)
 - `ENABLE_USER_CONTEXT_RLS` — set to `1` to route user-context reads through the anon key + minted JWT (engages RLS as defense-in-depth). Off by default: `createUserContextClient` returns the admin singleton.
 - `DEV_INSECURE_COOKIES` — set to `1` in local dev to drop the `Secure` flag and relax `SameSite` so cookies survive plain-HTTP `localhost`. v1.5.0 Part D renamed from `NEXT_PUBLIC_DEV_INSECURE_COOKIES` (the `NEXT_PUBLIC_` prefix leaked the flag into the client bundle); legacy name still honored at runtime with a one-time deprecation warning.
+- `LOG_LEVEL` — `debug | info | warn | error`. Filters `lib/logger` output. Defaults: `info` in production, `debug` in dev. (v1.7.0 Part E / A-H-7)
+- `GEMINI_MODEL_CHAT` — override the default chat model (`gemini-2.5-flash`). Useful for A/B testing without a deploy. (v1.7.0 Part F / A-H-8)
+- `GEMINI_MODEL_EMBED` — override the embedding model (`gemini-embedding-001`). NOTE: changing this requires re-ingesting all documents because the new vectors won't match existing rows in `dubai_code_chunks.embedding`. (v1.7.0 Part F / A-H-8)
 
 ## Debugging Production
 

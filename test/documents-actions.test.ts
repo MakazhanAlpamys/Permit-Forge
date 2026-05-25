@@ -95,6 +95,19 @@ vi.mock('@/lib/tree-cache', () => ({
   clearDocumentTreeCache: (...args: unknown[]) => mockClearDocumentTreeCache(...args),
 }));
 
+// v1.7.0 Part B: centralized invalidator now delegates to the three above.
+// Mock it directly so callers go through one place; the inner three mocks
+// stay around so callsites (lib/pdf-ingestion, lib/document-pdf-upload, etc.)
+// that still import them are also covered.
+const mockInvalidateAllDocumentCaches = vi.fn((..._args: unknown[]) => {
+  mockInvalidateRegistryCache();
+  mockInvalidateProfileCache();
+  mockClearDocumentTreeCache();
+});
+vi.mock('@/lib/document-cache', () => ({
+  invalidateAllDocumentCaches: (...args: unknown[]) => mockInvalidateAllDocumentCaches(...args),
+}));
+
 import {
   getAllRegisteredDocuments,
   upsertDocument,
@@ -328,7 +341,9 @@ describe('Document Registry Server Actions', () => {
       const result = await deleteDocument('test-doc', true, 'csrf-token');
 
       expect(result.success).toBe(true);
-      expect(mockClearDocumentTreeCache).toHaveBeenCalledWith('test-doc');
+      // v1.7.0 Part B: centralized helper scopes the tree-cache eviction
+      // to the deleted document's id.
+      expect(mockInvalidateAllDocumentCaches).toHaveBeenCalledWith('test-doc');
     });
   });
 
@@ -341,8 +356,8 @@ describe('Document Registry Server Actions', () => {
       const result = await restoreDocument('test-doc', 'csrf-token');
 
       expect(result.success).toBe(true);
-      expect(mockInvalidateRegistryCache).toHaveBeenCalled();
-      expect(mockInvalidateProfileCache).toHaveBeenCalled();
+      // v1.7.0 Part B: centralized helper is the only invalidation throat.
+      expect(mockInvalidateAllDocumentCaches).toHaveBeenCalledWith('test-doc');
     });
 
     it('should return error when not admin', async () => {

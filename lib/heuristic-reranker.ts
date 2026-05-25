@@ -4,16 +4,19 @@
 // ============================================================================
 
 import type { MatchedChunk } from '@/types';
+import { CHAT_PIPELINE_CONFIG } from '@/lib/chat-pipeline-config';
 
 // -----------------------------------------------------------------------------
 // Configuration
 // -----------------------------------------------------------------------------
 
+// v1.7.0 Part G / A-M-4: weights live in CHAT_PIPELINE_CONFIG so operators
+// can tune the heuristic without touching this file. Defaults preserved.
 const WEIGHTS = {
-  hybridScore: 0.4,
-  keywordOverlap: 0.3,
-  metadataMatch: 0.2,
-  positionBonus: 0.1,
+  hybridScore: CHAT_PIPELINE_CONFIG.RERANK_WEIGHT_HYBRID,
+  keywordOverlap: CHAT_PIPELINE_CONFIG.RERANK_WEIGHT_KEYWORD,
+  metadataMatch: CHAT_PIPELINE_CONFIG.RERANK_WEIGHT_METADATA,
+  positionBonus: CHAT_PIPELINE_CONFIG.RERANK_WEIGHT_POSITION,
 } as const;
 
 // Diversity limits
