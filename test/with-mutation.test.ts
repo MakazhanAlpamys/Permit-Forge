@@ -69,7 +69,9 @@ describe('withMutation — auth gate', () => {
       async () => ({ ok: true }),
     );
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/Authentication required/);
+    if (result.success === false) {
+      expect(result.error).toMatch(/Authentication required/);
+    }
   });
 
   it('rejects when admin=true and user has role=user', async () => {
@@ -78,12 +80,14 @@ describe('withMutation — auth gate', () => {
       async () => ({ ok: true }),
     );
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/Admin access required/);
+    if (result.success === false) {
+      expect(result.error).toMatch(/Admin access required/);
+    }
   });
 
   it('passes when admin=true and user has role=admin', async () => {
     mockGetQuickSession.mockResolvedValueOnce(ADMIN);
-    const result = await withMutation<unknown, { ok: true }>(
+    const result = await withMutation(
       { admin: true, csrfToken: 'csrf' },
       async () => ({ ok: true }),
     );
@@ -97,7 +101,9 @@ describe('withMutation — auth gate', () => {
       async () => ({ ok: true }),
     );
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/blocked/);
+    if (result.success === false) {
+      expect(result.error).toMatch(/blocked/);
+    }
   });
 });
 
@@ -112,7 +118,9 @@ describe('withMutation — CSRF gate', () => {
       async () => ({ ok: true }),
     );
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/CSRF token/);
+    if (result.success === false) {
+      expect(result.error).toMatch(/CSRF token/);
+    }
   });
 
   it('rejects when validateCSRFToken returns false', async () => {
@@ -122,7 +130,9 @@ describe('withMutation — CSRF gate', () => {
       async () => ({ ok: true }),
     );
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/CSRF token invalid/);
+    if (result.success === false) {
+      expect(result.error).toMatch(/CSRF token invalid/);
+    }
   });
 });
 
@@ -139,7 +149,9 @@ describe('withMutation — schema validation', () => {
       async () => ({ ok: true }),
     );
     expect(result.success).toBe(false);
-    expect(result.error).toBeDefined();
+    if (result.success === false) {
+      expect(result.error).toBeDefined();
+    }
   });
 
   it('passes parsed input to handler when validation succeeds', async () => {
@@ -152,7 +164,28 @@ describe('withMutation — schema validation', () => {
     );
     expect(result.success).toBe(true);
     expect(handler).toHaveBeenCalledTimes(1);
-    expect(result.data).toEqual({ received: 'alice' });
+    // v1.8.0 Part A: handler return is FLATTENED into the success result
+    // (was previously wrapped under `.data` — see release notes).
+    if (result.success === true) {
+      expect(result.received).toBe('alice');
+    }
+  });
+
+  it('schema-less call leaves `parsed` undefined inside the handler', async () => {
+    const handler = vi.fn(
+      async (ctx: { user: { id: string }; parsed?: unknown }) => ({
+        uid: ctx.user.id,
+        parsedSeen: ctx.parsed,
+      }),
+    );
+    const result = await withMutation({ csrfToken: 'csrf' }, handler);
+    expect(result.success).toBe(true);
+    if (result.success === true) {
+      expect(result.uid).toBe('user-1');
+      // Without a schema, `parsed` is left undefined — callers that opt for
+      // the no-schema variant should not read it.
+      expect(result.parsedSeen).toBeUndefined();
+    }
   });
 });
 
@@ -168,11 +201,13 @@ describe('withMutation — rate limit', () => {
       async () => ({ ok: true }),
     );
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/Too many requests/);
+    if (result.success === false) {
+      expect(result.error).toMatch(/Too many requests/);
+    }
   });
 
   it('passes when the rate-limit bucket allows the call', async () => {
-    const result = await withMutation<unknown, { ok: true }>(
+    const result = await withMutation(
       { csrfToken: 'csrf', rateLimitAction: 'updateThing' },
       async () => ({ ok: true }),
     );
@@ -193,7 +228,9 @@ describe('withMutation — catch-all error', () => {
       },
     );
     expect(result.success).toBe(false);
-    expect(result.error).toBe('boom');
+    if (result.success === false) {
+      expect(result.error).toBe('boom');
+    }
   });
 
   it('returns a generic message when no fallbackErrorMessage is set', async () => {
@@ -204,7 +241,9 @@ describe('withMutation — catch-all error', () => {
       },
     );
     expect(result.success).toBe(false);
-    expect(result.error).toBe('Operation failed');
+    if (result.success === false) {
+      expect(result.error).toBe('Operation failed');
+    }
   });
 
   it('honors handler short-circuits returning { success: false, error }', async () => {
@@ -213,6 +252,8 @@ describe('withMutation — catch-all error', () => {
       async () => ({ success: false, error: 'business rule failed' }) as const,
     );
     expect(result.success).toBe(false);
-    expect(result.error).toBe('business rule failed');
+    if (result.success === false) {
+      expect(result.error).toBe('business rule failed');
+    }
   });
 });

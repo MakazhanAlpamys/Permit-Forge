@@ -8,7 +8,8 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { logAuditWithMeta, hashPassword } from '@/lib/auth';
 import { invalidateBlockStatus } from '@/lib/block-status-cache';
 import { uuidSchema, createUserSchema, validatePassword } from '@/lib/validations';
-import { requireAdmin, requireCSRF, requireActionRateLimit } from '@/lib/security';
+import { requireAdmin, withMutation } from '@/lib/security';
+import { z } from 'zod';
 
 // -----------------------------------------------------------------------------
 // RPC Response Types (matching Supabase functions)
@@ -186,114 +187,93 @@ export async function blockUser(
   reason?: string,
   csrfToken?: string
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const authCheck = await requireAdmin();
-    if (!authCheck.success || !authCheck.user) {
-      return { success: false, error: authCheck.error };
-    }
+  return withMutation(
+    {
+      admin: true,
+      csrfToken,
+      rateLimitAction: 'blockUser',
+      schema: uuidSchema,
+      input: userId,
+      fallbackErrorMessage: 'Failed to update user',
+    },
+    async ({ user, parsed }) => {
+      // Prevent admin from blocking themselves
+      if (blocked && user.id === parsed) {
+        return { success: false, error: 'You cannot block your own account' };
+      }
 
-    const csrf = await requireCSRF(csrfToken);
-    if (!csrf.valid) return { success: false, error: csrf.error };
+      const supabase = createAdminClient();
+      const { error } = await supabase.rpc('admin_block_user', {
+        p_admin_id: user.id,
+        p_target_user_id: parsed,
+        p_blocked: blocked,
+        p_reason: reason || null,
+      });
 
-    const rl = await requireActionRateLimit(authCheck.user.id, 'blockUser');
-    if (!rl.allowed) return { success: false, error: rl.error };
+      if (error) throw error;
 
-    // Validate userId
-    const validation = uuidSchema.safeParse(userId);
-    if (!validation.success) {
-      return { success: false, error: 'Invalid user ID' };
-    }
+      // B13/H7-clickpath: drop the middleware block-status cache so the next
+      // request from this user re-reads the DB rather than serving stale state.
+      // NOTE: Edge isolate cache not invalidated cross-runtime — TTL is the floor
+      // (v1.1.0 Part C: tightened to 30s; production needs Redis).
+      invalidateBlockStatus(parsed);
 
-    // Prevent admin from blocking themselves
-    if (blocked && authCheck.user.id === userId) {
-      return { success: false, error: 'You cannot block your own account' };
-    }
+      await logAuditWithMeta(user.id, blocked ? 'user_blocked' : 'user_unblocked', {
+        targetUserId: parsed,
+        metadata: { reason },
+      });
 
-    const supabase = createAdminClient();
-    const { error } = await supabase.rpc('admin_block_user', {
-      p_admin_id: authCheck.user.id,
-      p_target_user_id: userId,
-      p_blocked: blocked,
-      p_reason: reason || null,
-    });
-
-    if (error) throw error;
-
-    // B13/H7-clickpath: drop the middleware block-status cache so the next
-    // request from this user re-reads the DB rather than serving stale state.
-    // NOTE: Edge isolate cache not invalidated cross-runtime — TTL is the floor
-    // (v1.1.0 Part C: tightened to 30s; production needs Redis).
-    invalidateBlockStatus(userId);
-
-    // Log the action
-    await logAuditWithMeta(authCheck.user.id, blocked ? 'user_blocked' : 'user_unblocked', {
-      targetUserId: userId,
-      metadata: { reason },
-    });
-    
-    return { success: true };
-  } catch {
-    return {
-      success: false,
-      error: 'Failed to update user'
-    };
-  }
+      return {};
+    },
+  );
 }
 
 // -----------------------------------------------------------------------------
 // Update User Role
 // -----------------------------------------------------------------------------
 
+const updateUserRoleSchema = z.object({
+  userId: uuidSchema,
+  role: z.enum(['admin', 'user']),
+});
+
 export async function updateUserRole(
   userId: string,
   role: 'admin' | 'user',
   csrfToken?: string
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const authCheck = await requireAdmin();
-    if (!authCheck.success || !authCheck.user) {
-      return { success: false, error: authCheck.error };
-    }
+  return withMutation(
+    {
+      admin: true,
+      csrfToken,
+      rateLimitAction: 'updateUserRole',
+      schema: updateUserRoleSchema,
+      input: { userId, role },
+      fallbackErrorMessage: 'Failed to update role',
+    },
+    async ({ user, parsed }) => {
+      const supabase = createAdminClient();
+      const { error } = await supabase.rpc('admin_update_user_role', {
+        p_admin_id: user.id,
+        p_target_user_id: parsed.userId,
+        p_new_role: parsed.role,
+      });
 
-    const csrf = await requireCSRF(csrfToken);
-    if (!csrf.valid) return { success: false, error: csrf.error };
+      if (error) throw error;
 
-    const rl = await requireActionRateLimit(authCheck.user.id, 'updateUserRole');
-    if (!rl.allowed) return { success: false, error: rl.error };
+      // B13: drop cached state so the next middleware hit reflects the new role.
+      // NOTE: Edge isolate cache not invalidated cross-runtime — TTL is the floor
+      // (v1.1.0 Part C: tightened to 30s; production needs Redis).
+      invalidateBlockStatus(parsed.userId);
 
-    // Validate userId
-    const validation = uuidSchema.safeParse(userId);
-    if (!validation.success) {
-      return { success: false, error: 'Invalid user ID' };
-    }
+      await logAuditWithMeta(user.id, 'role_changed', {
+        targetUserId: parsed.userId,
+        metadata: { newRole: parsed.role },
+      });
 
-    const supabase = createAdminClient();
-    const { error } = await supabase.rpc('admin_update_user_role', {
-      p_admin_id: authCheck.user.id,
-      p_target_user_id: userId,
-      p_new_role: role,
-    });
-
-    if (error) throw error;
-
-    // B13: drop cached state so the next middleware hit reflects the new role.
-    // NOTE: Edge isolate cache not invalidated cross-runtime — TTL is the floor
-    // (v1.1.0 Part C: tightened to 30s; production needs Redis).
-    invalidateBlockStatus(userId);
-
-    // Log the action
-    await logAuditWithMeta(authCheck.user.id, 'role_changed', {
-      targetUserId: userId,
-      metadata: { newRole: role },
-    });
-    
-    return { success: true };
-  } catch {
-    return {
-      success: false,
-      error: 'Failed to update role'
-    };
-  }
+      return {};
+    },
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -306,81 +286,65 @@ export async function adminCreateUser(data: {
   full_name?: string;
   role?: 'admin' | 'user';
 }, csrfToken?: string): Promise<{ success: boolean; userId?: string; error?: string }> {
-  try {
-    const authCheck = await requireAdmin();
-    if (!authCheck.success || !authCheck.user) {
-      return { success: false, error: authCheck.error };
-    }
+  return withMutation(
+    {
+      admin: true,
+      csrfToken,
+      rateLimitAction: 'adminCreateUser',
+      schema: createUserSchema,
+      input: data,
+      fallbackErrorMessage: 'Failed to create user',
+    },
+    async ({ user, parsed }) => {
+      const { username, password, full_name, role } = parsed;
+      const supabase = createAdminClient();
+      const passwordHash = await hashPassword(password);
 
-    const csrf = await requireCSRF(csrfToken);
-    if (!csrf.valid) return { success: false, error: csrf.error };
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', username)
+        .single();
 
-    const rl = await requireActionRateLimit(authCheck.user.id, 'adminCreateUser');
-    if (!rl.allowed) return { success: false, error: rl.error };
-
-    // Validate input
-    const validation = createUserSchema.safeParse(data);
-    if (!validation.success) {
-      return { success: false, error: validation.error.issues[0].message };
-    }
-    
-    const { username, password, full_name, role } = validation.data;
-    const supabase = createAdminClient();
-    const passwordHash = await hashPassword(password);
-    
-    // Check if username already exists
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('id')
-      .eq('username', username)
-      .single();
-    
-    if (existingUser) {
-      return { success: false, error: 'Username already exists' };
-    }
-    
-    const { data: newUser, error } = await supabase
-      .from('users')
-      .insert({
-        username,
-        password_hash: passwordHash,
-        full_name: full_name || null,
-        role: role || 'user',
-      })
-      .select('id')
-      .single();
-    
-    if (error) {
-      console.error('Create user error:', error);
-      if (error.code === '23505') {
+      if (existingUser) {
         return { success: false, error: 'Username already exists' };
       }
-      return { success: false, error: `Database error: ${error.message}` };
-    }
-    
-    if (!newUser) {
-      return { success: false, error: 'Failed to create user - no data returned' };
-    }
-    
-    // Log the action
-    try {
-      await logAuditWithMeta(authCheck.user.id, 'user_created', {
-        targetUserId: newUser.id,
-        metadata: { username, role: role || 'user' },
-      });
-    } catch (auditError) {
-      console.error('Audit log error:', auditError);
-      // Don't fail the operation if audit log fails
-    }
-    
-    return { success: true, userId: newUser.id };
-  } catch (error) {
-    console.error('adminCreateUser error:', error);
-    return { 
-      success: false, 
-      error: 'Failed to create user' 
-    };
-  }
+
+      const { data: newUser, error } = await supabase
+        .from('users')
+        .insert({
+          username,
+          password_hash: passwordHash,
+          full_name: full_name || null,
+          role: role || 'user',
+        })
+        .select('id')
+        .single();
+
+      if (error) {
+        console.error('Create user error:', error);
+        if (error.code === '23505') {
+          return { success: false, error: 'Username already exists' };
+        }
+        return { success: false, error: `Database error: ${error.message}` };
+      }
+
+      if (!newUser) {
+        return { success: false, error: 'Failed to create user - no data returned' };
+      }
+
+      try {
+        await logAuditWithMeta(user.id, 'user_created', {
+          targetUserId: newUser.id,
+          metadata: { username, role: role || 'user' },
+        });
+      } catch (auditError) {
+        console.error('Audit log error:', auditError);
+      }
+
+      return { userId: newUser.id };
+    },
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -388,64 +352,49 @@ export async function adminCreateUser(data: {
 // -----------------------------------------------------------------------------
 
 export async function adminDeleteUser(userId: string, csrfToken?: string): Promise<{ success: boolean; error?: string }> {
-  try {
-    const authCheck = await requireAdmin();
-    if (!authCheck.success || !authCheck.user) {
-      return { success: false, error: authCheck.error };
-    }
+  return withMutation(
+    {
+      admin: true,
+      csrfToken,
+      rateLimitAction: 'adminDeleteUser',
+      schema: uuidSchema,
+      input: userId,
+      fallbackErrorMessage: 'Failed to delete user',
+    },
+    async ({ user, parsed }) => {
+      if (parsed === user.id) {
+        return { success: false, error: 'Cannot delete yourself' };
+      }
 
-    const csrf = await requireCSRF(csrfToken);
-    if (!csrf.valid) return { success: false, error: csrf.error };
+      const supabase = createAdminClient();
 
-    const rl = await requireActionRateLimit(authCheck.user.id, 'adminDeleteUser');
-    if (!rl.allowed) return { success: false, error: rl.error };
+      const { data: targetUser } = await supabase
+        .from('users')
+        .select('username')
+        .eq('id', parsed)
+        .single();
 
-    // Validate userId
-    const validation = uuidSchema.safeParse(userId);
-    if (!validation.success) {
-      return { success: false, error: 'Invalid user ID' };
-    }
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq('id', parsed);
 
-    // Prevent self-deletion
-    if (userId === authCheck.user.id) {
-      return { success: false, error: 'Cannot delete yourself' };
-    }
-    
-    const supabase = createAdminClient();
-    
-    // Get username for logging
-    const { data: targetUser } = await supabase
-      .from('users')
-      .select('username')
-      .eq('id', userId)
-      .single();
-    
-    const { error } = await supabase
-      .from('users')
-      .delete()
-      .eq('id', userId);
+      if (error) throw error;
 
-    if (error) throw error;
+      // B13: drop the cache so a still-pending request with this user's JWT
+      // is treated as "not found" → forced logout on its next middleware pass.
+      // NOTE: Edge isolate cache not invalidated cross-runtime — TTL is the floor
+      // (v1.1.0 Part C: tightened to 30s; production needs Redis).
+      invalidateBlockStatus(parsed);
 
-    // B13: drop the cache so a still-pending request with this user's JWT
-    // is treated as "not found" → forced logout on its next middleware pass.
-    // NOTE: Edge isolate cache not invalidated cross-runtime — TTL is the floor
-    // (v1.1.0 Part C: tightened to 30s; production needs Redis).
-    invalidateBlockStatus(userId);
+      await logAuditWithMeta(user.id, 'user_deleted', {
+        targetUserId: parsed,
+        metadata: { action: 'deleted', username: targetUser?.username },
+      });
 
-    // Log the action
-    await logAuditWithMeta(authCheck.user.id, 'user_deleted', {
-      targetUserId: userId,
-      metadata: { action: 'deleted', username: targetUser?.username },
-    });
-    
-    return { success: true };
-  } catch {
-    return {
-      success: false,
-      error: 'Failed to delete user'
-    };
-  }
+      return {};
+    },
+  );
 }
 
 // -----------------------------------------------------------------------------
@@ -457,54 +406,42 @@ export async function adminResetPassword(
   newPassword: string,
   csrfToken?: string
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const authCheck = await requireAdmin();
-    if (!authCheck.success || !authCheck.user) {
-      return { success: false, error: authCheck.error };
-    }
+  return withMutation(
+    {
+      admin: true,
+      csrfToken,
+      rateLimitAction: 'adminResetPassword',
+      schema: uuidSchema,
+      input: userId,
+      fallbackErrorMessage: 'Failed to reset password',
+    },
+    async ({ user, parsed }) => {
+      // Password complexity is validated outside the schema (kept as separate
+      // helper for backward compatibility with the existing error messages).
+      const passwordValidation = validatePassword(newPassword);
+      if (!passwordValidation.valid) {
+        return { success: false, error: passwordValidation.error ?? 'Invalid password' };
+      }
 
-    const csrf = await requireCSRF(csrfToken);
-    if (!csrf.valid) return { success: false, error: csrf.error };
+      const supabase = createAdminClient();
+      const passwordHash = await hashPassword(newPassword);
 
-    const rl = await requireActionRateLimit(authCheck.user.id, 'adminResetPassword');
-    if (!rl.allowed) return { success: false, error: rl.error };
+      const { error } = await supabase
+        .from('users')
+        .update({ password_hash: passwordHash })
+        .eq('id', parsed);
 
-    // Validate userId
-    const validation = uuidSchema.safeParse(userId);
-    if (!validation.success) {
-      return { success: false, error: 'Invalid user ID' };
-    }
+      if (error) throw error;
 
-    // Validate password with complexity requirements
-    const passwordValidation = validatePassword(newPassword);
-    if (!passwordValidation.valid) {
-      return { success: false, error: passwordValidation.error };
-    }
-    
-    const supabase = createAdminClient();
-    const passwordHash = await hashPassword(newPassword);
-    
-    const { error } = await supabase
-      .from('users')
-      .update({ password_hash: passwordHash })
-      .eq('id', userId);
+      // C14H: bump target user's token_version so any device still holding
+      // their old JWT is logged out on the next middleware hop.
+      await supabase.rpc('bump_user_token_version', { p_user_id: parsed });
 
-    if (error) throw error;
+      await logAuditWithMeta(user.id, 'password_reset', {
+        targetUserId: parsed,
+      });
 
-    // C14H: bump target user's token_version so any device still holding
-    // their old JWT is logged out on the next middleware hop.
-    await supabase.rpc('bump_user_token_version', { p_user_id: userId });
-
-    // Log the action
-    await logAuditWithMeta(authCheck.user.id, 'password_reset', {
-      targetUserId: userId,
-    });
-    
-    return { success: true };
-  } catch {
-    return {
-      success: false,
-      error: 'Failed to reset password'
-    };
-  }
+      return {};
+    },
+  );
 }

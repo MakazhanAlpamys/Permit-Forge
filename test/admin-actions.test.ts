@@ -6,12 +6,58 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock security
 const mockRequireAdmin = vi.fn();
+const mockRequireAuth = vi.fn();
 const mockRequireCSRF = vi.fn();
+const mockRequireActionRateLimit = vi.fn().mockResolvedValue({ allowed: true });
+
+// v1.8.0 Part A: simulate the real withMutation wrapper for tests so adopting
+// it in actions/admin.ts doesn't force a per-test rewrite. Runs the same
+// auth/CSRF/rate-limit/schema gates against the existing mocks, then flattens
+// the handler's success shape into { success: true, ...handlerResult }.
+type AnyOpts = {
+  admin?: boolean;
+  csrfToken?: string | null | undefined;
+  rateLimitAction?: string;
+  schema?: { safeParse: (v: unknown) => { success: boolean; data?: unknown; error?: { issues: { message: string }[] } } };
+  input?: unknown;
+  fallbackErrorMessage?: string;
+};
+async function mockWithMutation(opts: AnyOpts, handler: (ctx: { user: unknown; parsed?: unknown }) => Promise<unknown>) {
+  try {
+    const auth = opts.admin ? await mockRequireAdmin() : await mockRequireAuth();
+    if (!auth.success || !auth.user) {
+      return { success: false, error: auth.error || 'Unauthorized' };
+    }
+    const csrf = await mockRequireCSRF(opts.csrfToken);
+    if (!csrf.valid) return { success: false, error: csrf.error || 'CSRF token invalid' };
+    if (opts.rateLimitAction) {
+      const rl = await mockRequireActionRateLimit(auth.user.id, opts.rateLimitAction);
+      if (!rl.allowed) return { success: false, error: rl.error || 'Too many requests' };
+    }
+    let parsed: unknown;
+    if (opts.schema) {
+      const v = opts.schema.safeParse(opts.input);
+      if (!v.success) {
+        return { success: false, error: v.error?.issues[0]?.message || 'Validation failed' };
+      }
+      parsed = v.data;
+    }
+    const result = (await handler({ user: auth.user, parsed })) as Record<string, unknown> | { success: false; error: string };
+    if (result && typeof result === 'object' && 'success' in result && (result as { success?: unknown }).success === false) {
+      return result;
+    }
+    return { success: true, ...(result as Record<string, unknown>) };
+  } catch {
+    return { success: false, error: opts.fallbackErrorMessage || 'Operation failed' };
+  }
+}
+
 vi.mock('@/lib/security', () => ({
-  requireAuth: vi.fn(),
+  requireAuth: (...args: unknown[]) => mockRequireAuth(...args),
   requireAdmin: (...args: unknown[]) => mockRequireAdmin(...args),
   requireCSRF: (...args: unknown[]) => mockRequireCSRF(...args),
-  requireActionRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
+  requireActionRateLimit: (...args: unknown[]) => mockRequireActionRateLimit(...args),
+  withMutation: (...args: unknown[]) => mockWithMutation(args[0] as AnyOpts, args[1] as (ctx: { user: unknown; parsed?: unknown }) => Promise<unknown>),
 }));
 
 // Mock auth
@@ -333,7 +379,7 @@ describe('Admin Server Actions', () => {
       const result = await blockUser('not-a-uuid', true, 'reason', 'csrf-token');
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Invalid user ID');
+      expect(result.error).toBe('Invalid UUID format');
     });
 
     it('should handle RPC error gracefully', async () => {
@@ -401,7 +447,7 @@ describe('Admin Server Actions', () => {
       const result = await updateUserRole('not-a-uuid', 'admin', 'csrf-token');
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Invalid user ID');
+      expect(result.error).toBe('Invalid UUID format');
     });
 
     it('should log audit event with new role', async () => {
@@ -570,7 +616,7 @@ describe('Admin Server Actions', () => {
       const result = await adminDeleteUser('not-a-uuid', 'csrf-token');
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Invalid user ID');
+      expect(result.error).toBe('Invalid UUID format');
     });
 
     it('should prevent self-deletion', async () => {
@@ -637,7 +683,7 @@ describe('Admin Server Actions', () => {
       const result = await adminResetPassword('not-a-uuid', 'NewStrong123!', 'csrf-token');
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Invalid user ID');
+      expect(result.error).toBe('Invalid UUID format');
     });
 
     it('should reject weak password', async () => {

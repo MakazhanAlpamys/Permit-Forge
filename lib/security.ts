@@ -226,7 +226,7 @@ export async function requireCSRF(token: string | undefined | null): Promise<{ v
 }
 
 // -----------------------------------------------------------------------------
-// withMutation — boilerplate-elimination wrapper (F1 / Simplify #1)
+// withMutation — boilerplate-elimination wrapper (F1 / SIM-H-1 / R-H-2)
 // -----------------------------------------------------------------------------
 
 /**
@@ -237,33 +237,61 @@ export async function requireCSRF(token: string | undefined | null): Promise<{ v
  *   - Optional per-action rate limit
  *   - try/catch with generic fail-safe error
  *
- * Use for any mutation that returns `{ success, error, ...rest }`. Query-style
- * actions returning `{ data, error }` should keep their bespoke shape.
+ * v1.8.0 Part A tightening (SIM-H-1 / R-H-2):
+ *   - Return is a discriminated union: `{ success: true } & R` or
+ *     `{ success: false; error: string }`. The handler's success-shape is
+ *     FLATTENED into the result (was previously wrapped under `.data`), so
+ *     adopting actions don't have to change their return contract.
+ *   - Two explicit overloads make the schema-vs-no-schema distinction
+ *     compile-checkable. With no schema the handler context has no `parsed`
+ *     field; with schema, `parsed: T` is required and non-optional.
  */
-export interface WithMutationOptions<T> {
+export interface WithMutationOptionsBase {
   /** Require admin role. Defaults to false (any authenticated user). */
   admin?: boolean;
   /** CSRF token from the client (required). */
   csrfToken: string | undefined | null;
-  /** Optional Zod schema. The parsed value is passed to the handler. */
-  schema?: ZodSchema<T>;
-  /** Raw input to validate. Only used when `schema` is provided. */
-  input?: unknown;
   /** Per-action rate-limit bucket (e.g. 'updatePermit'). */
   rateLimitAction?: string;
   /** Free-form error message for unexpected catch-all failures. */
   fallbackErrorMessage?: string;
 }
 
-export interface MutationResult<R extends object = object> {
-  success: boolean;
-  error?: string;
-  data?: R;
+export interface WithMutationOptionsWithSchema<T> extends WithMutationOptionsBase {
+  /** Zod schema. The parsed value is passed to the handler as `parsed`. */
+  schema: ZodSchema<T>;
+  /** Raw input to validate. */
+  input: unknown;
 }
 
-export async function withMutation<T, R extends object = object>(
-  options: WithMutationOptions<T>,
-  handler: (ctx: { user: AuthenticatedUser; parsed: T }) => Promise<R | { success: false; error: string }>,
+export type WithMutationOptions<T = never> =
+  | WithMutationOptionsBase
+  | WithMutationOptionsWithSchema<T>;
+
+export type MutationOk<R extends object> = { success: true } & R;
+export type MutationErr = { success: false; error: string };
+export type MutationResult<R extends object = Record<string, never>> =
+  | MutationOk<R>
+  | MutationErr;
+
+/**
+ * v1.8.0 Part A: callers pick the schema-vs-no-schema variant by whether the
+ * options object carries a `schema` key. Conditional `ctx` shape: with schema,
+ * the handler context gains a typed `parsed: T`; without schema, it's just
+ * `{ user }`.
+ *
+ * Discriminated union (single signature) — using overloads required widening
+ * the impl return to `any`, defeating the typing tightening. The single
+ * signature keeps narrowing at the handler boundary inside callers.
+ */
+export async function withMutation<
+  R extends object = Record<string, never>,
+  T = unknown,
+>(
+  options: WithMutationOptionsBase | WithMutationOptionsWithSchema<T>,
+  handler: (
+    ctx: { user: AuthenticatedUser; parsed: T },
+  ) => Promise<R | MutationErr>,
 ): Promise<MutationResult<R>> {
   try {
     // Auth gate
@@ -286,9 +314,9 @@ export async function withMutation<T, R extends object = object>(
       }
     }
 
-    // Schema validation (when supplied)
+    // Schema validation (when supplied). Discriminate via the `schema` key.
     let parsed: T = undefined as T;
-    if (options.schema) {
+    if ('schema' in options) {
       const validation = options.schema.safeParse(options.input);
       if (!validation.success) {
         return {
@@ -302,11 +330,16 @@ export async function withMutation<T, R extends object = object>(
     const result = await handler({ user: authCheck.user, parsed });
 
     // Handlers may short-circuit with their own typed error result.
-    if ('success' in result && result.success === false) {
-      return { success: false, error: result.error };
+    if (
+      result !== null &&
+      typeof result === 'object' &&
+      'success' in result &&
+      (result as { success?: unknown }).success === false
+    ) {
+      return result as MutationErr;
     }
 
-    return { success: true, data: result as R };
+    return { success: true, ...(result as R) };
   } catch (error) {
     console.error('withMutation caught error:', error);
     return {
