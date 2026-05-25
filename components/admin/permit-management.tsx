@@ -337,7 +337,16 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
       )}
 
       {/* Review Dialog */}
-      <Dialog open={reviewDialog !== null} onOpenChange={(open) => !open && setReviewDialog(null)}>
+      {/* CP-D-6 (v1.2.0): block backdrop / Escape close while review is in
+          flight so an accidental click doesn't cancel an admin's
+          approve/reject mid-request. */}
+      <Dialog
+        open={reviewDialog !== null}
+        onOpenChange={(open) => {
+          if (actionLoading) return;
+          if (!open) setReviewDialog(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>

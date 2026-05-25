@@ -237,6 +237,42 @@ describe('Document Registry Server Actions', () => {
         p_id: 'test-doc-id-',
       }));
     });
+
+    // -------------------------------------------------------------------------
+    // CP-C-4 (v1.2.0 Part B): refuse to silently overwrite a soft-deleted row.
+    // -------------------------------------------------------------------------
+
+    it('refuses to overwrite a soft-deleted row and surfaces a structured code', async () => {
+      // pre-check finds an existing inactive row
+      mockSingle.mockResolvedValueOnce({ data: { id: 'test-doc', is_active: false }, error: null });
+
+      const result = await upsertDocument(validInput, 'csrf-token');
+
+      expect(result.success).toBe(false);
+      expect(result.code).toBe('soft_deleted');
+      // RPC must NOT have been called when the collision is detected
+      expect(mockRpc).not.toHaveBeenCalledWith('upsert_document', expect.anything());
+    });
+
+    it('allows upsert when the existing row is active (update path)', async () => {
+      mockSingle.mockResolvedValueOnce({ data: { id: 'test-doc', is_active: true }, error: null });
+      mockRpc.mockResolvedValueOnce({ error: null });
+
+      const result = await upsertDocument(validInput, 'csrf-token');
+
+      expect(result.success).toBe(true);
+      expect(mockRpc).toHaveBeenCalledWith('upsert_document', expect.anything());
+    });
+
+    it('proceeds with create when no existing row is found', async () => {
+      mockSingle.mockResolvedValueOnce({ data: null, error: { code: 'PGRST116' } });
+      mockRpc.mockResolvedValueOnce({ error: null });
+
+      const result = await upsertDocument(validInput, 'csrf-token');
+
+      expect(result.success).toBe(true);
+      expect(mockRpc).toHaveBeenCalledWith('upsert_document', expect.anything());
+    });
   });
 
   // ---------------------------------------------------------------------------

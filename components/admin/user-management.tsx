@@ -412,7 +412,10 @@ export function UserManagement({
         description={
           modal.user?.blocked
             ? `Are you sure you want to unblock ${modal.user?.username}?`
-            : `Are you sure you want to block ${modal.user?.username}? They will not be able to log in.`
+            : // CP-D-8 (v1.2.0): hint that the block-status cache TTL is up
+              //   to 30 s (v1.1 Part C), so an already-in-flight request from
+              //   the user may complete before block takes effect on Edge.
+              `Are you sure you want to block ${modal.user?.username}? They will not be able to log in. Note: an active session may continue for up to 30 seconds while the block-status cache expires.`
         }
         body={
           !modal.user?.blocked ? (

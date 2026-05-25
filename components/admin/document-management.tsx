@@ -38,7 +38,7 @@ import {
   X,
 } from 'lucide-react';
 import { DocumentForm, type DocumentFormValues } from './document-form';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { ConfirmDialog, ResultDialog } from '@/components/ui/confirm-dialog';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -210,6 +210,15 @@ export function DocumentManagement() {
       }, csrfTokenRef.current || '');
 
       if (!result.success) {
+        // CP-C-4 (v1.2.0 Part B): when the action reports a soft-deleted
+        // collision, route the user into the restore confirm flow rather
+        // than leaving them staring at a generic "save failed" message.
+        if (result.code === 'soft_deleted') {
+          setShowForm(false);
+          setFormError(null);
+          handleRestore(docId, formData.displayName);
+          return;
+        }
         setFormError(result.error || 'Failed to save');
         return;
       }
@@ -288,7 +297,13 @@ export function DocumentManagement() {
       confirmLabel: 'Deactivate',
       onConfirm: async () => {
         const result = await deleteDocument(docId, false, csrfTokenRef.current || '');
-        if (result.success) loadDocuments();
+        if (result.success) {
+          loadDocuments();
+        } else {
+          // v1.2.0 re-audit follow-up: was silent on failure (audit flagged
+          // it as the same silent-else family v1.2.0 set out to fix).
+          setRestoreError(result.error || 'Failed to deactivate document');
+        }
       },
     });
   };
@@ -308,16 +323,39 @@ export function DocumentManagement() {
         if (result.success) {
           loadDocuments();
           runDiagnostics();
+        } else {
+          // v1.2.0 re-audit follow-up: was silent on failure.
+          setRestoreError(result.error || 'Failed to delete document');
         }
       },
     });
   };
 
-  const handleRestore = async (docId: string) => {
-    const result = await restoreDocument(docId, csrfTokenRef.current || '');
-    if (result.success) {
-      loadDocuments();
-    }
+  // CP-C-5 (v1.2.0 Part B): route restore through the unified ConfirmDialog so
+  // it matches every other destructive/state-changing action in the admin UI,
+  // and surface failures as a sticky error (was: button click silently no-op'd
+  // if the action failed).
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  const handleRestore = (docId: string, docName?: string) => {
+    setPendingConfirm({
+      title: 'Restore Document',
+      description: (
+        <>
+          Restore <strong>{docName || docId}</strong>? It will become active and visible to users again.
+        </>
+      ),
+      confirmLabel: 'Restore',
+      destructive: false,
+      onConfirm: async () => {
+        const result = await restoreDocument(docId, csrfTokenRef.current || '');
+        if (result.success) {
+          loadDocuments();
+        } else {
+          setRestoreError(result.error || 'Failed to restore document');
+        }
+      },
+    });
   };
 
   // Ingestion handlers
@@ -654,7 +692,7 @@ export function DocumentManagement() {
                             <span className="text-sm text-muted-foreground">{doc.displayName}</span>
                           </div>
                           <div className="flex gap-2">
-                            <Button size="sm" variant="outline" onClick={() => handleRestore(doc.id)}>
+                            <Button size="sm" variant="outline" onClick={() => handleRestore(doc.id, doc.displayName)}>
                               <RotateCcw className="h-3 w-3 mr-1" />
                               Restore
                             </Button>
@@ -688,6 +726,14 @@ export function DocumentManagement() {
         destructive={pendingConfirm?.destructive}
         loading={confirmLoading}
         onConfirm={runConfirm}
+      />
+
+      {/* CP-C-5: visible error feedback when restore fails. */}
+      <ResultDialog
+        open={!!restoreError}
+        onOpenChange={(open) => { if (!open) setRestoreError(null); }}
+        variant="error"
+        message={restoreError}
       />
     </>
   );

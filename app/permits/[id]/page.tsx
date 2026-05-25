@@ -98,6 +98,11 @@ export default function PermitDetailPage() {
   // synchronously.
   const submitInFlightRef = useRef(false);
   const reviseInFlightRef = useRef(false);
+  // v1.2.0 re-audit follow-up: delete was the only mutation on this page
+  // without an in-flight guard. A double-click could fire deletePermit
+  // twice; the second call would 404 against the gone row but still race
+  // the navigation.
+  const deleteInFlightRef = useRef(false);
 
   const handleSubmit = async () => {
     if (submitInFlightRef.current) return;
@@ -119,13 +124,19 @@ export default function PermitDetailPage() {
   };
 
   const handleDelete = async () => {
-    const result = await deletePermit(permitId, csrfToken || '');
-    if (result.success) {
-      router.push('/permits');
-    } else {
-      setError(result.error || 'Failed to delete');
+    if (deleteInFlightRef.current) return;
+    deleteInFlightRef.current = true;
+    try {
+      const result = await deletePermit(permitId, csrfToken || '');
+      if (result.success) {
+        router.push('/permits');
+      } else {
+        setError(result.error || 'Failed to delete');
+      }
+      setDeleteDialogOpen(false);
+    } finally {
+      deleteInFlightRef.current = false;
     }
-    setDeleteDialogOpen(false);
   };
 
   const handleRevise = async () => {
@@ -163,8 +174,15 @@ export default function PermitDetailPage() {
       a.download = `permit-certificate-${permitId}.pdf`;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      // CP-D-9 (v1.2.0): revoke on the next tick instead of synchronously.
+      // Firefox occasionally aborts an in-flight a.click() download when the
+      // backing blob URL is revoked in the same task — the resulting PDF is
+      // 0 bytes. Deferring to setTimeout(_, 0) lets the click navigation
+      // complete before the URL is released.
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        if (a.parentNode) document.body.removeChild(a);
+      }, 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to download certificate');
     } finally {

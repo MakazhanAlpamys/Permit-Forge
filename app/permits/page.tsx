@@ -12,7 +12,9 @@ import { getMyPermits, deletePermit } from '@/actions/permits';
 import { getCSRFTokenAction } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Plus, RefreshCw, ArrowLeft } from 'lucide-react';
+import { ResultDialog } from '@/components/ui/confirm-dialog';
+import { useServerAction } from '@/hooks/use-server-action';
+import { Plus, RefreshCw, ArrowLeft, Loader2 } from 'lucide-react';
 import type { PermitApplication } from '@/types';
 
 export default function PermitsPage() {
@@ -79,14 +81,21 @@ export default function PermitsPage() {
     setDeleteDialogOpen(true);
   };
 
+  // CP-C-2/CP-C-3 (v1.2.0 Part A): route deletePermit through useServerAction
+  // so a failed delete surfaces as an error dialog rather than silently
+  // closing the confirm modal.
+  const deleteAction = useServerAction(deletePermit, {
+    fallbackErrorMessage: 'Failed to delete permit',
+    onSuccess: () => {
+      setPermits(prev => prev.filter(p => p.id !== permitToDelete));
+      setDeleteDialogOpen(false);
+      setPermitToDelete(null);
+    },
+  });
+
   const confirmDelete = async () => {
     if (!permitToDelete) return;
-    const result = await deletePermit(permitToDelete, csrfToken || '');
-    if (result.success) {
-      setPermits(prev => prev.filter(p => p.id !== permitToDelete));
-    }
-    setDeleteDialogOpen(false);
-    setPermitToDelete(null);
+    await deleteAction.run(permitToDelete, csrfToken || '');
   };
 
   return (
@@ -134,7 +143,14 @@ export default function PermitsPage() {
       </main>
 
       {/* Delete confirmation */}
-      <Dialog open={deleteDialogOpen} onOpenChange={(open) => !open && setDeleteDialogOpen(false)}>
+      <Dialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          // CP-C-7-family: don't allow backdrop-close while delete is in flight.
+          if (deleteAction.isLoading) return;
+          if (!open) setDeleteDialogOpen(false);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Draft Permit</DialogTitle>
@@ -143,11 +159,32 @@ export default function PermitsPage() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={confirmDelete}>Delete</Button>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={deleteAction.isLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deleteAction.isLoading}
+            >
+              {deleteAction.isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Delete
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* CP-C-2/CP-C-3: visible error feedback when delete fails. */}
+      <ResultDialog
+        open={!!deleteAction.error}
+        onOpenChange={(open) => { if (!open) deleteAction.clearError(); }}
+        variant="error"
+        message={deleteAction.error}
+      />
     </div>
   );
 }

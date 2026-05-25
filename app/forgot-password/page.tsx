@@ -22,6 +22,11 @@ export default function ForgotPasswordPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  // CP-D-10 (v1.2.0): banner shown when the user resends a code — the server
+  // overwrites the previous reset_code on every forgotPassword call, so any
+  // prior code is now dead. Without this hint, users sometimes type the older
+  // code they still see in their inbox and hit "Invalid code" with no clue.
+  const [resendBanner, setResendBanner] = useState(false);
   const { theme } = useTheme();
   const router = useRouter();
 
@@ -30,12 +35,15 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     setError('');
 
+    const isResend = step === 'code';
     const result = await forgotPasswordAction(email);
 
     if (result?.error) {
       setError(result.error);
     } else {
       setStep('code');
+      setCode(''); // clear any partial entry of the previous code
+      setResendBanner(isResend);
     }
     setLoading(false);
   };
@@ -132,6 +140,13 @@ export default function ForgotPasswordPage() {
             </form>
           ) : (
             <form onSubmit={handleResetSubmit} className="space-y-4">
+              {/* CP-D-10: explicit banner so users know a fresh send
+                  invalidated whatever they got earlier. */}
+              {resendBanner && (
+                <div className="p-3 text-sm text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-md">
+                  A new code was sent. Previous codes no longer work.
+                </div>
+              )}
               {/* Code */}
               <div className="space-y-2">
                 <label htmlFor="code" className="text-sm font-medium leading-none">

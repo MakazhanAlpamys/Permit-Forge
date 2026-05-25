@@ -66,9 +66,20 @@ export function Header({ onMenuClick }: HeaderProps) {
           <ThemeToggle />
 
           {/* Logout Button */}
+          {/* CP-D-1 (v1.2.0): keep the button disabled until the CSRF token has
+              actually been fetched. The server-side logoutAction is forgiving
+              of a missing token (proceeds with destroy and audit-logs the
+              bypass), but disabling client-side prevents that audit-log noise
+              and the brief flash of "csrf invalid" log on every page load. */}
           <form action={logoutAction}>
             <input type="hidden" name="csrfToken" value={csrfToken} />
-            <Button variant="ghost" size="icon" className="text-muted-foreground" type="submit">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground"
+              type="submit"
+              disabled={!csrfToken}
+            >
               <LogOut className="h-5 w-5" />
               <span className="sr-only">Logout</span>
             </Button>

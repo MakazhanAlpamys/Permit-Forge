@@ -91,7 +91,7 @@ export async function getAllRegisteredDocuments(): Promise<{
 export async function upsertDocument(
   input: DocumentInput,
   csrfToken: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<{ success: boolean; error?: string; code?: 'soft_deleted' }> {
   const authCheck = await requireAdmin();
   if (!authCheck.success || !authCheck.user) {
     return { success: false, error: authCheck.error || 'Unauthorized' };
@@ -109,6 +109,26 @@ export async function upsertDocument(
 
   try {
     const supabase = createAdminClient();
+
+    // CP-C-4 (v1.2.0 Part B): refuse to silently overwrite a soft-deleted row.
+    // Before the previous behaviour blindly upserted, so a user who'd deleted
+    // doc "X" and re-registered "X" reactivated the old row + chunks with no
+    // audit trail and no UI hint that they were resurrecting prior data.
+    // Now: detect the collision, surface a structured `code: 'soft_deleted'`
+    // so the admin UI can prompt "name in use, restore instead?".
+    const { data: existing } = await supabase
+      .from('document_registry')
+      .select('id, is_active')
+      .eq('id', sanitizedId)
+      .single();
+
+    if (existing && (existing as { is_active?: boolean }).is_active === false) {
+      return {
+        success: false,
+        error: 'A document with this name was previously deleted. Restore it instead of re-registering.',
+        code: 'soft_deleted',
+      };
+    }
 
     // If admin explicitly provided keywords, mark them as manually set so the
     // ingestion pipeline won't overwrite them with auto-extracted keywords.
@@ -258,6 +278,12 @@ export async function restoreDocument(
   const csrf = await requireCSRF(csrfToken);
   if (!csrf.valid) return { success: false, error: csrf.error };
 
+  // Same id-shape validation as deleteDocument so a malformed slug can't
+  // bypass the admin-only update path.
+  if (!documentId || !/^[a-z0-9-]{1,100}$/.test(documentId)) {
+    return { success: false, error: 'Invalid documentId' };
+  }
+
   try {
     const supabase = createAdminClient();
 
@@ -272,6 +298,18 @@ export async function restoreDocument(
 
     invalidateRegistryCache();
     invalidateProfileCache();
+
+    // CP-C-5 (v1.2.0 Part B): log restoration so the admin audit log shows
+    // a document was re-activated. Reuse `pdf_ingested` action type with a
+    // distinct `stage` so we don't have to add a new AuditAction enum value
+    // (keeps the migration surface frozen — diploma scope).
+    const metadata = await getRequestMetadata();
+    await logAuditEvent({
+      userId: authCheck.user.id,
+      action: 'pdf_ingested',
+      metadata: { stage: 'document_restored', documentId },
+      ...metadata,
+    });
 
     return { success: true };
   } catch (error) {

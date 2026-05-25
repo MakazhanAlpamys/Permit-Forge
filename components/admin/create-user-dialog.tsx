@@ -66,14 +66,19 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
     }
   };
 
+  // CP-D-5 (v1.2.0): block backdrop / X close while submit is in flight, so
+  // a quick click outside doesn't cancel a half-finished create + leak the
+  // password from local form state.
+  const safeClose = () => { if (!loading) onClose(); };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       {/* Backdrop */}
-      <div 
+      <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={safeClose}
       />
-      
+
       {/* Dialog */}
       <Card className="relative z-10 w-full max-w-md mx-4">
         <CardHeader>
@@ -82,7 +87,7 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
               <UserPlus className="h-5 w-5 text-primary" />
               Create New User
             </CardTitle>
-            <Button variant="ghost" size="icon" onClick={onClose}>
+            <Button variant="ghost" size="icon" onClick={safeClose} disabled={loading}>
               <X className="h-4 w-4" />
             </Button>
           </div>

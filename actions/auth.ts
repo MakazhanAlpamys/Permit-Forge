@@ -414,6 +414,71 @@ export async function verifyEmailAction(
 }
 
 // -----------------------------------------------------------------------------
+// CP-E-1 (v1.2.0 Part E): resend verification code.
+// -----------------------------------------------------------------------------
+// Issue: when the verification code expired or got lost in spam, the user
+// had no way to refresh it from the verify-email screen — they had to
+// re-register, which was confusing and triggered duplicate-email errors.
+//
+// This action re-mints the 6-digit code for an existing (unverified) email,
+// gated by the same IP rate limit as login/register so we can't be abused
+// to spam someone's inbox. Email enumeration is preserved by always
+// returning success; the caller cannot distinguish "no such user" from
+// "code re-sent".
+
+export async function resendVerificationCodeAction(
+  email: string
+): Promise<{ error?: string; success?: boolean }> {
+  const metadata = await getRequestMetadata();
+
+  try {
+    if (!await checkLoginRateLimit(metadata.ipAddress || 'unknown')) {
+      return { error: 'Too many attempts. Please try again later.' };
+    }
+
+    const validation = forgotPasswordSchema.safeParse({ email });
+    if (!validation.success) {
+      return { error: validation.error.issues[0].message };
+    }
+
+    const supabase = createAdminClient();
+
+    const { data: user } = await supabase
+      .from('users')
+      .select('id, email, email_verified, blocked')
+      .eq('email', validation.data.email)
+      .single();
+
+    // Always-success path to preserve email enumeration safety.
+    if (!user || user.blocked || user.email_verified) {
+      return { success: true };
+    }
+
+    const code = generateSixDigitCode();
+    const expiresAt = new Date(Date.now() + CODE_EXPIRY_MINUTES * 60 * 1000).toISOString();
+
+    await supabase
+      .from('users')
+      .update({ verification_code: code, code_expires_at: expiresAt })
+      .eq('id', user.id);
+
+    await sendVerificationEmail(user.email, code);
+
+    await logAuditEvent({
+      userId: user.id,
+      action: 'user_updated',
+      metadata: { reason: 'verification_code_resent' },
+      ...metadata,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('Resend verification code error:', error);
+    return { error: 'Something went wrong. Please try again.' };
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Forgot Password Action
 // -----------------------------------------------------------------------------
 

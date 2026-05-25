@@ -11,6 +11,7 @@ import { useChatStream } from '@/hooks/use-chat-stream';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ResultDialog } from '@/components/ui/confirm-dialog';
 import { MessageBubble, LoadingMessage, StreamingMessage } from './message-bubble';
 import { 
   Send,
@@ -62,6 +63,10 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
   // so the user knows reloading will reconcile (and that they shouldn't trust
   // the chat-export endpoint for the latest reply yet).
   const [saveSyncFailed, setSaveSyncFailed] = useState(false);
+  // CP-C-2/CP-C-3 (v1.2.0 Part A): visible error feedback when createChatSession
+  // or other action-shaped calls fail. Previously these calls aborted silently
+  // and the user just saw "nothing happened" on send.
+  const [actionError, setActionError] = useState<string | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // X13: seed from sessionStorage so a quick tab-reload doesn't reset the
@@ -230,10 +235,13 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     // Create or use existing session
     let activeSessionId = currentSessionId;
     if (!activeSessionId) {
-      const { sessionId: newSessionId } = await createChatSession(text.substring(0, 50));
+      const { sessionId: newSessionId, error: sessionError } = await createChatSession(text.substring(0, 50));
       if (!newSessionId) {
-        // Session creation failed — abort streaming to avoid a detached request
+        // CP-C-2/CP-C-3: surface the failure instead of silently aborting.
+        // Previously: the input cleared, isLoading flickered, and the user
+        // had no idea why their message vanished.
         setIsLoading(false);
+        setActionError(sessionError || 'Could not start a new chat session. Please try again.');
         return;
       }
       activeSessionId = newSessionId;
@@ -548,6 +556,14 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
           </p>
         </div>
       </div>
+
+      {/* CP-C-2/CP-C-3: surface server-action failures to the user. */}
+      <ResultDialog
+        open={!!actionError}
+        onOpenChange={(open) => { if (!open) setActionError(null); }}
+        variant="error"
+        message={actionError}
+      />
     </div>
   );
 }

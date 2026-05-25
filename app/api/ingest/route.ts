@@ -193,6 +193,16 @@ export async function POST(request: NextRequest) {
       // table is never simultaneously old + new.
       if (replaceChunks) {
         const adminSupabase = createAdminClient();
+        // CP-D-7 (v1.2.0): take the document out of active rotation for the
+        // duration of the re-ingest so user-facing RAG queries don't return
+        // partial / inconsistent results while chunks are being rewritten.
+        // Restored to is_active=true in the post-pipeline branch below
+        // (success → restore; failure → see catch block).
+        await bookkeepingSupabase
+          .from('document_registry')
+          .update({ is_active: false })
+          .eq('id', documentId);
+
         await adminSupabase
           .from('dubai_code_chunks')
           .delete()
@@ -231,10 +241,14 @@ export async function POST(request: NextRequest) {
 
       // B5: stamp last_ingested_pdf_hash so the next re-ingest can detect
       // whether the *content* changed (vs. the same file being re-ingested).
-      if (pipelineSucceeded && pdfHash) {
+      // CP-D-7: also re-activate the document on success so RAG queries can
+      // reach the fresh chunks. Failure path is handled in the catch.
+      if (pipelineSucceeded) {
+        const successUpdate: Record<string, unknown> = { is_active: true };
+        if (pdfHash) successUpdate.last_ingested_pdf_hash = pdfHash;
         await bookkeepingSupabase
           .from('document_registry')
-          .update({ last_ingested_pdf_hash: pdfHash })
+          .update(successUpdate)
           .eq('id', documentId);
       }
     } catch (error) {
@@ -258,6 +272,21 @@ export async function POST(request: NextRequest) {
       // clobber the in-progress run that legitimately holds it.
       if (claimedSlot) {
         await markIngestionState(isAbort ? 'aborted' : 'failed');
+        // CP-D-7: re-activate the document so a failed re-ingest doesn't
+        // leave it stranded inactive. The pre-existing chunks are gone
+        // (we cleared them before starting), so this just unblocks the
+        // admin to retry — RAG queries will still get empty results until
+        // the next successful ingest.
+        if (replaceChunks) {
+          try {
+            await bookkeepingSupabase
+              .from('document_registry')
+              .update({ is_active: true })
+              .eq('id', documentId);
+          } catch (restoreErr) {
+            console.error('Failed to re-activate document after ingest failure:', restoreErr);
+          }
+        }
       }
       return;
     } finally {

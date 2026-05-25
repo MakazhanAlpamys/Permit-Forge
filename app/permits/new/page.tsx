@@ -20,6 +20,7 @@ import {
 import { getPermitAttachments } from '@/actions/permit-attachments';
 import { getCSRFTokenAction } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ArrowLeft } from 'lucide-react';
 import type { BuildingDetails, ComplianceRequirements, ComplianceCheckResult, PermitApplication, PermitAttachment } from '@/types';
 
@@ -229,6 +230,46 @@ function NewPermitPageInner() {
     }
   };
 
+  // CP-C-6 (v1.2.0 Part C): snapshot step 2 form state on entry so a Back
+  // click can detect unsaved edits and prompt before discarding them.
+  const step2SnapshotRef = useRef<BuildingDetails | null>(null);
+  useEffect(() => {
+    if (currentStep === 2 && step2SnapshotRef.current === null) {
+      step2SnapshotRef.current = { ...step2Data };
+    }
+    if (currentStep !== 2) {
+      step2SnapshotRef.current = null;
+    }
+    // Snapshot is intentionally captured once per step entry, not on every
+    // step2Data change — that's what makes "dirty" mean "differs from entry".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep]);
+
+  const isStep2Dirty = useCallback(() => {
+    const snap = step2SnapshotRef.current;
+    if (!snap) return false;
+    const keys: (keyof BuildingDetails)[] = [
+      'numberOfFloors', 'totalBuiltUpArea', 'plotArea', 'buildingHeight',
+      'numberOfUnits', 'numberOfParkingSpaces', 'occupancyType', 'constructionType',
+    ];
+    return keys.some(k => snap[k] !== step2Data[k]);
+  }, [step2Data]);
+
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+
+  const handleStep2Back = () => {
+    if (isStep2Dirty()) {
+      setDiscardConfirmOpen(true);
+      return;
+    }
+    goToStep(1);
+  };
+
+  const confirmDiscardStep2 = () => {
+    setDiscardConfirmOpen(false);
+    goToStep(1);
+  };
+
   // Step 2 → Save building details
   const handleStep2Next = async () => {
     if (!permitId) return;
@@ -253,35 +294,50 @@ function NewPermitPageInner() {
     }
   };
 
+  // CP-C-7 (v1.2.0 Part C): separate in-flight refs for Save Draft and Submit
+  // so a rapid double-click can't fire either action twice, and a click on
+  // one while the other is in-flight is short-circuited. Both refs feed the
+  // same `loading` boolean to keep the existing button-disabled wiring.
+  const saveDraftInFlightRef = useRef(false);
+  const submitInFlightRef = useRef(false);
+
   // Step 3 → Save compliance + submit
   const handleSaveDraft = async () => {
     if (!permitId) return;
+    // CP-C-7: short-circuit when either action is still flying.
+    if (saveDraftInFlightRef.current || submitInFlightRef.current) return;
+    // CP-E-3: if the AI check is mid-flight, mark it superseded so its
+    // result is discarded — saving means the user changed their mind about
+    // what to check anyway.
+    if (checkInFlightRef.current) {
+      checkSupersededRef.current = true;
+    }
+    saveDraftInFlightRef.current = true;
     setError('');
     setLoading(true);
 
-    const result = await updatePermitComplianceRequirements({
-      permitId,
-      complianceRequirements: step3Data,
-      expectedVersion: permitVersion,
-    }, csrfToken || '');
+    try {
+      const result = await updatePermitComplianceRequirements({
+        permitId,
+        complianceRequirements: step3Data,
+        expectedVersion: permitVersion,
+      }, csrfToken || '');
 
-    setLoading(false);
-
-    if (result.success) {
-      if (typeof permitVersion === 'number') setPermitVersion(permitVersion + 1);
-      router.push('/permits');
-    } else {
-      setError(result.error || 'Failed to save');
+      if (result.success) {
+        if (typeof permitVersion === 'number') setPermitVersion(permitVersion + 1);
+        router.push('/permits');
+      } else {
+        setError(result.error || 'Failed to save');
+      }
+    } finally {
+      setLoading(false);
+      saveDraftInFlightRef.current = false;
     }
   };
 
-  // B7: ref-based in-flight guard so a double-click can't fire submit twice
-  // while the action is still in flight.
-  const submitInFlightRef = useRef(false);
-
   const handleSubmit = async () => {
     if (!permitId) return;
-    if (submitInFlightRef.current) return;
+    if (submitInFlightRef.current || saveDraftInFlightRef.current) return;
     submitInFlightRef.current = true;
     setError('');
     setLoading(true);
@@ -318,32 +374,50 @@ function NewPermitPageInner() {
     }
   };
 
+  // CP-E-2 (v1.2.0 Part E): per-permit lock for runComplianceCheck so a user
+  // who has the same draft open in two tabs can't double-bill the LLM.
+  const checkInFlightRef = useRef<string | null>(null);
+  // CP-E-3 (v1.2.0 Part E): when the user clicks Save Draft while the AI
+  // check is in flight, we mark this so the check's setState calls bail out
+  // (we can't actually abort the server-side RAG call from here without a
+  // signal channel, but we can stop the result from clobbering local state).
+  const checkSupersededRef = useRef(false);
+
   const handleRunCheck = async () => {
     if (!permitId) return;
+    if (checkInFlightRef.current === permitId) return; // CP-E-2
+    checkInFlightRef.current = permitId;
+    checkSupersededRef.current = false;
     setError('');
     setCheckLoading(true);
 
-    // Save compliance requirements first — abort if save fails
-    const saveResult = await updatePermitComplianceRequirements({
-      permitId,
-      complianceRequirements: step3Data,
-      expectedVersion: permitVersion,
-    }, csrfToken || '');
+    try {
+      // Save compliance requirements first — abort if save fails
+      const saveResult = await updatePermitComplianceRequirements({
+        permitId,
+        complianceRequirements: step3Data,
+        expectedVersion: permitVersion,
+      }, csrfToken || '');
 
-    if (!saveResult.success) {
+      if (!saveResult.success) {
+        setError(saveResult.error || 'Failed to save compliance requirements');
+        return;
+      }
+      if (typeof permitVersion === 'number') setPermitVersion(permitVersion + 1);
+
+      const result = await runComplianceCheck(permitId, csrfToken || '');
+
+      // CP-E-3: if a save-draft happened while we were waiting, discard.
+      if (checkSupersededRef.current) return;
+
+      if (result.success && result.data) {
+        setComplianceResult(result.data);
+      } else {
+        setError(result.error || 'Failed to run compliance check');
+      }
+    } finally {
       setCheckLoading(false);
-      setError(saveResult.error || 'Failed to save compliance requirements');
-      return;
-    }
-    if (typeof permitVersion === 'number') setPermitVersion(permitVersion + 1);
-
-    const result = await runComplianceCheck(permitId, csrfToken || '');
-    setCheckLoading(false);
-
-    if (result.success && result.data) {
-      setComplianceResult(result.data);
-    } else {
-      setError(result.error || 'Failed to run compliance check');
+      checkInFlightRef.current = null;
     }
   };
 
@@ -390,7 +464,7 @@ function NewPermitPageInner() {
             data={step2Data}
             onChange={setStep2Data}
             onNext={handleStep2Next}
-            onBack={() => goToStep(1)}
+            onBack={handleStep2Back}
             loading={loading}
             error={error}
           />
@@ -442,6 +516,19 @@ function NewPermitPageInner() {
           </>
         )}
       </main>
+
+      {/* CP-C-6: dirty-form discard confirmation when leaving Step 2 backward. */}
+      <ConfirmDialog
+        open={discardConfirmOpen}
+        onOpenChange={(open) => { if (!open) setDiscardConfirmOpen(false); }}
+        title="Discard changes?"
+        description="You have unsaved building details. Going back will discard them."
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        confirmVariant="destructive"
+        destructive
+        onConfirm={confirmDiscardStep2}
+      />
     </div>
   );
 }

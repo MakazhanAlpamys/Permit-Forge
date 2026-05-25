@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, Suspense } from 'react';
-import { verifyEmailAction } from '@/actions/auth';
+import { verifyEmailAction, resendVerificationCodeAction } from '@/actions/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTheme } from '@/components/theme-provider';
@@ -20,6 +20,10 @@ function VerifyEmailForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [verified, setVerified] = useState(false);
+  // CP-E-1 (v1.2.0 Part E): resend button state. `resentAt` is a timestamp so
+  // we can rate-limit clicks client-side too (server has its own IP limiter).
+  const [resending, setResending] = useState(false);
+  const [resentAt, setResentAt] = useState<number | null>(null);
   const { theme } = useTheme();
   const router = useRouter();
 
@@ -37,6 +41,26 @@ function VerifyEmailForm() {
       setVerified(true);
       setLoading(false);
       setTimeout(() => router.push('/login'), 2000);
+    }
+  };
+
+  const handleResend = async () => {
+    if (resending) return;
+    // Client-side throttle: at most one resend every 30 s. Server enforces
+    // its own rate limit via checkLoginRateLimit on the same IP.
+    if (resentAt && Date.now() - resentAt < 30_000) return;
+    setResending(true);
+    setError('');
+    try {
+      const result = await resendVerificationCodeAction(email);
+      if (result?.error) {
+        setError(result.error);
+      } else {
+        setResentAt(Date.now());
+        setCode(''); // previous code is dead
+      }
+    } finally {
+      setResending(false);
     }
   };
 
@@ -129,6 +153,22 @@ function VerifyEmailForm() {
                   'Verify Email'
                 )}
               </Button>
+
+              {/* CP-E-1: resend button for expired or lost codes. */}
+              <div className="text-center text-sm text-muted-foreground">
+                {resentAt ? (
+                  <span className="text-green-500">A new code was sent. Check your inbox.</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={resending || !email}
+                    className="text-primary hover:underline disabled:opacity-50 disabled:no-underline"
+                  >
+                    {resending ? 'Sending...' : "Didn't get the code? Resend"}
+                  </button>
+                )}
+              </div>
             </form>
           )}
 

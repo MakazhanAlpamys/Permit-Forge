@@ -13,6 +13,8 @@ import { Separator } from '@/components/ui/separator';
 import { getChatSessions, deleteChatSession, searchChatHistory } from '@/actions/chat-history';
 import { getCSRFTokenAction } from '@/actions/auth';
 import { Input } from '@/components/ui/input';
+import { ResultDialog } from '@/components/ui/confirm-dialog';
+import { useServerAction } from '@/hooks/use-server-action';
 import type { ChatSession } from '@/types';
 import {
   MessageSquare,
@@ -22,7 +24,8 @@ import {
   ClipboardList,
   Search,
   X,
-  UserCircle
+  UserCircle,
+  Loader2,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -119,21 +122,28 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
     setDeleteDialogOpen(true);
   };
 
-  const confirmDelete = async () => {
-    if (!sessionToDelete) return;
-    
-    const result = await deleteChatSession(sessionToDelete, csrfTokenRef.current || '');
-    if (result.success) {
+  // CP-C-2/CP-C-3 (v1.2.0 Part A): wrap deleteChatSession so failures surface
+  // as a visible error dialog instead of letting the confirm modal close
+  // silently and leaving the stale session in the list.
+  const deleteSessionAction = useServerAction(deleteChatSession, {
+    fallbackErrorMessage: 'Failed to delete chat session',
+    onSuccess: () => {
       setSessions(prev => prev.filter(s => s.id !== sessionToDelete));
       if (currentSessionId === sessionToDelete && onNewChat) {
         onNewChat();
       }
-    }
-    setDeleteDialogOpen(false);
-    setSessionToDelete(null);
+      setDeleteDialogOpen(false);
+      setSessionToDelete(null);
+    },
+  });
+
+  const confirmDelete = async () => {
+    if (!sessionToDelete) return;
+    await deleteSessionAction.run(sessionToDelete, csrfTokenRef.current || '');
   };
 
   const cancelDelete = () => {
+    if (deleteSessionAction.isLoading) return;
     setDeleteDialogOpen(false);
     setSessionToDelete(null);
   };
@@ -386,16 +396,33 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
               Are you sure you want to delete this chat? This action cannot be undone.
             </p>
             <div className="flex gap-3 justify-end">
-              <Button variant="outline" onClick={cancelDelete}>
+              <Button
+                variant="outline"
+                onClick={cancelDelete}
+                disabled={deleteSessionAction.isLoading}
+              >
                 Cancel
               </Button>
-              <Button variant="destructive" onClick={confirmDelete}>
+              <Button
+                variant="destructive"
+                onClick={confirmDelete}
+                disabled={deleteSessionAction.isLoading}
+              >
+                {deleteSessionAction.isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 Delete
               </Button>
             </div>
           </div>
         </div>
       )}
+
+      {/* CP-C-2/CP-C-3: visible error feedback on delete failure. */}
+      <ResultDialog
+        open={!!deleteSessionAction.error}
+        onOpenChange={(open) => { if (!open) deleteSessionAction.clearError(); }}
+        variant="error"
+        message={deleteSessionAction.error}
+      />
     </>
   );
 }

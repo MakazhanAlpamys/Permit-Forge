@@ -7,6 +7,7 @@ import { uploadPermitAttachment, deletePermitAttachment } from '@/actions/permit
 import { getCSRFTokenAction } from '@/actions/auth';
 import { formatFileSize } from '@/lib/file-upload';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import type { PermitAttachment } from '@/types';
 
 interface FileUploadZoneProps {
@@ -55,7 +56,20 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
     }
   }, [permitId, onUpdate]);
 
-  const handleDelete = async (attachmentId: string) => {
+  // CP-D-4 (v1.2.0): wire delete through a ConfirmDialog instead of firing
+  // immediately on click. An attachment is irrecoverable once the storage
+  // object is gone — a single mistap shouldn't destroy a 10 MB upload.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [pendingDeleteName, setPendingDeleteName] = useState<string>('');
+
+  const requestDelete = (attachmentId: string, fileName: string) => {
+    setPendingDeleteId(attachmentId);
+    setPendingDeleteName(fileName);
+  };
+
+  const handleDelete = async () => {
+    const attachmentId = pendingDeleteId;
+    if (!attachmentId) return;
     setDeleting(attachmentId);
     try {
       const result = await deletePermitAttachment(attachmentId, csrfTokenRef.current || undefined);
@@ -68,6 +82,8 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
       setError('Delete failed');
     } finally {
       setDeleting(null);
+      setPendingDeleteId(null);
+      setPendingDeleteName('');
     }
   };
 
@@ -186,7 +202,7 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8 text-muted-foreground hover:text-red-400"
-                      onClick={() => handleDelete(attachment.id)}
+                      onClick={() => requestDelete(attachment.id, attachment.fileName)}
                       disabled={deleting === attachment.id}
                     >
                       <X className="h-4 w-4" />
@@ -198,6 +214,26 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
           })}
         </div>
       )}
+
+      {/* CP-D-4: attachment delete confirmation. */}
+      <ConfirmDialog
+        open={!!pendingDeleteId}
+        onOpenChange={(open) => {
+          if (deleting) return;
+          if (!open) { setPendingDeleteId(null); setPendingDeleteName(''); }
+        }}
+        title="Delete attachment"
+        description={
+          <>
+            Delete <strong>{pendingDeleteName}</strong>? This cannot be undone.
+          </>
+        }
+        confirmLabel="Delete"
+        confirmVariant="destructive"
+        destructive
+        loading={!!deleting}
+        onConfirm={handleDelete}
+      />
     </div>
   );
 }

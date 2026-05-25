@@ -41,6 +41,10 @@ export function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const csrfTokenRef = useRef<string | null>(null);
+  // CP-D-2 (v1.2.0): per-id in-flight set so a triple-click on one
+  // notification can't fire markNotificationRead three times in parallel
+  // (each one would also try to undo the previous optimistic rollback).
+  const markingInFlightRef = useRef<Set<string>>(new Set());
   const router = useRouter();
 
   const fetchNotifications = useCallback(async () => {
@@ -81,22 +85,36 @@ export function NotificationBell() {
 
   const handleMarkRead = async (notification: Notification) => {
     if (!notification.read) {
-      // Snapshot pre-mutation state so we can roll back if the server rejects.
-      const prevNotifications = notifications;
-      const prevUnreadCount = unreadCount;
+      // CP-D-2: short-circuit if a previous click for this notification is
+      // still in flight. Without this, a rapid double-click optimistically
+      // marks read twice, the second server response rolls the first one
+      // back, and the badge ends up inconsistent.
+      if (markingInFlightRef.current.has(notification.id)) {
+        // Still navigate — see below comment about decoupling read-flag from nav.
+      } else {
+        markingInFlightRef.current.add(notification.id);
 
-      // Optimistic local update — bell badge updates immediately.
-      setNotifications(prev =>
-        prev.map(n => n.id === notification.id ? { ...n, read: true } : n)
-      );
-      setUnreadCount(prev => Math.max(0, prev - 1));
+        // Snapshot pre-mutation state so we can roll back if the server rejects.
+        const prevNotifications = notifications;
+        const prevUnreadCount = unreadCount;
 
-      const result = await markNotificationRead(notification.id, csrfTokenRef.current || '');
-      if (!result.success) {
-        // Roll back — server refused (CSRF, auth, DB) and the badge would
-        // otherwise stay incorrect until the next 30 s poll.
-        setNotifications(prevNotifications);
-        setUnreadCount(prevUnreadCount);
+        // Optimistic local update — bell badge updates immediately.
+        setNotifications(prev =>
+          prev.map(n => n.id === notification.id ? { ...n, read: true } : n)
+        );
+        setUnreadCount(prev => Math.max(0, prev - 1));
+
+        try {
+          const result = await markNotificationRead(notification.id, csrfTokenRef.current || '');
+          if (!result.success) {
+            // Roll back — server refused (CSRF, auth, DB) and the badge would
+            // otherwise stay incorrect until the next 30 s poll.
+            setNotifications(prevNotifications);
+            setUnreadCount(prevUnreadCount);
+          }
+        } finally {
+          markingInFlightRef.current.delete(notification.id);
+        }
       }
     }
 
