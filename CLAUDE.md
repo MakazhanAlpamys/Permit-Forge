@@ -27,7 +27,7 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `lint` → `tsc -
 
 ## Tech Stack
 
-- **Frontend:** Next.js 15 (App Router), React 18, TypeScript, Tailwind CSS 4, shadcn/ui, Framer Motion (splash screen animations), `isomorphic-dompurify` (sanitizes assistant markdown in `components/chat/message-bubble.tsx`)
+- **Frontend:** Next.js 15 (App Router), React 18, TypeScript, Tailwind CSS 4, shadcn/ui, Framer Motion (splash screen animations). MessageBubble passes assistant markdown directly to ReactMarkdown (no DOMPurify — applying it before parsing mangles valid markdown). Server-side title sanitization in `actions/chat-history.ts` uses a small regex helper, not jsdom-based DOMPurify, because pulling jsdom into a Lambda crashed prod with `ERR_REQUIRE_ESM` (`@exodus/bytes` is ESM-only).
 - **AI:** Google Gemini 2.5 Flash via LangChain 0.3 (chat), gemini-embedding-001 via @google/genai SDK (embeddings, 768-dim vectors)
 - **Database:** Supabase (PostgreSQL) with pgvector (HNSW) + pg_trgm extensions, 30+ RPC functions
 - **Auth:** JWT (HS256, jose), bcrypt (12 rounds), CSRF tokens, HttpOnly cookies
@@ -131,7 +131,7 @@ The **only AI call** during ingestion is embedding generation on child chunks (g
 
 ### Multi-Document Support
 
-The system is fully DB-driven — all documents come from `document_registry` table (no hardcoded fallback). Migration seeds 5 default documents which admin can delete. `lib/document-registry.ts` uses in-memory cache with 5-min TTL; sync functions (`getDocumentByIdSync`, `getAllDocumentsSync`) read from cache for hot paths, async functions refresh from DB. Keywords are auto-extracted from PDF text via TF-IDF during ingestion (`lib/keyword-extractor.ts`, 0 API calls) and stored in `document_registry.keywords`. Column `keywords_auto_generated` prevents overwriting admin's manual edits.
+The system is fully DB-driven — all documents come from `document_registry` table (no hardcoded fallback). Migration seeds only a single inactive `unknown` stub (FK target for orphan chunks); real documents are added via the admin Documents tab. `lib/document-registry.ts` uses in-memory cache with 5-min TTL; sync functions (`getDocumentByIdSync`, `getAllDocumentsSync`) read from cache for hot paths, async functions refresh from DB. Keywords are auto-extracted from PDF text via TF-IDF during ingestion (`lib/keyword-extractor.ts`, 0 API calls) and stored in `document_registry.keywords`. Column `keywords_auto_generated` prevents overwriting admin's manual edits.
 
 Admin panel "Documents" tab allows: register new documents, upload PDF files to Supabase Storage, edit metadata/keywords, ingest/re-ingest PDFs, clear chunks, deactivate/restore documents. Each document is identified by `document_name` in the database. RAG search operates across all active documents; citations include document attribution.
 
@@ -169,7 +169,7 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/auth.ts` | JWT create/verify, bcrypt, CSRF, audit logging, session management |
 | `lib/security.ts` | `requireAuth`/`requireAdmin` middleware guards for server actions |
 | `lib/validations.ts` | Zod v4 schemas for all inputs (passwords, chat messages, citations, JWT payloads) |
-| `lib/supabase-server.ts` | Two clients: `createServerClient()` (anon) and `createAdminClient()` (service_role, singleton pattern). See `LOCAL_NOTES.md` for trust-boundary detail. |
+| `lib/supabase-server.ts` | Three clients: `createServerClient()` (anon), `createAdminClient()` (service_role, singleton), and `createUserContextClient(userId)` (anon key + a Supabase-compatible JWT minted with `SUPABASE_JWT_SECRET` so RLS `auth.uid()` engages). The user-context client is **opt-in via `ENABLE_USER_CONTEXT_RLS=1`** — without it the function returns the admin singleton so a misconfigured `SUPABASE_JWT_SECRET` can't 500 every "read your own X" action (see `LOCAL_NOTES.md`). |
 | `lib/file-upload.ts` | File validation (size, extension, MIME), storage path generation |
 | `lib/email.ts` | Email sending via Nodemailer SMTP: verification, password reset, password change codes; `generateSixDigitCode()` |
 | `lib/transforms.ts` | Shared data transforms: permit DB row → TypeScript object |
@@ -178,11 +178,11 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 ### Middleware (`middleware.ts`)
 
 Edge Runtime auth — runs on every non-static request:
-1. JWT verification (no DB call, jose library)
-2. Block status check via Supabase REST API (5-min in-memory cache). See `LOCAL_NOTES.md` for error-path behavior.
+1. JWT verification (no DB call, jose library). JWT payload carries `tv` (token_version).
+2. Block status + `token_version` check via Supabase REST API (5-min in-memory cache, invalidated by admin block / role / password-change actions). If `JWT.tv < users.token_version`, session is treated as revoked. See `LOCAL_NOTES.md` for error-path behavior.
 3. Role-based redirects: admins → `/admin`, users → `/`, blocked → clear session + redirect
-4. Injects `x-user-id` and `x-user-role` headers for downstream use
-5. Security headers: `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Permissions-Policy` (camera/mic/geo disabled)
+4. Generates a per-request CSP nonce, forwards it via `x-nonce` request header. `app/layout.tsx` reads `headers()` so Next.js auto-stamps the nonce on every framework-injected inline script.
+5. Security headers: nonce-based CSP with `'strict-dynamic'` (no `'unsafe-inline'` in prod), `Strict-Transport-Security` (HSTS, prod only), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy` (camera/mic/geo disabled). Applied to both app routes and `/api/*`.
 
 Public paths (no auth required): `/login`, `/register`, `/verify-email`, `/forgot-password`.
 
@@ -190,7 +190,7 @@ Matcher excludes: `api`, `_next/static`, `_next/image`, static assets (svg/png/j
 
 ### Database
 
-Schema in `supabase/migrations/000_full_setup.sql` (single idempotent migration — drops and recreates everything). All tables use Row-Level Security (RLS). See `LOCAL_NOTES.md` (gitignored) for trust-boundary detail kept out of public docs.
+Schema in `supabase/migrations/000_full_setup.sql` (single idempotent migration — drops and recreates everything, then runs the previously-incremental 001–023 follow-ups in order, all inlined into the same file so a fresh database needs only one script). Re-runnable: every block uses `CREATE OR REPLACE` / `DROP IF EXISTS` / `IF NOT EXISTS`. All tables use Row-Level Security with ownership policies (`user_id = (SELECT auth.uid())` for user-owned tables, parent-permit joins for status_history / attachments / certificates). Service role bypasses RLS — admin server actions keep unrestricted access. See `LOCAL_NOTES.md` (gitignored) for trust-boundary detail kept out of public docs.
 
 **Key tables:**
 - `dubai_code_chunks` — child chunks with VECTOR(768) embeddings + TSVECTOR (GIN index) for FTS, `parent_id` FK
@@ -257,3 +257,10 @@ Optional:
 - `SMTP_PORT` — SMTP port (default: `587`)
 - `SMTP_USER` — Gmail address for sending emails
 - `SMTP_PASS` — Gmail App Password (16 chars)
+- `SUPABASE_JWT_SECRET` — used by `createUserContextClient` to mint a Supabase-compatible JWT. Must match the project's actual JWT secret in the Supabase dashboard, otherwise every query through this client returns RLS denials. Only consulted when `ENABLE_USER_CONTEXT_RLS=1`.
+- `ENABLE_USER_CONTEXT_RLS` — set to `1` to route user-context reads through the anon key + minted JWT (engages RLS as defense-in-depth). Off by default: `createUserContextClient` returns the admin singleton.
+- `NEXT_PUBLIC_DEV_INSECURE_COOKIES` — set to `1` in local dev to drop the `Secure` flag and relax `SameSite` so cookies survive plain-HTTP `localhost`.
+
+## Debugging Production
+
+`npx vercel logs permit-forge.vercel.app --limit 20 --json` is the fastest way to surface the real error behind a Server Components 500 (the browser only ever shows the `digest` hash). This is how the `ERR_REQUIRE_ESM` from `isomorphic-dompurify`/`@exodus/bytes` was found.
