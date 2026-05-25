@@ -32,6 +32,14 @@ export interface AuthenticatedUser {
   id: string;
   username: string;
   role: 'admin' | 'user';
+  /**
+   * CP-C-1 / v1.1.0 Part A: users.token_version snapshot from the verified JWT.
+   * Callers that mint a replacement JWT (e.g. updateProfileAction after a
+   * username change) MUST forward this value so the new token's `tv` claim
+   * matches the DB; otherwise the next middleware hop sees `tv < db.tv` and
+   * logs the user out.
+   */
+  tokenVersion?: number;
 }
 
 export interface SecurityCheckResult {
@@ -87,17 +95,25 @@ export async function requireAuth(): Promise<SecurityCheckResult> {
       typeof (dbUser as { token_version?: number } | null | undefined)?.token_version === 'number'
         ? (dbUser as { token_version: number }).token_version
         : 0;
-    if (user.tokenVersion < dbTokenVersion) {
+    // v1.1.0 Part C re-audit M1: defensive `?? 0`. Today getQuickSession()
+    // always returns tokenVersion: number, but AuthenticatedUser declares it
+    // optional. Without this guard `undefined < N` evaluates to false (JS
+    // coercion rules) — a silent fail-open if a future caller ever constructs
+    // an AuthenticatedUser without the field and reuses this comparison.
+    if ((user.tokenVersion ?? 0) < dbTokenVersion) {
       return {
         success: false,
         error: 'Session revoked',
       };
     }
 
-    const { tokenVersion: _tv, ...userForReturn } = user;
+    // CP-C-1: forward tokenVersion through so callers that mint replacement
+    // JWTs (e.g. profile updates) can carry the correct `tv` claim. Without
+    // this the new JWT defaults to tv=0 and the user is logged out on the
+    // next middleware hop whenever DB.token_version > 0.
     return {
       success: true,
-      user: userForReturn,
+      user,
     };
   } catch (error) {
     console.error('Auth check error:', error);

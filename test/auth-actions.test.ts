@@ -80,20 +80,31 @@ function resetChainMocks() {
   });
 }
 
+// Mock supabase RPC at module scope so we can assert on bump_user_token_version
+const mockServerRpc = vi.fn().mockResolvedValue({ data: [{ allowed: true }], error: null });
+const mockAdminRpc = vi.fn().mockResolvedValue({ data: [{ allowed: true }], error: null });
+
 vi.mock('@/lib/supabase-server', () => ({
   createServerClient: vi.fn(() => ({
     from: (...args: unknown[]) => mockFrom(...args),
-    rpc: vi.fn().mockResolvedValue({ data: [{ allowed: true }], error: null }),
+    rpc: (...args: unknown[]) => mockServerRpc(...args),
   })),
   createAdminClient: vi.fn(() => ({
     from: (...args: unknown[]) => mockFrom(...args),
-    rpc: vi.fn().mockResolvedValue({ data: [{ allowed: true }], error: null }),
+    rpc: (...args: unknown[]) => mockAdminRpc(...args),
   })),
   checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
 }));
 
+// Mock security (logoutAction uses requireCSRF)
+const mockRequireCSRF = vi.fn().mockResolvedValue({ valid: true });
+vi.mock('@/lib/security', () => ({
+  requireCSRF: (...args: unknown[]) => mockRequireCSRF(...args),
+}));
+
 import {
   loginAction,
+  logoutAction,
   registerAction,
   verifyEmailAction,
   forgotPasswordAction,
@@ -133,6 +144,9 @@ describe('Auth Server Actions', () => {
     mockSendPasswordResetEmail.mockResolvedValue(true);
     mockGetQuickSession.mockResolvedValue({ id: 'user-123', username: 'testuser', role: 'user' });
     mockGetCSRFToken.mockResolvedValue('csrf-token-123');
+    mockServerRpc.mockResolvedValue({ data: [{ allowed: true }], error: null });
+    mockAdminRpc.mockResolvedValue({ data: [{ allowed: true }], error: null });
+    mockRequireCSRF.mockResolvedValue({ valid: true });
   });
 
   // ---------------------------------------------------------------------------
@@ -221,6 +235,76 @@ describe('Auth Server Actions', () => {
       await expect(loginAction(formData)).rejects.toThrow('NEXT_REDIRECT:/');
 
       expect(mockCreateSession).toHaveBeenCalled();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // logoutAction
+  // ---------------------------------------------------------------------------
+
+  describe('logoutAction', () => {
+    function csrfFormData(token?: string | null): FormData {
+      const fd = new FormData();
+      if (token !== null && token !== undefined) fd.set('csrfToken', token);
+      return fd;
+    }
+
+    it('bumps token_version before destroying session (v1.1 Part B / S-M)', async () => {
+      // CSRF passes, valid session
+      const fd = csrfFormData('csrf-token-123');
+
+      await expect(logoutAction(fd)).rejects.toThrow('NEXT_REDIRECT:/login');
+
+      // bump_user_token_version called with the current user id
+      expect(mockAdminRpc).toHaveBeenCalledWith('bump_user_token_version', {
+        p_user_id: 'user-123',
+      });
+      // And session was destroyed
+      expect(mockDestroySession).toHaveBeenCalled();
+      // Audit logged
+      expect(mockLogAuditEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123', action: 'logout' })
+      );
+    });
+
+    it('still destroys session and redirects if token_version bump fails', async () => {
+      // Simulate RPC failure
+      mockAdminRpc.mockResolvedValueOnce({ data: null, error: { message: 'rpc down' } });
+      const fd = csrfFormData('csrf-token-123');
+
+      await expect(logoutAction(fd)).rejects.toThrow('NEXT_REDIRECT:/login');
+
+      // Session destroyed even though RPC failed
+      expect(mockDestroySession).toHaveBeenCalled();
+    });
+
+    it('skips RPC bump when there is no session', async () => {
+      mockGetQuickSession.mockResolvedValueOnce(null);
+      const fd = csrfFormData('csrf-token-123');
+
+      await expect(logoutAction(fd)).rejects.toThrow('NEXT_REDIRECT:/login');
+
+      // No bump for anonymous logout
+      expect(mockAdminRpc).not.toHaveBeenCalledWith(
+        'bump_user_token_version',
+        expect.anything(),
+      );
+      expect(mockDestroySession).toHaveBeenCalled();
+    });
+
+    it('still proceeds with logout when CSRF is missing/invalid', async () => {
+      // C20H: a CSRF failure should not block destroying the session
+      mockRequireCSRF.mockResolvedValueOnce({ valid: false, error: 'CSRF token missing' });
+      const fd = csrfFormData(null);
+
+      await expect(logoutAction(fd)).rejects.toThrow('NEXT_REDIRECT:/login');
+
+      expect(mockDestroySession).toHaveBeenCalled();
+      // But on a CSRF-invalid logout we still bump tv so a CSRF-bypass-induced
+      // logout still invalidates other sessions on principle.
+      expect(mockAdminRpc).toHaveBeenCalledWith('bump_user_token_version', {
+        p_user_id: 'user-123',
+      });
     });
   });
 

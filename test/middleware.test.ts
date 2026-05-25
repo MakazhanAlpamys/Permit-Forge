@@ -226,7 +226,9 @@ describe('middleware — block-status cache TTL', () => {
   });
 
   it('re-fetches when the cache entry is older than TTL', async () => {
-    const stale = Date.now() - 6 * 60 * 1000; // 6 minutes — beyond 5min TTL
+    // v1.1.0 Part C: TTL is now 30s (tightened from 5min). 60s of staleness
+    // is well beyond the floor.
+    const stale = Date.now() - 60 * 1000;
     blockStatusCache.set(USER_ID, {
       blocked: false,
       tokenVersion: 0,
@@ -239,6 +241,23 @@ describe('middleware — block-status cache TTL', () => {
     });
     await middleware(req);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the cache hit fresh for the 30s TTL window (v1.1.0 Part C)', async () => {
+    // 25s into the TTL — still a cache hit; no DB roundtrip should occur.
+    const fresh = Date.now() - 25 * 1000;
+    blockStatusCache.set(USER_ID, {
+      blocked: false,
+      tokenVersion: 0,
+      checkedAt: fresh,
+    });
+    const fetchMock = mockFetchBlockedRow({ blocked: false, token_version: 0 });
+    const token = await makeToken({ sub: USER_ID, role: 'user', tv: 0 });
+    const req = makeRequest('http://localhost:3000/permits', {
+      cookies: { [SESSION_COOKIE_NAME]: token },
+    });
+    await middleware(req);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('clears session and redirects when DB reports user blocked', async () => {
@@ -269,15 +288,42 @@ describe('middleware — block-status cache TTL', () => {
     expect(res.headers.get('location')).toContain('/login');
   });
 
-  it('fails open (does NOT block) on DB error', async () => {
+  it('fails CLOSED on DB HTTP error (AUTH-H1 / v1.1.0 Part C)', async () => {
+    // Previously fail-open: 5xx from Supabase → request proceeded.
+    // Now fail-closed: blocked users couldn't get a free pass during an
+    // outage. Diploma scope acceptable since Supabase is the same project.
     mockFetchHttpError(500);
     const token = await makeToken({ sub: USER_ID, role: 'user', tv: 0 });
     const req = makeRequest('http://localhost:3000/', {
       cookies: { [SESSION_COOKIE_NAME]: token },
     });
     const res = (await middleware(req)) as unknown as Response;
-    // Not redirected to /login because of the block check; the request proceeds.
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toContain('/login');
+  });
+
+  it('fails CLOSED when the fetch throws (AUTH-H2)', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('network down'));
+    vi.stubGlobal('fetch', fetchMock);
+    const token = await makeToken({ sub: USER_ID, role: 'user', tv: 0 });
+    const req = makeRequest('http://localhost:3000/', {
+      cookies: { [SESSION_COOKIE_NAME]: token },
+    });
+    const res = (await middleware(req)) as unknown as Response;
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toContain('/login');
+  });
+
+  it('fails CLOSED when Supabase env vars are missing', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', '');
+    vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', '');
+    const token = await makeToken({ sub: USER_ID, role: 'user', tv: 0 });
+    const req = makeRequest('http://localhost:3000/', {
+      cookies: { [SESSION_COOKIE_NAME]: token },
+    });
+    const res = (await middleware(req)) as unknown as Response;
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toContain('/login');
   });
 });
 

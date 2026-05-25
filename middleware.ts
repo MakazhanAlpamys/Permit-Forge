@@ -5,8 +5,16 @@ import { jwtPayloadSchema } from '@/lib/validations';
 import { SESSION_COOKIE_NAME, getJWTSecret } from '@/lib/constants';
 import { blockStatusCache } from '@/lib/block-status-cache';
 
-// Block status check interval (5 minutes in milliseconds)
-const BLOCK_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+// v1.1.0 Part C (A-C-4 / A-M-3): block-status / token_version cache TTL.
+// This is the FLOOR on staleness: between two middleware hops within this
+// window, a user who was just blocked (or had their role / token_version
+// changed) may still slip through one request before the cache refreshes.
+//
+// Tightened from 5 min → 30s to bound the blast radius for the diploma
+// demo. Production needs Redis (or a shorter TTL) because Edge isolates
+// don't share Map instances across V8 workers — `invalidateBlockStatus`
+// only punches the local isolate's cache, not its siblings.
+const BLOCK_CHECK_INTERVAL_MS = 30 * 1000;
 
 // A5/H1: Build the per-request Content-Security-Policy. The previous policy
 // allowed 'unsafe-inline' AND 'unsafe-eval' for script-src — any reflected XSS
@@ -119,9 +127,13 @@ async function checkUserBlocked(
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     if (!supabaseUrl || !serviceRoleKey) {
-      console.error('Supabase credentials missing for block check');
-      // Fail-safe: don't block if we can't check
-      return { blocked: false };
+      // AUTH-H1 / v1.1.0 Part C: fail CLOSED rather than open. Previously
+      // returned {blocked:false} which let blocked users through whenever
+      // env vars were misconfigured. The diploma deployment hosts Supabase
+      // in the same project as the app, so a missing credential is an
+      // operator error, not a transient outage we should paper over.
+      console.error('Supabase credentials missing for block check — failing closed');
+      return { blocked: true, reason: 'Authentication service unavailable' };
     }
 
     const response = await fetch(
@@ -138,9 +150,11 @@ async function checkUserBlocked(
     );
 
     if (!response.ok) {
-      console.error('Block check failed:', response.status);
-      // Fail-safe: don't block if we can't check
-      return { blocked: false };
+      // AUTH-H1: fail CLOSED. A 4xx/5xx from Supabase REST is not a reason
+      // to grant access — a blocked attacker would benefit. Emit the status
+      // for incident triage.
+      console.error('Block check failed — failing closed. Status:', response.status);
+      return { blocked: true, reason: 'Authentication service unavailable' };
     }
 
     const users = await response.json();
@@ -176,9 +190,10 @@ async function checkUserBlocked(
 
     return { blocked, reason: user.blocked_reason, tokenVersion };
   } catch (error) {
-    console.error('Block check error:', error);
-    // Fail-safe: don't block if we can't check
-    return { blocked: false };
+    // AUTH-H2: fail CLOSED. Network/DNS error: redirect the user to /login
+    // rather than letting their JWT carry them through unauthenticated state.
+    console.error('Block check error — failing closed:', error);
+    return { blocked: true, reason: 'Authentication service unavailable' };
   }
 }
 

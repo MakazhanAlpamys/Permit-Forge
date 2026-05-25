@@ -79,11 +79,16 @@ export async function updateProfileAction(
   if (error) return { error: 'Failed to update profile' };
 
   // If username changed, update session (JWT)
+  // CP-C-1: carry tokenVersion through. Without it the new JWT defaults to
+  // tv=0; if the user has ever rotated their password (which bumps
+  // users.token_version) the next middleware hop sees JWT.tv=0 < DB.tv and
+  // logs them out. Repro: register → change password → change username → 401.
   if (updates.username && updates.username !== auth.user.username) {
     await createSession({
       id: auth.user.id,
       username: updates.username,
       role: auth.user.role,
+      tokenVersion: auth.user.tokenVersion,
     });
   }
 

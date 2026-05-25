@@ -221,6 +221,8 @@ export async function blockUser(
 
     // B13/H7-clickpath: drop the middleware block-status cache so the next
     // request from this user re-reads the DB rather than serving stale state.
+    // NOTE: Edge isolate cache not invalidated cross-runtime — TTL is the floor
+    // (v1.1.0 Part C: tightened to 30s; production needs Redis).
     invalidateBlockStatus(userId);
 
     // Log the action
@@ -275,6 +277,8 @@ export async function updateUserRole(
     if (error) throw error;
 
     // B13: drop cached state so the next middleware hit reflects the new role.
+    // NOTE: Edge isolate cache not invalidated cross-runtime — TTL is the floor
+    // (v1.1.0 Part C: tightened to 30s; production needs Redis).
     invalidateBlockStatus(userId);
 
     // Log the action
@@ -425,6 +429,8 @@ export async function adminDeleteUser(userId: string, csrfToken?: string): Promi
 
     // B13: drop the cache so a still-pending request with this user's JWT
     // is treated as "not found" → forced logout on its next middleware pass.
+    // NOTE: Edge isolate cache not invalidated cross-runtime — TTL is the floor
+    // (v1.1.0 Part C: tightened to 30s; production needs Redis).
     invalidateBlockStatus(userId);
 
     // Log the action

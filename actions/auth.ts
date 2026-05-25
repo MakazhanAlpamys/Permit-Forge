@@ -212,6 +212,25 @@ export async function logoutAction(formData?: FormData): Promise<void> {
   const metadata = await getRequestMetadata();
 
   if (user) {
+    // v1.1 Part B (S-M / logout): bump users.token_version BEFORE clearing
+    // the cookie so any JWT still cached on another tab/device fails its
+    // next middleware tv-check and is forced to /login. Without this an
+    // attacker who copied the JWT before logout retains access for up to
+    // SESSION_MAX_AGE (7 days) on the API surface and until block-cache
+    // expiry (30s) on page nav.
+    //
+    // Failure-tolerant: if the RPC errors we still destroy the cookie —
+    // a half-completed logout is strictly safer than refusing to log out.
+    try {
+      const supabase = createAdminClient();
+      const { error } = await supabase.rpc('bump_user_token_version', { p_user_id: user.id });
+      if (error) {
+        console.error('logoutAction: token_version bump failed:', error.message);
+      }
+    } catch (e) {
+      console.error('logoutAction: token_version bump threw:', e);
+    }
+
     await logAuditEvent({
       userId: user.id,
       action: 'logout',

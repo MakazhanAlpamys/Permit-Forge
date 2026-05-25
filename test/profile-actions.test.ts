@@ -88,8 +88,8 @@ import {
   adminChangePasswordAction,
 } from '@/actions/profile';
 
-const testUser = { id: 'user-123', username: 'testuser', role: 'user' as const };
-const adminUser = { id: 'admin-123', username: 'adminuser', role: 'admin' as const };
+const testUser = { id: 'user-123', username: 'testuser', role: 'user' as const, tokenVersion: 7 };
+const adminUser = { id: 'admin-123', username: 'adminuser', role: 'admin' as const, tokenVersion: 3 };
 
 describe('Profile Server Actions', () => {
   beforeEach(() => {
@@ -160,17 +160,21 @@ describe('Profile Server Actions', () => {
       );
     });
 
-    it('should update username and refresh session', async () => {
+    it('should update username and refresh session with tokenVersion (CP-C-1)', async () => {
       // Username uniqueness check — not found
       mockSingle.mockResolvedValueOnce({ data: null, error: { code: 'PGRST116' } });
 
       const result = await updateProfileAction({ username: 'newusername' }, 'csrf-token');
 
       expect(result.success).toBe(true);
+      // CP-C-1: tokenVersion MUST be passed through so the new JWT carries the
+      // correct `tv` claim. Without it, the next middleware hop sees JWT.tv=0
+      // and DB.tv>0, treating the session as revoked and logging the user out.
       expect(mockCreateSession).toHaveBeenCalledWith({
         id: testUser.id,
         username: 'newusername',
         role: testUser.role,
+        tokenVersion: testUser.tokenVersion,
       });
     });
 
