@@ -250,6 +250,7 @@ export type AuditAction =
   | 'permit_created'
   | 'permit_submitted'
   | 'permit_reviewed'
+  | 'permit_review_started'
   | 'permit_deleted'
   | 'permit_compliance_checked'
   | 'permit_attachment_uploaded'

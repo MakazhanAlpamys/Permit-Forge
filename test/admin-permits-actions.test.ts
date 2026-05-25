@@ -362,24 +362,17 @@ describe('Admin Permits Server Actions', () => {
   // ---------------------------------------------------------------------------
 
   describe('setPermitUnderReview', () => {
+    // A-C-5 / v1.3.0 Part D: setPermitUnderReview now calls
+    // start_review_permit_atomic — single RPC, no SELECT/UPDATE/INSERT split.
     function setupUnderReviewMocks() {
-      // Step 1: from().select().eq().single() -> permit lookup
-      mockSingle.mockResolvedValueOnce({
-        data: { status: 'submitted', user_id: 'user-123', project_name: 'Test Building' },
+      mockRpc.mockResolvedValueOnce({
+        data: [{
+          status_changed: true,
+          project_name: 'Test Building',
+          permit_user_id: 'user-123',
+          prev_status: 'submitted',
+        }],
         error: null,
-      });
-      // Step 2: from().update().eq().eq().select()
-      // The second .eq() call returns chain, and .select('id') must return final result
-      // Override mockSelect for the second call (first call is step 1's .select())
-      let selectCallCount = 0;
-      mockSelect.mockImplementation(() => {
-        selectCallCount++;
-        if (selectCallCount === 2) {
-          // This is the update's .select('id')
-          return { data: [{ id: validUUID }], error: null };
-        }
-        // Default chain behavior for step 1
-        return { eq: mockEq, single: mockSingle, order: mockOrder, range: mockRange, in: mockIn };
       });
     }
 
@@ -389,6 +382,10 @@ describe('Admin Permits Server Actions', () => {
       const result = await setPermitUnderReview(validUUID, 'csrf-token');
 
       expect(result.success).toBe(true);
+      expect(mockRpc).toHaveBeenCalledWith('start_review_permit_atomic', expect.objectContaining({
+        p_permit_id: validUUID,
+        p_admin_id: adminUser.id,
+      }));
     });
 
     it('should reject non-admin users', async () => {
@@ -417,7 +414,7 @@ describe('Admin Permits Server Actions', () => {
     });
 
     it('should return error when permit not found', async () => {
-      mockSingle.mockResolvedValueOnce({ data: null, error: null });
+      mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'PERMIT_NOT_FOUND' } });
 
       const result = await setPermitUnderReview(validUUID, 'csrf-token');
 
@@ -426,52 +423,29 @@ describe('Admin Permits Server Actions', () => {
     });
 
     it('should reject permit not in submitted state', async () => {
-      mockSingle.mockResolvedValueOnce({
-        data: { status: 'approved', user_id: 'user-123', project_name: 'Test' },
+      // RPC reports status_changed=false when status is outside ('submitted').
+      mockRpc.mockResolvedValueOnce({
+        data: [{ status_changed: false, prev_status: 'approved', project_name: 'Test', permit_user_id: 'user-123' }],
         error: null,
       });
 
       const result = await setPermitUnderReview(validUUID, 'csrf-token');
 
       expect(result.success).toBe(false);
-      // X16: error message now comes from lib/permit-state-machine.ts
-      expect(result.error).toMatch(/Cannot review a permit/);
+      // RPC returns status_changed=false; action surfaces the optimistic-lock copy.
+      expect(result.error).toContain('status has changed');
     });
 
     it('should handle race condition (status changed)', async () => {
-      mockSingle.mockResolvedValueOnce({
-        data: { status: 'submitted', user_id: 'user-123', project_name: 'Test' },
+      mockRpc.mockResolvedValueOnce({
+        data: [{ status_changed: false, prev_status: 'under_review', project_name: 'Test', permit_user_id: 'user-123' }],
         error: null,
-      });
-      // Update returns empty array (concurrent status change)
-      let selectCallCount = 0;
-      mockSelect.mockImplementation(() => {
-        selectCallCount++;
-        if (selectCallCount === 2) {
-          return { data: [], error: null };
-        }
-        return { eq: mockEq, single: mockSingle, order: mockOrder, range: mockRange, in: mockIn };
       });
 
       const result = await setPermitUnderReview(validUUID, 'csrf-token');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('Permit status has changed. Please refresh and try again.');
-    });
-
-    it('should insert status history record', async () => {
-      setupUnderReviewMocks();
-
-      await setPermitUnderReview(validUUID, 'csrf-token');
-
-      // Verify insert was called for permit_status_history
-      expect(mockFrom).toHaveBeenCalledWith('permit_status_history');
-      expect(mockInsert).toHaveBeenCalledWith(expect.objectContaining({
-        permit_id: validUUID,
-        from_status: 'submitted',
-        to_status: 'under_review',
-        changed_by: adminUser.id,
-      }));
     });
 
     // B8: status change committed; notification failure must only warn.
@@ -484,6 +458,21 @@ describe('Admin Permits Server Actions', () => {
       expect(result.success).toBe(true);
       expect(result.warning).toBeDefined();
       expect(result.warning).toMatch(/notification/i);
+    });
+
+    // PR1 (v1.3.0 re-audit): every successful under_review transition must
+    // write an audit_logs row. Previously the action only wrote to
+    // permit_status_history, leaving the audit pane blind to who started a review.
+    it('should log permit_review_started on successful transition', async () => {
+      setupUnderReviewMocks();
+
+      await setPermitUnderReview(validUUID, 'csrf-token');
+
+      expect(mockLogAuditEvent).toHaveBeenCalledWith(expect.objectContaining({
+        userId: adminUser.id,
+        action: 'permit_review_started',
+        metadata: expect.objectContaining({ permitId: validUUID, prevStatus: 'submitted' }),
+      }));
     });
   });
 

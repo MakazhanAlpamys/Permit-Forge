@@ -11,7 +11,6 @@ import { requireAdmin, requireCSRF, requireActionRateLimit } from '@/lib/securit
 import { uuidSchema, reviewPermitSchema, type ReviewPermitInput } from '@/lib/validations';
 import type { PermitApplication, PermitStats } from '@/types';
 import { transformPermit, type PermitRow } from '@/lib/transforms';
-import { canPerformOperation, type PermitStatus } from '@/lib/permit-state-machine';
 
 export type { ReviewPermitInput };
 
@@ -200,39 +199,51 @@ export async function setPermitUnderReview(
     }
 
     const supabase = createAdminClient();
-    const { data: permit } = await supabase
-      .from('permit_applications')
-      .select('status, user_id, project_name')
-      .eq('id', permitId)
-      .single();
 
-    if (!permit) {
-      return { success: false, error: 'Permit not found' };
+    // A-C-5 / v1.3.0 Part D: atomic SELECT + UPDATE + permit_status_history
+    // INSERT via start_review_permit_atomic. Replaces the previous 3-statement
+    // SELECT → UPDATE → INSERT sequence where a history-INSERT failure left
+    // the permit in `under_review` with no audit row.
+    const { data: rpcRows, error } = await supabase.rpc('start_review_permit_atomic', {
+      p_permit_id: permitId,
+      p_admin_id: authCheck.user.id,
+    });
+
+    if (error) {
+      const msg = error.message ?? '';
+      if (msg.includes('PERMIT_NOT_FOUND')) {
+        return { success: false, error: 'Permit not found' };
+      }
+      throw error;
     }
 
-    const startCheck = canPerformOperation(permit.status as PermitStatus, 'start_review');
-    if (!startCheck.allowed) {
-      return { success: false, error: startCheck.reason };
-    }
+    const rpcResult = Array.isArray(rpcRows) ? rpcRows[0] : (rpcRows as {
+      status_changed?: boolean;
+      project_name?: string;
+      permit_user_id?: string;
+      prev_status?: string;
+    } | null);
 
-    const { data: updated, error } = await supabase
-      .from('permit_applications')
-      .update({ status: 'under_review', reviewed_by: authCheck.user.id })
-      .eq('id', permitId)
-      .eq('status', 'submitted')
-      .select('id');
-
-    if (error) throw error;
-    if (!updated || updated.length === 0) {
+    if (!rpcResult?.status_changed) {
       return { success: false, error: 'Permit status has changed. Please refresh and try again.' };
     }
 
-    await supabase.from('permit_status_history').insert({
-      permit_id: permitId,
-      from_status: 'submitted',
-      to_status: 'under_review',
-      changed_by: authCheck.user.id,
-      comment: 'Review started',
+    const permit = {
+      user_id: rpcResult.permit_user_id ?? '',
+      project_name: rpcResult.project_name ?? '',
+    };
+
+    // PR1 (v1.3.0 re-audit): record an explicit audit_logs row for the
+    // submitted→under_review transition. permit_status_history already captures
+    // the DB-level change, but admin-action queries hit audit_logs, so without
+    // this entry "who started reviewing what, when" is unanswerable from the
+    // admin pane.
+    const metadata = await getRequestMetadata();
+    await logAuditEvent({
+      userId: authCheck.user.id,
+      action: 'permit_review_started',
+      metadata: { permitId, prevStatus: rpcResult.prev_status ?? 'submitted' },
+      ...metadata,
     });
 
     // B8: same pattern as reviewPermit — notification failure is reported as

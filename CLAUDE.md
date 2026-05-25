@@ -98,8 +98,20 @@ User Query
         → Context Building ([SOURCE N] formatted chunks)
         → LLM Generation (1 API call, streaming via SSE)
         → Chunk-Based Citations (0 API, from chunk metadata)
-        → Cache Store (fire-and-forget)
+        → Cache Store (fire-and-forget) — only when fullContent
+          length ≥ MIN_CACHEABLE_RESPONSE_LENGTH (50) AND the
+          client signal didn't abort mid-stream (v1.3.0 A-C-2).
 ```
+
+**Pipeline reliability (v1.3.0 "Pipeline Resilience"):** `executeRAGPipeline`
+wraps every run in `Promise.race` against `CHAT_PIPELINE_CONFIG.PIPELINE_TIMEOUT_MS`
+(30 s) with a per-run `AbortController`. The signal is threaded into
+`generateEmbedding`, whose retry-backoff loop uses `abortableDelay` so a
+wedged per-minute rate limit doesn't hold the pipeline for 60 s after the
+timeout already fired. The singleflight map is capped at `INFLIGHT_MAX = 100`;
+past that, callers run independently rather than collapsing. The chat-stream
+SSE route plumbs `request.signal` into LangChain's `stream({ signal })` so a
+client tab close stops Gemini token consumption immediately.
 
 **API calls per scenario:**
 | Scenario | Embedding | LLM | Total |
@@ -204,9 +216,9 @@ Schema in `supabase/migrations/000_full_setup.sql` (single idempotent migration 
 - `rate_limits` — per-user per-endpoint request throttling
 - `notifications` — in-app notification storage
 
-**Key RPC functions:** `match_dubai_code` (vector search), `match_dubai_code_hybrid` (hybrid search with RRF), `match_dubai_code_hybrid_filtered` (filtered by page range), `search_dubai_code_keywords` (FTS), `search_semantic_cache`/`insert_semantic_cache` (cache operations), `get_parent_chunks` (parent expansion), `get_all_documents`/`upsert_document`/`delete_document` (document registry CRUD), `check_rate_limit`, `get_document_tree`/`save_document_tree`, `get_admin_stats`, `get_weekly_activity`.
+**Key RPC functions:** `match_dubai_code` (vector search), `match_dubai_code_hybrid` (hybrid search with RRF), `match_dubai_code_hybrid_filtered` (filtered by page range), `search_dubai_code_keywords` (FTS), `search_semantic_cache`/`insert_semantic_cache` (cache operations; `insert_semantic_cache` is an upsert keyed by `md5(query_text)` since v1.3.0 — see A-C-3), `get_parent_chunks` (parent expansion), `submit_permit_atomic`/`revise_permit_atomic`/`review_permit_atomic`/`start_review_permit_atomic` (permit status transitions — each does FOR UPDATE row lock + UPDATE + permit_status_history INSERT in one SECURITY DEFINER body; admin guards on review/start_review since v1.0.0/v1.3.0), `create_permit_atomic`, `delete_document_atomic`, `bump_user_token_version`, `get_all_documents`/`upsert_document`/`delete_document` (document registry CRUD), `check_rate_limit`, `get_document_tree`/`save_document_tree`, `get_admin_stats`, `get_weekly_activity`.
 
-**Indexes:** HNSW on embeddings (m=16, ef_construction=64), HNSW on cache embeddings, GIN on tsvector, B-tree on metadata fields. Materialized view `analytics_daily` for dashboard stats.
+**Indexes:** HNSW on embeddings (m=16, ef_construction=64), HNSW on cache embeddings, GIN on tsvector, B-tree on metadata fields, **UNIQUE expression index `semantic_cache_query_hash_idx` on `md5(query_text)`** (v1.3.0 A-C-3 — backs the `insert_semantic_cache` upsert). Materialized view `analytics_daily` for dashboard stats.
 
 ### Components Structure
 

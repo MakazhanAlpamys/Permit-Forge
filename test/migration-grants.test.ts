@@ -326,3 +326,30 @@ describe('v1.0.0 Part D — semantic_cache SELECT lockdown (DB-C-5)', () => {
     );
   });
 });
+
+describe('v1.3.0 Part C — semantic_cache de-duplication (A-C-3)', () => {
+  // A burst of N concurrent identical queries each lose the cache lookup race
+  // and each call insert_semantic_cache → without a unique index this inflates
+  // the HNSW index and serves a non-deterministic answer back. Fix is a
+  // UNIQUE index on md5(query_text) + ON CONFLICT DO UPDATE in the RPC.
+  it('declares a UNIQUE INDEX on md5(query_text) for semantic_cache', () => {
+    expect(sql).toMatch(
+      /CREATE\s+UNIQUE\s+INDEX[^;]*?semantic_cache[^;]*?\(\s*md5\s*\(\s*query_text\s*\)\s*\)/i,
+    );
+  });
+
+  it('insert_semantic_cache uses ON CONFLICT DO UPDATE on the md5(query_text) target', () => {
+    // Body of insert_semantic_cache must contain ON CONFLICT referencing the
+    // expression index target, otherwise concurrent inserts duplicate rows.
+    // The migration `CREATE OR REPLACE`s this function twice — only the last
+    // definition wins at runtime, so we assert against that one.
+    const matches = [
+      ...sql.matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+insert_semantic_cache[\s\S]*?\$\$\s*;/gi),
+    ];
+    expect(matches.length).toBeGreaterThan(0);
+    const lastBody = matches[matches.length - 1][0];
+    expect(lastBody).toMatch(
+      /ON\s+CONFLICT\s*\(\s*\(\s*md5\s*\(\s*query_text\s*\)\s*\)\s*\)\s*DO\s+UPDATE/i,
+    );
+  });
+});

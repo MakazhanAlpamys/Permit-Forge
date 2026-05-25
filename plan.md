@@ -325,47 +325,58 @@ The click-path re-audit (general-purpose agent) found 3 silent-else callsites in
 
 #### Part A — Singleflight hard timeout + AbortController 🔴
 
-- [ ] **A-C-1 — Wrap `runRAGPipeline`** at [lib/chat-pipeline.ts:73-136](lib/chat-pipeline.ts#L73-L136) in `Promise.race` with a 30s ceiling. On timeout, the inflight entry is settled with `{error: 'pipeline_timeout'}` and removed; subsequent callers run their own pipeline.
-- [ ] Add an `AbortController` per pipeline run; share it via the inflight entry so secondary waiters can race the same abort.
-- [ ] Pass `signal` into [lib/gemini.ts:91-154](lib/gemini.ts#L91-L154) `generateEmbedding` — abort the retry loop on signal.
-- [ ] Cap `inflightPipelines.size` at 100 (A-M-5). On overflow, run independently — don't collapse.
+- [x] **A-C-1 — Wrap `runRAGPipeline`** at [lib/chat-pipeline.ts](lib/chat-pipeline.ts) in `Promise.race` with `CHAT_PIPELINE_CONFIG.PIPELINE_TIMEOUT_MS` (30s) ceiling via new `runRAGPipelineWithTimeout`. On timeout, the inflight entry is settled (returns `{chunks:[], queryEmbedding:[], fromCache:false}`) and removed via the existing `finally`.
+- [x] Per-run `AbortController` instantiated inside `runRAGPipelineWithTimeout`; signal threaded into `runRAGPipeline(query, signal)` and on to `generateEmbedding(query, 7, signal)`.
+- [x] **Signal honored in [lib/gemini.ts](lib/gemini.ts) `generateEmbedding`** — top-of-loop `signal?.aborted` check + new `abortableDelay` helper replaces the bare `setTimeout` so the retry backoff bails early on abort instead of waiting up to 60s.
+- [x] **A-M-5 — Cap `inflightPipelines.size` at `CHAT_PIPELINE_CONFIG.INFLIGHT_MAX = 100`.** On overflow, runs independently via `runRAGPipelineWithTimeout(query)` (still bounded by its own timeout) — does NOT collapse to first entry; `console.warn` records bypass.
 
 **Verification (Part A):**
 - [ ] Manual: throttle Gemini API (set `GEMINI_API_KEY` to a free-tier key + spam queries) → pipeline aborts after 30s with a clear user-visible error
-- [ ] `npx vitest run test/chat-pipeline.test.ts --pool forks` — extend with timeout + abort tests
-- [ ] Stress test: 200 concurrent distinct queries → memory stays bounded, no leaked Promises
+- [x] `npx vitest run test/chat-pipeline.test.ts --pool forks` — 26/26 green; +5 new tests covering timeout-returns-empty, signal-passed, signal-aborts-on-timeout, INFLIGHT_MAX cap + bypass, `_clearInflightPipelines` helper.
+- [ ] Stress test: 200 concurrent distinct queries → memory stays bounded, no leaked Promises (manual / load-test work; cap+timeout invariant covered by unit tests above)
 
 #### Part B — SSE plumbs `request.signal` to LangChain 🔴
 
-- [ ] **A-C-2 / TS-H-5 — Plumb `request.signal`** at [app/api/chat/stream/route.ts:207-251](app/api/chat/stream/route.ts#L207-L251). Pass `signal` into `getStreamingModel().stream(messages, { signal })`. In the `for await` loop, check `signal.aborted` and break.
-- [ ] Only call `cacheResponse` if streaming completed without abort AND `fullContent.length > MIN_RESPONSE_LENGTH` (e.g. 50 chars). Prevents cache poisoning.
+- [x] **A-C-2 / TS-H-5 — Plumbed `request.signal`** at [app/api/chat/stream/route.ts](app/api/chat/stream/route.ts). `getStreamingModel().stream(messages, { signal: upstreamSignal })`; inside `for await`, `if (upstreamSignal.aborted) { aborted = true; break; }`. `catch` block short-circuits on `upstreamSignal.aborted` so client-disconnect doesn't surface a `STREAM_ERROR` to a vanished reader.
+- [x] **Cache write gated** on `fullContent.length >= MIN_CACHEABLE_RESPONSE_LENGTH` (50, new constant in [lib/constants.ts](lib/constants.ts)) AND `!aborted`. A truncated stream now skips the cache instead of poisoning it for an hour.
 
 **Verification (Part B):**
 - [ ] Manual: send a chat message → close tab mid-stream → server log shows abort received, no further Gemini tokens consumed (check Gemini quota)
 - [ ] Verify `semantic_cache` does not get the partial response (query the table after abort)
-- [ ] `npx vitest run test/api-chat-stream.test.ts --pool forks` — add abort test
+- [x] `npx vitest run test/api-chat-stream.test.ts --pool forks` — 16/16 green (+4 new: signal-passed, cache-write-on-long, cache-skip-on-short, cache-skip-on-mid-stream-abort).
 
 #### Part C — `semantic_cache` ON CONFLICT 🟡
 
-- [ ] **A-C-3 — Add unique index** on a normalized query hash in [supabase/migrations/000_full_setup.sql](supabase/migrations/000_full_setup.sql): `CREATE UNIQUE INDEX semantic_cache_query_hash_idx ON semantic_cache (md5(query_text));`.
-- [ ] Update `insert_semantic_cache` RPC to use `ON CONFLICT (md5(query_text)) DO UPDATE SET response = EXCLUDED.response, created_at = NOW()`.
+- [x] **A-C-3 — Added unique index** in [supabase/migrations/000_full_setup.sql](supabase/migrations/000_full_setup.sql) v1.3.0 lockdown block: `CREATE UNIQUE INDEX IF NOT EXISTS semantic_cache_query_hash_idx ON semantic_cache ((md5(query_text)));`.
+- [x] **`insert_semantic_cache` re-declared** with `ON CONFLICT ((md5(query_text))) DO UPDATE SET response = EXCLUDED.response, query_embedding = EXCLUDED.query_embedding, citations = EXCLUDED.citations, ttl_seconds = EXCLUDED.ttl_seconds, created_at = NOW()`. `REVOKE`+`GRANT` to service_role re-applied for parity with v1.0.0 lockdown block.
 
 **Verification (Part C):**
 - [ ] Manual: fire 5 identical chat queries in 100ms (script) → `SELECT count(*) FROM semantic_cache WHERE query_text = ...` returns 1 (was N before fix)
 - [ ] HNSW index size doesn't grow with duplicate inserts
-- [ ] Existing cache-hit tests green
+- [x] `npx vitest run test/migration-grants.test.ts --pool forks` — 45/45 green; +2 new invariant tests (UNIQUE INDEX + last-definition ON CONFLICT body assertion).
 
 #### Part D — `setPermitUnderReview` atomic RPC 🟡
 
-- [ ] **A-C-5 — Add `start_review_permit_atomic` RPC** in the migration mirroring `submit_permit_atomic`: `FOR UPDATE` row lock on `permit_applications`, UPDATE status, INSERT into `permit_status_history`, all in one `SECURITY DEFINER` function with admin guard.
-- [ ] Refactor [actions/admin-permits.ts:181-270](actions/admin-permits.ts#L181-L270) to call the RPC. Removes the SELECT → UPDATE → INSERT split.
+- [x] **A-C-5 — Added `start_review_permit_atomic` RPC** in [supabase/migrations/000_full_setup.sql](supabase/migrations/000_full_setup.sql) v1.3.0 lockdown block, mirroring `review_permit_atomic`: in-body admin guard, `FOR UPDATE` row lock, UPDATE + history INSERT in one `SECURITY DEFINER` body. Returns `(status_changed, project_name, permit_user_id, prev_status)`. REVOKE from anon/authenticated/PUBLIC, GRANT to service_role only.
+- [x] Refactored [actions/admin-permits.ts](actions/admin-permits.ts) `setPermitUnderReview` to call the RPC. Removed `canPerformOperation` import (admin RPC enforces the `<> 'submitted'` rule itself) + the 3-statement SELECT/UPDATE/INSERT sequence. `PERMIT_NOT_FOUND` mapped, `status_changed=false` surfaces the optimistic-lock copy.
 
 **Verification (Part D):**
 - [ ] Simulate INSERT INTO permit_status_history failure (drop a NOT NULL constraint mid-test): UPDATE rolls back
-- [ ] `npx vitest run test/admin-permits-actions.test.ts --pool forks` — extend with atomic-failure test
-- [ ] Audit log invariant: every `under_review` permit has a corresponding `permit_status_history` row
+- [x] `npx vitest run test/admin-permits-actions.test.ts --pool forks` — 32/32 green; reworked the setPermitUnderReview mocks to assert on `mockRpc` (matches `reviewPermit` pattern), added explicit `start_review_permit_atomic` payload assertion.
+- [ ] Audit log invariant: every `under_review` permit has a corresponding `permit_status_history` row (RPC is atomic — same `SECURITY DEFINER` body now writes both, so the only way to break it is service_role inserting a row out-of-band, which audit would catch)
 
-**v1.3.0 totals:** ~300 LOC + ~25 tests. Closes the chat-pipeline reliability holes.
+#### Part E — Re-audit follow-ups 🟢
+
+The v1.3.0 architect re-audit (everything-claude-code:architect agent) found 0 Critical, 2 High, 2 Medium, 4 Low. All addressed before push.
+
+- [x] **PR1 (High) — `setPermitUnderReview` was missing an `audit_logs` entry.** Added `permit_review_started` to `AuditAction` enum in [lib/auth.ts](lib/auth.ts) and a `logAuditEvent({ action: 'permit_review_started', metadata: { permitId, prevStatus } })` call in [actions/admin-permits.ts](actions/admin-permits.ts) after the RPC. +1 test asserting the audit row.
+- [x] **PR2 (High) — `reviewed_at` column-shape divergence between atomic RPCs.** Added explicit SQL comment in [supabase/migrations/000_full_setup.sql](supabase/migrations/000_full_setup.sql) `start_review_permit_atomic` body documenting that `reviewed_at` is reserved for the terminal decision, `permit_status_history.created_at` is the canonical review-started timestamp.
+- [x] **PR4 (Medium) — `query_embedding` was being overwritten on ON CONFLICT.** Removed from the `DO UPDATE SET` clause in the v1.3.0 lockdown block — first-stored vector wins, no HNSW index churn, no rebind path.
+- [x] **PR5 (Low → defense-in-depth) — `searchCache` now filters legacy short rows.** [lib/semantic-cache.ts](lib/semantic-cache.ts) treats `response.length < MIN_CACHEABLE_RESPONSE_LENGTH` as a miss so pre-v1.3.0 short rows can't serve a truncated answer. +1 test.
+- [x] **PR6 (Low) — `abortableDelay` listener cleanup symmetry.** [lib/gemini.ts](lib/gemini.ts) extracted a `cleanup()` that both the resolve and reject paths call (was previously only resolve). `{ once: true }` already made this a no-op but the symmetry guards against future refactor footguns.
+- [ ] PR3, PR7, PR8, PR9 — informational / pre-existing / by-design (per-user rate limit IS the singleflight overflow backstop; documented in CLAUDE.md pipeline-reliability paragraph).
+
+**v1.3.0 totals:** planned ~300 LOC + ~25 tests; actual: ~340 LOC + 12 net new tests (5 Part A + 4 Part B + 2 Part C + 1 PR1 audit + 1 PR5 short-row; -1 admin-permits mock simplification). Closes 4 Critical + 1 High + 0 re-audit Crit / 2 re-audit High / 1 re-audit Med folded in before push.
 
 ---
 
@@ -770,7 +781,7 @@ Update after every release ships:
 | v1.0.0 | `028dc69` | 6 | 4 | 0 | 0 | Auth lockdown — pending push |
 | v1.1.0 | `56d9b00` | 1 | 2 | 2 | 0 | JWT coherence — CP-C-1, AUTH-H1/H2, AUTH-M5, A-M-3, S-M logout; A-C-4 deferred (Edge isolate Redis is post-defense). Pending push. |
 | v1.2.0 | `394cef6` | 5 | 10 | 3 | 0 | Click-path — A/B/C/D/E + re-audit Part F. 8 Medium items deferred to v1.9.0. Pending push. |
-| v1.3.0 | — | 4 | 1 | 0 | 0 | Pipeline resilience |
+| v1.3.0 | — | 4 | 1 | 1 | 0 | Pipeline resilience — A/B/C/D + re-audit Part E (PR1/PR2/PR4/PR5/PR6 folded in before push). Pending push. |
 | v1.4.0 | — | 10 (coverage) | 0 | 0 | 0 | Coverage foundation |
 | v1.5.0 | — | 0 | 11 | 17 | 0 | Security + DB |
 | v1.6.0 | — | 0 | 5 | 10 | 0 | TypeScript safety |

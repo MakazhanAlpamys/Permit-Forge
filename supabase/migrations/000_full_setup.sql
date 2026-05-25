@@ -4147,6 +4147,143 @@ GRANT EXECUTE ON FUNCTION get_parent_chunks(BIGINT[]) TO service_role;
 
 
 -- ============================================================================
+-- v1.3.0 "Pipeline Resilience" (audit 2026-05-21)
+-- ============================================================================
+
+-- --------------------------------------------------------------------------
+-- A-C-3 / v1.3.0 Part C — De-duplicate semantic_cache by query_text.
+--
+-- Before: N concurrent identical queries each miss the cache lookup (they
+-- start before any of them populates it), each then INSERT their own row,
+-- which inflates the HNSW index, slows future lookups, and means N different
+-- AI responses for the same query text can serve back. Fix is a UNIQUE
+-- expression index on md5(query_text) + ON CONFLICT DO UPDATE in the insert
+-- RPC so the latest response wins.
+-- --------------------------------------------------------------------------
+
+CREATE UNIQUE INDEX IF NOT EXISTS semantic_cache_query_hash_idx
+  ON semantic_cache ((md5(query_text)));
+
+CREATE OR REPLACE FUNCTION insert_semantic_cache(
+  p_query_text TEXT,
+  p_query_embedding VECTOR(768),
+  p_response TEXT,
+  p_citations JSONB DEFAULT '[]',
+  p_ttl_seconds INT DEFAULT 3600
+)
+RETURNS UUID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  new_id UUID;
+BEGIN
+  -- PR4 (v1.3.0 re-audit): only refresh response/citations/created_at on
+  -- conflict. The vector for a given query_text is deterministic per Gemini
+  -- model, so re-writing it on every collision is pure HNSW index churn and
+  -- — defense in depth — closes the path where a malicious caller crafts a
+  -- payload to rebind a hot cache row's vector. The first-stored embedding
+  -- wins; cleanup_semantic_cache() removes the entry when TTL expires.
+  INSERT INTO semantic_cache (query_text, query_embedding, response, citations, ttl_seconds)
+  VALUES (p_query_text, p_query_embedding, p_response, p_citations, p_ttl_seconds)
+  ON CONFLICT ((md5(query_text))) DO UPDATE
+    SET response = EXCLUDED.response,
+        citations = EXCLUDED.citations,
+        ttl_seconds = EXCLUDED.ttl_seconds,
+        created_at = NOW()
+  RETURNING semantic_cache.id INTO new_id;
+  RETURN new_id;
+END;
+$$;
+
+-- Re-apply the v1.0.0 lockdown grant (CREATE OR REPLACE preserves grants but
+-- belt and suspenders is the convention in this file).
+REVOKE EXECUTE ON FUNCTION insert_semantic_cache(TEXT, VECTOR(768), TEXT, JSONB, INT) FROM anon, authenticated, PUBLIC;
+GRANT EXECUTE ON FUNCTION insert_semantic_cache(TEXT, VECTOR(768), TEXT, JSONB, INT) TO service_role;
+
+
+-- --------------------------------------------------------------------------
+-- A-C-5 / v1.3.0 Part D — start_review_permit_atomic.
+--
+-- Before: setPermitUnderReview in actions/admin-permits.ts did SELECT →
+-- UPDATE → INSERT INTO permit_status_history as three separate statements.
+-- If the history INSERT raised (NOT NULL violation, FK race) the UPDATE
+-- had already committed, leaving the permit in `under_review` with no
+-- audit trail. Mirrors the v1.0.0 atomic-RPC pattern used for review.
+-- --------------------------------------------------------------------------
+
+DROP FUNCTION IF EXISTS start_review_permit_atomic(UUID, UUID);
+
+CREATE OR REPLACE FUNCTION start_review_permit_atomic(
+  p_permit_id UUID,
+  p_admin_id UUID
+) RETURNS TABLE(status_changed BOOLEAN, project_name TEXT, permit_user_id UUID, prev_status TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_prev_status TEXT;
+  v_project_name TEXT;
+  v_user_id UUID;
+BEGIN
+  -- DB-C-2 / v1.0.0 pattern: defense-in-depth admin guard. service_role calls
+  -- have auth.uid() = NULL → bypass. Direct PostgREST hits must come from a
+  -- non-blocked admin whose id matches the passed p_admin_id.
+  IF auth.uid() IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM users
+       WHERE id = auth.uid() AND role = 'admin' AND blocked = FALSE
+    ) THEN
+      RAISE EXCEPTION 'Unauthorized: admin role required' USING ERRCODE = '42501';
+    END IF;
+    IF auth.uid() <> p_admin_id THEN
+      RAISE EXCEPTION 'Unauthorized: p_admin_id must match caller' USING ERRCODE = '42501';
+    END IF;
+  END IF;
+
+  SELECT pa.status, pa.project_name, pa.user_id
+    INTO v_prev_status, v_project_name, v_user_id
+  FROM permit_applications pa
+  WHERE pa.id = p_permit_id
+  FOR UPDATE;
+
+  IF v_prev_status IS NULL THEN
+    RAISE EXCEPTION 'PERMIT_NOT_FOUND' USING ERRCODE = 'P0001';
+  END IF;
+
+  IF v_prev_status <> 'submitted' THEN
+    RETURN QUERY SELECT FALSE, v_project_name, v_user_id, v_prev_status;
+    RETURN;
+  END IF;
+
+  -- PR2 (v1.3.0 re-audit): we deliberately do NOT set reviewed_at here.
+  -- The column semantics are "when did the admin make a terminal decision
+  -- (approve / reject / request_revision)" — that timestamp is set by
+  -- review_permit_atomic above. permit_status_history.created_at is the
+  -- canonical "when did this admin start review" timestamp. If a future
+  -- product requirement asks for a separate "review_started_at" column,
+  -- add it explicitly rather than reusing reviewed_at.
+  UPDATE permit_applications
+     SET status = 'under_review',
+         reviewed_by = p_admin_id,
+         updated_at = NOW(),
+         version = version + 1
+   WHERE id = p_permit_id;
+
+  INSERT INTO permit_status_history (permit_id, from_status, to_status, changed_by, comment)
+  VALUES (p_permit_id, 'submitted', 'under_review', p_admin_id, 'Review started');
+
+  RETURN QUERY SELECT TRUE, v_project_name, v_user_id, v_prev_status;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION start_review_permit_atomic(UUID, UUID) FROM anon, authenticated, PUBLIC;
+GRANT EXECUTE ON FUNCTION start_review_permit_atomic(UUID, UUID) TO service_role;
+
+
+-- ============================================================================
 
 SELECT
   'Database setup complete!' AS status,

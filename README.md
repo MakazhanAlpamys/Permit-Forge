@@ -58,12 +58,13 @@
 
 ### Hybrid RAG Pipeline
 - **1-2 API calls** per question
-- **Semantic cache** — cosine similarity > 0.95, 1hr TTL, 30-40% hit rate
+- **Semantic cache** — cosine similarity > 0.95, 1hr TTL, 30-40% hit rate, de-duplicated by `md5(query_text)` unique index (no concurrent-insert bloat)
 - **Vector similarity** (0.7) + **keyword FTS** (0.3) via RRF
 - **CRAG check** — pre-generation quality gate (threshold 0.3)
 - **Heuristic reranker** — deterministic scoring, 0 API, ~1ms
 - **Parent-child chunking** — 400-char search precision, 2000-char LLM context
 - **Document selector** — keyword-based routing to 1-3 documents (0 API)
+- **Pipeline resilience (v1.3.0):** 30 s hard timeout via `Promise.race`, per-run `AbortController` plumbed through embeddings + LangChain streaming, singleflight cap of 100 concurrent distinct queries, cache writes gated on response length ≥ 50 chars and signal-not-aborted (no truncated-answer poisoning)
 
 </td>
 </tr>

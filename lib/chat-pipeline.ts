@@ -40,6 +40,17 @@ export const CHAT_PIPELINE_CONFIG = {
 
   // Parent chunk expansion
   ENABLE_PARENT_EXPANSION: true,
+
+  // v1.3.0 Part A (A-C-1) — Hard ceiling on a single pipeline run. If Gemini
+  // wedges (429 retry-after of 7 minutes, socket hang, etc.) the singleflight
+  // would otherwise stall every concurrent waiter on the same key indefinitely.
+  PIPELINE_TIMEOUT_MS: 30_000,
+
+  // v1.3.0 Part A (A-M-5) — Bound the singleflight map. Past this many
+  // concurrent distinct queries we bypass the dedup so the map can't grow
+  // unbounded under adversarial fan-out. New callers still run their own
+  // pipeline (with its own AbortController + timeout), they just aren't tracked.
+  INFLIGHT_MAX: 100,
 } as const;
 
 // -----------------------------------------------------------------------------
@@ -75,6 +86,15 @@ const inflightPipelines = new Map<string, Promise<PipelineResult>>();
 /** Visible for tests — number of in-flight singleflight entries right now. */
 export function _inflightPipelineCount(): number {
   return inflightPipelines.size;
+}
+
+/**
+ * Visible for tests — drop all tracked inflight entries. Used by chat-pipeline
+ * tests that intentionally leave pipelines pending to assert the cap, then
+ * need to clear state before the next test runs.
+ */
+export function _clearInflightPipelines(): void {
+  inflightPipelines.clear();
 }
 
 function singleflightKey(query: string): string {
@@ -118,6 +138,12 @@ export async function getGreetingResponse(): Promise<string> {
 /**
  * Public entry point — wraps the pipeline worker with a per-query singleflight
  * (X18). N concurrent requests for the same query collapse to one pipeline run.
+ *
+ * v1.3.0 Part A (A-C-1 / A-M-5): every run is wrapped in a Promise.race against
+ * PIPELINE_TIMEOUT_MS and given its own AbortController so a wedged Gemini
+ * call doesn't stall every concurrent waiter. The singleflight map is capped
+ * at INFLIGHT_MAX — past that, callers run independently rather than being
+ * collapsed (or, worse, refused).
  */
 export async function executeRAGPipeline(query: string): Promise<PipelineResult> {
   const key = singleflightKey(query);
@@ -126,13 +152,54 @@ export async function executeRAGPipeline(query: string): Promise<PipelineResult>
     return inflight;
   }
 
-  const promise = runRAGPipeline(query).finally(() => {
+  if (inflightPipelines.size >= CHAT_PIPELINE_CONFIG.INFLIGHT_MAX) {
+    console.warn(
+      `Singleflight at cap (${CHAT_PIPELINE_CONFIG.INFLIGHT_MAX}); bypassing dedup for "${key.slice(0, 40)}"`,
+    );
+    return runRAGPipelineWithTimeout(query);
+  }
+
+  const promise = runRAGPipelineWithTimeout(query).finally(() => {
     // Always clean up — both on success and on rejection — so a transient
     // failure doesn't poison the slot for the next caller.
     inflightPipelines.delete(key);
   });
   inflightPipelines.set(key, promise);
   return promise;
+}
+
+/**
+ * v1.3.0 Part A — race the worker against PIPELINE_TIMEOUT_MS. On timeout we
+ * abort the worker's signal (so the embedding retry loop can wake up early)
+ * and surface an empty result to the caller. Empty result + zero embedding
+ * sends the stream route down its no-citation path the same way a CRAG miss
+ * does, which is the safest visible degradation.
+ */
+async function runRAGPipelineWithTimeout(query: string): Promise<PipelineResult> {
+  const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race<PipelineResult>([
+      runRAGPipeline(query, controller.signal),
+      new Promise<PipelineResult>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          controller.abort();
+          reject(new Error('pipeline_timeout'));
+        }, CHAT_PIPELINE_CONFIG.PIPELINE_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (err) {
+    if (err instanceof Error && err.message === 'pipeline_timeout') {
+      console.warn(
+        `RAG pipeline timed out after ${CHAT_PIPELINE_CONFIG.PIPELINE_TIMEOUT_MS}ms`,
+      );
+      return { chunks: [], queryEmbedding: [], fromCache: false };
+    }
+    throw err;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }
 
 /**
@@ -150,15 +217,16 @@ export async function executeRAGPipeline(query: string): Promise<PipelineResult>
  *
  * Total: 1 embedding call. Cache hit = 0 more calls.
  */
-async function runRAGPipeline(query: string): Promise<PipelineResult> {
+async function runRAGPipeline(query: string, signal?: AbortSignal): Promise<PipelineResult> {
   // Step 0: Ensure registry cache and search profiles are loaded
   await getAllDocuments(); // populates registry cache for sync lookups
   await loadSearchProfiles(); // populates document selector profiles
 
-  // Step 1: Generate embedding (reused for cache lookup AND search)
+  // Step 1: Generate embedding (reused for cache lookup AND search). The
+  // signal lets the retry loop bail early if the singleflight timeout fired.
   let queryEmbedding: number[];
   try {
-    queryEmbedding = await generateEmbedding(query);
+    queryEmbedding = await generateEmbedding(query, 7, signal);
   } catch (error) {
     console.error('Embedding generation failed:', error);
     return { chunks: [], queryEmbedding: [], fromCache: false };

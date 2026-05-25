@@ -87,11 +87,23 @@ export class DailyQuotaExhaustedError extends Error {
  * Returns a 768-dimensional vector (matching database VECTOR(768) columns)
  * Includes retry logic for network errors and per-minute rate limits (429).
  * Throws DailyQuotaExhaustedError immediately when daily quota is hit.
+ *
+ * v1.3.0 Part A (A-C-1) — optional AbortSignal lets the chat-pipeline singleflight
+ * timeout interrupt a wedged retry loop. When the signal fires we bail with
+ * AbortError instead of waiting the (up to 7-minute) per-minute rate-limit
+ * backoff window.
  */
-export async function generateEmbedding(text: string, maxRetries = 7): Promise<number[]> {
+export async function generateEmbedding(
+  text: string,
+  maxRetries = 7,
+  signal?: AbortSignal,
+): Promise<number[]> {
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    if (signal?.aborted) {
+      throw new Error('Embedding aborted');
+    }
     try {
       const result = await getGenaiClient().models.embedContent({
         model: 'gemini-embedding-001',
@@ -146,11 +158,47 @@ export async function generateEmbedding(text: string, maxRetries = 7): Promise<n
       }
 
       console.warn(`Embedding ${isRateLimit ? 'rate limited' : 'fetch failed'}, retrying in ${Math.round(delay / 1000)}s (attempt ${attempt}/${maxRetries})...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
+      await abortableDelay(delay, signal);
     }
   }
 
   throw lastError || new Error('Failed to generate embedding');
+}
+
+/**
+ * setTimeout-based delay that wakes up early if the AbortSignal fires. The
+ * abort throws so the retry loop's top-of-iteration `signal?.aborted` check
+ * also short-circuits — either way the caller sees AbortError, not a 60s wait.
+ */
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let abortHandler: (() => void) | undefined;
+    const cleanup = () => {
+      if (signal && abortHandler) {
+        // PR6 (v1.3.0 re-audit): explicit removal even though { once: true }
+        // already auto-detaches — keeps the symmetry guarantee under future
+        // refactors that might drop the once flag.
+        signal.removeEventListener('abort', abortHandler);
+      }
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    if (signal) {
+      if (signal.aborted) {
+        clearTimeout(timer);
+        reject(new Error('Embedding aborted'));
+        return;
+      }
+      abortHandler = () => {
+        clearTimeout(timer);
+        cleanup();
+        reject(new Error('Embedding aborted'));
+      };
+      signal.addEventListener('abort', abortHandler, { once: true });
+    }
+  });
 }
 
 

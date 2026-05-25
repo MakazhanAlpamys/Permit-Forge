@@ -60,6 +60,14 @@ export const CACHE_SIMILARITY_THRESHOLD = 0.95;
 /** Semantic cache TTL in seconds (1 hour) */
 export const CACHE_TTL_SECONDS = 3600;
 
+/**
+ * v1.3.0 Part B (A-C-2) — minimum response length to write into the semantic
+ * cache. Below this threshold we treat the response as a partial / aborted
+ * stream and skip the cache write so the next identical query doesn't get a
+ * truncated "answer" served for an hour.
+ */
+export const MIN_CACHEABLE_RESPONSE_LENGTH = 50;
+
 /** Keyword weight for hybrid search RRF */
 export const KEYWORD_WEIGHT = 0.3;
 

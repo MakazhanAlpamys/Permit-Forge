@@ -42,12 +42,15 @@ vi.mock('@/lib/supabase-server', () => {
 });
 
 // Mock chat pipeline
+const mockCacheResponse = vi.fn().mockResolvedValue(undefined);
+const mockExecuteRAGPipeline = vi.fn().mockResolvedValue({ chunks: [], queryEmbedding: new Array(768).fill(0), fromCache: false });
+const mockClassifyUserTopic = vi.fn().mockResolvedValue({ isOnTopic: false, shouldUseRAG: false });
 vi.mock('@/lib/chat-pipeline', () => ({
-  classifyUserTopic: vi.fn().mockResolvedValue({ isOnTopic: false, shouldUseRAG: false }),
-  executeRAGPipeline: vi.fn().mockResolvedValue({ chunks: [], queryEmbedding: new Array(768).fill(0), fromCache: false }),
-  generateCitations: vi.fn().mockReturnValue([]),
-  cacheResponse: vi.fn().mockResolvedValue(undefined),
-  buildContext: vi.fn().mockReturnValue(''),
+  classifyUserTopic: (...args: unknown[]) => mockClassifyUserTopic(...args),
+  executeRAGPipeline: (...args: unknown[]) => mockExecuteRAGPipeline(...args),
+  generateCitations: vi.fn().mockReturnValue([{ source: 'Building Code', page: 1, section: '1' }]),
+  cacheResponse: (...args: unknown[]) => mockCacheResponse(...args),
+  buildContext: vi.fn().mockReturnValue('ctx'),
   getOffTopicResponse: vi.fn().mockResolvedValue('Off topic response'),
   getGreetingResponse: vi.fn().mockResolvedValue('Greeting response'),
   CRAG_FAIL_RESPONSE: 'CRAG fail response',
@@ -59,15 +62,12 @@ vi.mock('@/lib/rag', () => ({
 }));
 
 // Mock gemini
+const mockStream = vi.fn();
 vi.mock('@/lib/gemini', () => ({
   COMPLIANCE_SYSTEM_PROMPT: 'Test system prompt',
-  streamingModel: {
-    stream: vi.fn().mockResolvedValue({
-      [Symbol.asyncIterator]: async function* () {
-        yield { content: 'Test response' };
-      },
-    }),
-  },
+  getStreamingModel: () => ({
+    stream: (...args: unknown[]) => mockStream(...args),
+  }),
 }));
 
 // Mock langchain messages
@@ -80,6 +80,7 @@ vi.mock('@langchain/core/messages', () => ({
 // Mock constants
 vi.mock('@/lib/constants', () => ({
   MAX_CONTEXT_LENGTH: 10000,
+  MIN_CACHEABLE_RESPONSE_LENGTH: 50,
 }));
 
 import { NextRequest } from 'next/server';
@@ -99,11 +100,36 @@ function createRequest(body: object, headers: Record<string, string> = {}): Next
   });
 }
 
+function makeAsyncIter(chunks: string[]) {
+  return {
+    [Symbol.asyncIterator]: async function* () {
+      for (const c of chunks) {
+        yield { content: c };
+      }
+    },
+  };
+}
+
+async function drainStream(response: Response): Promise<string> {
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let out = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    out += decoder.decode(value);
+  }
+  return out;
+}
+
 describe('POST /api/chat/stream', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCheckRateLimit.mockResolvedValue({ allowed: true });
     mockValidateCSRFToken.mockResolvedValue(true);
+    mockClassifyUserTopic.mockResolvedValue({ isOnTopic: false, shouldUseRAG: false });
+    mockExecuteRAGPipeline.mockResolvedValue({ chunks: [], queryEmbedding: new Array(768).fill(0), fromCache: false });
+    mockStream.mockResolvedValue(makeAsyncIter(['Test response']));
   });
 
   it('should return 401 when unauthenticated', async () => {
@@ -266,5 +292,102 @@ describe('POST /api/chat/stream', () => {
     expect(response.status).toBe(403);
     const data = await response.json();
     expect(data.error).toBe('CSRF token required');
+  });
+
+  // ========================================================================
+  // v1.3.0 Part B — SSE abort plumbing + cache-poisoning guard (A-C-2 / TS-H-5)
+  // ========================================================================
+  describe('streaming abort + cache poisoning guard', () => {
+    function makePipelineWithChunks() {
+      mockClassifyUserTopic.mockResolvedValue({ isOnTopic: true, shouldUseRAG: true });
+      mockExecuteRAGPipeline.mockResolvedValue({
+        chunks: [{ id: 1, content: 'x', metadata: { page: 1 }, similarity: 0.9 }],
+        queryEmbedding: new Array(768).fill(0.1),
+        fromCache: false,
+      });
+    }
+
+    it('passes the request signal to getStreamingModel().stream()', async () => {
+      mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+      makePipelineWithChunks();
+      mockStream.mockResolvedValueOnce(
+        makeAsyncIter(['A long enough cacheable response with at least fifty characters!']),
+      );
+
+      const request = createRequest({ message: 'tell me about parking' }, { 'x-csrf-token': 'valid' });
+      const response = await POST(request);
+      await drainStream(response);
+
+      const [, opts] = mockStream.mock.calls[0];
+      expect(opts).toBeDefined();
+      expect(opts).toHaveProperty('signal');
+      expect(opts.signal).toBeInstanceOf(AbortSignal);
+    });
+
+    it('writes to cache when response length >= MIN_CACHEABLE_RESPONSE_LENGTH', async () => {
+      mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+      makePipelineWithChunks();
+      mockStream.mockResolvedValueOnce(
+        makeAsyncIter(['A long enough cacheable response with at least fifty characters!']),
+      );
+
+      const request = createRequest({ message: 'tell me about parking' }, { 'x-csrf-token': 'valid' });
+      const response = await POST(request);
+      await drainStream(response);
+
+      // Allow fire-and-forget cacheResponse promise to dispatch.
+      await new Promise(resolve => setImmediate(resolve));
+      expect(mockCacheResponse).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT write to cache when response length < MIN_CACHEABLE_RESPONSE_LENGTH (A-C-2)', async () => {
+      mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+      makePipelineWithChunks();
+      // Short truncated reply — emulates an aborted / partial stream.
+      mockStream.mockResolvedValueOnce(makeAsyncIter(['tiny']));
+
+      const request = createRequest({ message: 'tell me about parking' }, { 'x-csrf-token': 'valid' });
+      const response = await POST(request);
+      await drainStream(response);
+
+      await new Promise(resolve => setImmediate(resolve));
+      expect(mockCacheResponse).not.toHaveBeenCalled();
+    });
+
+    it('does NOT write to cache when the request signal is aborted mid-stream', async () => {
+      mockGetQuickSession.mockResolvedValue({ id: 'user-1', role: 'user' });
+      makePipelineWithChunks();
+
+      // Stream yields a few chunks; we'll abort the request before draining.
+      const abortableIter = {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        signal: undefined as any,
+        [Symbol.asyncIterator]: async function* () {
+          yield { content: 'A long enough cacheable response with at least' };
+          yield { content: ' fifty characters!' };
+        },
+      };
+      mockStream.mockResolvedValueOnce(abortableIter);
+
+      const controller = new AbortController();
+      // Pre-abort so the stream's `for await` exits on first iteration.
+      controller.abort();
+
+      const request = new NextRequest('http://localhost:3000/api/chat/stream', {
+        method: 'POST',
+        body: JSON.stringify({ message: 'parking?' }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-csrf-token': 'valid',
+          Origin: 'http://localhost:3000',
+        },
+        signal: controller.signal,
+      });
+      const response = await POST(request);
+      try { await drainStream(response); } catch { /* aborted */ }
+
+      await new Promise(resolve => setImmediate(resolve));
+      expect(mockCacheResponse).not.toHaveBeenCalled();
+    });
   });
 });

@@ -5,7 +5,7 @@ import { requireAuth } from '@/lib/security';
 import { chatMessageSchema } from '@/lib/validations';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
 import { COMPLIANCE_SYSTEM_PROMPT, getStreamingModel } from '@/lib/gemini';
-import { MAX_CONTEXT_LENGTH } from '@/lib/constants';
+import { MAX_CONTEXT_LENGTH, MIN_CACHEABLE_RESPONSE_LENGTH } from '@/lib/constants';
 import {
   classifyUserTopic,
   executeRAGPipeline,
@@ -212,13 +212,25 @@ export async function POST(request: NextRequest) {
     // Create streaming response
     const encoder = new TextEncoder();
 
+    // v1.3.0 Part B (A-C-2 / TS-H-5): plumb request.signal into the LangChain
+    // stream so a client disconnect stops further Gemini token consumption,
+    // and gate the semantic-cache write on signal-not-aborted + minimum length
+    // so a truncated stream can't poison the cache for the next hour.
+    const upstreamSignal = request.signal;
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          const streamResponse = await getStreamingModel().stream(langchainMessages);
+          const streamResponse = await getStreamingModel().stream(langchainMessages, {
+            signal: upstreamSignal,
+          });
           let fullContent = '';
+          let aborted = false;
 
           for await (const chunk of streamResponse) {
+            if (upstreamSignal.aborted) {
+              aborted = true;
+              break;
+            }
             const raw = chunk.content;
             const text = typeof raw === 'string'
               ? raw
@@ -232,12 +244,18 @@ export async function POST(request: NextRequest) {
           }
 
           // Chunk-based citations (0 API calls)
-          if (chunks.length > 0) {
+          if (chunks.length > 0 && !aborted) {
             const citations = generateCitations(chunks);
             controller.enqueue(encoder.encode(`\n\n__CITATIONS__${JSON.stringify(citations)}`));
 
-            // Cache the response for future similar queries (fire-and-forget)
-            if (pipelineResult?.queryEmbedding) {
+            // Cache the response for future similar queries (fire-and-forget).
+            // A-C-2: skip cache write if the client aborted mid-stream OR if
+            // the content is below the minimum cacheable length — either case
+            // means we'd be storing a truncated answer.
+            if (
+              pipelineResult?.queryEmbedding &&
+              fullContent.length >= MIN_CACHEABLE_RESPONSE_LENGTH
+            ) {
               cacheResponse(trimmedMessage, pipelineResult.queryEmbedding, fullContent, citations)
                 .catch(err => console.warn('Cache store failed:', err));
             }
@@ -245,6 +263,13 @@ export async function POST(request: NextRequest) {
 
           controller.close();
         } catch (error) {
+          // Aborts propagate as AbortError — that's the expected client-disconnect
+          // path, not a "real" error. We still close the stream but don't surface
+          // STREAM_ERROR to the (already-gone) client.
+          if (upstreamSignal.aborted) {
+            try { controller.close(); } catch { /* already closed */ }
+            return;
+          }
           console.error('Streaming error:', error);
           try {
             controller.enqueue(encoder.encode(

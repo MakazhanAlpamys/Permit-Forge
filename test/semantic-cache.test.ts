@@ -37,10 +37,14 @@ describe('searchCache', () => {
         similarity: 0.9,
       },
     ];
+    // PR5 (v1.3.0 re-audit): searchCache now treats responses below
+    // MIN_CACHEABLE_RESPONSE_LENGTH (50) as a miss, so the test fixture
+    // must reflect a plausible real answer.
+    const longResponse = 'cached answer that is long enough to clear the fifty-character defense-in-depth filter';
     const rpc = vi.fn().mockResolvedValue({
       data: [
         {
-          response: 'cached answer',
+          response: longResponse,
           citations,
           similarity: 0.97,
         },
@@ -52,7 +56,7 @@ describe('searchCache', () => {
     const out = await searchCache(SAMPLE_EMBEDDING);
 
     expect(out.hit).toBe(true);
-    expect(out.response).toBe('cached answer');
+    expect(out.response).toBe(longResponse);
     expect(out.citations).toEqual(citations);
     expect(out.similarity).toBeCloseTo(0.97);
     expect(rpc).toHaveBeenCalledWith('search_semantic_cache', {
@@ -64,6 +68,21 @@ describe('searchCache', () => {
 
   it('returns a cache MISS when the RPC returns no rows', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: [], error: null });
+    withRpc(rpc);
+
+    const out = await searchCache(SAMPLE_EMBEDDING);
+    expect(out).toEqual({ hit: false });
+  });
+
+  // PR5 (v1.3.0 re-audit): legacy rows shorter than 50 chars can still exist
+  // in the table from before MIN_CACHEABLE_RESPONSE_LENGTH was enforced on
+  // write — searchCache must defensively miss on them so a truncated answer
+  // can't be served back to a user.
+  it('returns a cache MISS when the stored response is below MIN_CACHEABLE_RESPONSE_LENGTH', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ response: 'tiny', citations: [], similarity: 0.99 }],
+      error: null,
+    });
     withRpc(rpc);
 
     const out = await searchCache(SAMPLE_EMBEDDING);

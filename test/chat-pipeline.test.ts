@@ -82,6 +82,8 @@ import {
   CHAT_PIPELINE_CONFIG,
   getOffTopicResponse,
   getGreetingResponse,
+  _inflightPipelineCount,
+  _clearInflightPipelines,
 } from '@/lib/chat-pipeline';
 import { searchCache, storeInCache } from '@/lib/semantic-cache';
 import { detectScope } from '@/lib/scope-detector';
@@ -136,7 +138,9 @@ describe('Chat Pipeline', () => {
     it('should generate embedding for each query', async () => {
       await executeRAGPipeline('parking requirements');
 
-      expect(mockGenerateEmbedding).toHaveBeenCalledWith('parking requirements');
+      // v1.3.0 Part A: signature is now generateEmbedding(text, maxRetries, signal).
+      const args = mockGenerateEmbedding.mock.calls[0];
+      expect(args[0]).toBe('parking requirements');
     });
 
     it('should route structural queries to tree reasoning', async () => {
@@ -448,6 +452,112 @@ describe('Chat Pipeline', () => {
       vi.mocked(getAllDocuments).mockResolvedValueOnce([]);
       const text = await getGreetingResponse();
       expect(text.toLowerCase()).toContain('no documents');
+    });
+  });
+
+  // ========================================================================
+  // v1.3.0 Part A — Singleflight hard timeout + AbortController (A-C-1)
+  // ========================================================================
+  describe('singleflight timeout + abort', () => {
+    function withConfig(
+      key: 'PIPELINE_TIMEOUT_MS' | 'INFLIGHT_MAX',
+      value: number,
+      fn: () => Promise<void>,
+    ): Promise<void> {
+      const original = CHAT_PIPELINE_CONFIG[key];
+      Object.defineProperty(CHAT_PIPELINE_CONFIG, key, {
+        value,
+        configurable: true,
+        writable: true,
+      });
+      return fn().finally(() => {
+        Object.defineProperty(CHAT_PIPELINE_CONFIG, key, {
+          value: original,
+          configurable: true,
+          writable: true,
+        });
+      });
+    }
+
+    it('returns empty result when pipeline exceeds PIPELINE_TIMEOUT_MS', async () => {
+      await withConfig('PIPELINE_TIMEOUT_MS', 50, async () => {
+        mockGenerateEmbedding.mockImplementation(() => new Promise<number[]>(() => {}));
+
+        const start = Date.now();
+        const result = await executeRAGPipeline('hangs forever');
+        const elapsed = Date.now() - start;
+
+        expect(elapsed).toBeGreaterThanOrEqual(40);
+        expect(result.chunks).toEqual([]);
+        expect(result.queryEmbedding).toEqual([]);
+        expect(result.fromCache).toBe(false);
+        // Inflight slot must be released after timeout — otherwise the
+        // next caller for the same key would await the rejected promise.
+        expect(_inflightPipelineCount()).toBe(0);
+      });
+    });
+
+    it('passes an AbortSignal to generateEmbedding', async () => {
+      await executeRAGPipeline('parking?');
+      const [, , signal] = mockGenerateEmbedding.mock.calls[0];
+      // generateEmbedding signature: (text, maxRetries?, signal?)
+      expect(signal).toBeInstanceOf(AbortSignal);
+      expect((signal as AbortSignal).aborted).toBe(false);
+    });
+
+    it('aborts the embedding signal when timeout fires', async () => {
+      await withConfig('PIPELINE_TIMEOUT_MS', 30, async () => {
+        // Capture the signal at call time so we can inspect it after the timeout.
+        let capturedSignal: AbortSignal | undefined;
+        mockGenerateEmbedding.mockImplementation((
+          _text: string,
+          _maxRetries: number,
+          signal: AbortSignal,
+        ) => {
+          capturedSignal = signal;
+          return new Promise<number[]>(() => {});
+        });
+
+        await executeRAGPipeline('also hangs');
+
+        expect(capturedSignal).toBeInstanceOf(AbortSignal);
+        expect(capturedSignal!.aborted).toBe(true);
+      });
+    });
+
+    it('caps inflight singleflight at INFLIGHT_MAX and bypasses the dedup on overflow', async () => {
+      await withConfig('INFLIGHT_MAX', 5, async () => {
+        await withConfig('PIPELINE_TIMEOUT_MS', 25, async () => {
+          mockGenerateEmbedding.mockImplementation(() => new Promise<number[]>(() => {}));
+
+          const promises: Promise<unknown>[] = [];
+          for (let i = 0; i < 8; i++) {
+            promises.push(executeRAGPipeline(`unique-${i}`));
+          }
+          // Drain microtasks so the singleflight map is populated before assertion.
+          await Promise.resolve();
+          await Promise.resolve();
+
+          // Only the first 5 take a tracked slot; the remaining 3 bypass.
+          expect(_inflightPipelineCount()).toBe(5);
+
+          await Promise.all(promises);
+          expect(_inflightPipelineCount()).toBe(0);
+        });
+      });
+    });
+
+    it('_clearInflightPipelines drops all tracked entries (test cleanup helper)', async () => {
+      await withConfig('PIPELINE_TIMEOUT_MS', 25, async () => {
+        mockGenerateEmbedding.mockImplementation(() => new Promise<number[]>(() => {}));
+        const p = executeRAGPipeline('leaked');
+        await Promise.resolve();
+        expect(_inflightPipelineCount()).toBeGreaterThan(0);
+        _clearInflightPipelines();
+        expect(_inflightPipelineCount()).toBe(0);
+        // Let the still-pending pipeline time out so it doesn't leak.
+        await p;
+      });
     });
   });
 });

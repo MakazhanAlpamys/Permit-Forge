@@ -4,7 +4,11 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase-server';
-import { CACHE_SIMILARITY_THRESHOLD, CACHE_TTL_SECONDS } from '@/lib/constants';
+import {
+  CACHE_SIMILARITY_THRESHOLD,
+  CACHE_TTL_SECONDS,
+  MIN_CACHEABLE_RESPONSE_LENGTH,
+} from '@/lib/constants';
 import type { Citation, SemanticCacheResult } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -36,6 +40,13 @@ export async function searchCache(
 
     if (data && data.length > 0) {
       const entry = data[0];
+      // PR5 (v1.3.0 re-audit): defense-in-depth — even though v1.3.0 Part B
+      // refuses to write rows shorter than MIN_CACHEABLE_RESPONSE_LENGTH,
+      // legacy rows from before v1.3.0 deployed can still be in the table.
+      // Treat them as a miss so a truncated answer can't be served back.
+      if (typeof entry.response !== 'string' || entry.response.length < MIN_CACHEABLE_RESPONSE_LENGTH) {
+        return { hit: false };
+      }
       console.log(`Cache HIT (similarity: ${entry.similarity.toFixed(3)})`);
       return {
         hit: true,
