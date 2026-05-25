@@ -10,7 +10,7 @@ import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
 import { requireAdmin, requireCSRF, requireActionRateLimit } from '@/lib/security';
 import { uuidSchema, reviewPermitSchema, type ReviewPermitInput } from '@/lib/validations';
 import type { PermitApplication, PermitStats } from '@/types';
-import { transformPermit, type PermitRow } from '@/lib/transforms';
+import { rowsToPermits } from '@/lib/transforms';
 
 export type { ReviewPermitInput };
 
@@ -44,7 +44,8 @@ export async function getAdminPermits(
 
     if (error) throw error;
 
-    return { data: ((data || []) as unknown as PermitRow[]).map(transformPermit) };
+    // TS-H-1 / v1.6.0 Part A: rowsToPermits centralises the boundary cast.
+    return { data: rowsToPermits(data) };
   } catch (error) {
     console.error('getAdminPermits error:', error);
     return {

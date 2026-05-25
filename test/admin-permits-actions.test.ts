@@ -93,8 +93,8 @@ vi.mock('@/lib/notifications', () => ({
 }));
 
 // Mock transforms
-vi.mock('@/lib/transforms', () => ({
-  transformPermit: vi.fn((row: Record<string, unknown>) => ({
+vi.mock('@/lib/transforms', () => {
+  const transformPermit = vi.fn((row: Record<string, unknown>) => ({
     id: row.id,
     userId: row.user_id,
     status: row.status,
@@ -106,8 +106,15 @@ vi.mock('@/lib/transforms', () => ({
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     username: (row.users as Record<string, string>)?.username || undefined,
-  })),
-}));
+  }));
+  return {
+    transformPermit,
+    // TS-H-1 / v1.6.0 Part A: action layer now goes through these helpers.
+    rowToPermit: (row: Record<string, unknown>) => transformPermit(row),
+    rowsToPermits: (rows: Record<string, unknown>[] | null | undefined) =>
+      (rows ?? []).map(transformPermit),
+  };
+});
 
 import {
   getAdminPermits,

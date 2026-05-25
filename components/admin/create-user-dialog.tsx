@@ -37,7 +37,10 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
 
   useEffect(() => {
     if (isOpen) {
-      getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+      // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
+      getCSRFTokenAction()
+        .then(token => { csrfTokenRef.current = token; })
+        .catch(err => console.error('CSRF token fetch failed:', err));
     }
   }, [isOpen]);
 

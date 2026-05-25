@@ -90,7 +90,10 @@ export default function AdminPage() {
   // CSRF token (needed for logout form per C20H)
   const [csrfToken, setCsrfToken] = useState('');
   useEffect(() => {
-    getCSRFTokenAction().then((t) => setCsrfToken(t ?? ''));
+    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
+    getCSRFTokenAction()
+      .then((t) => setCsrfToken(t ?? ''))
+      .catch(err => console.error('CSRF token fetch failed:', err));
   }, []);
 
   // Admin profile dialog

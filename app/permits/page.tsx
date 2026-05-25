@@ -34,7 +34,10 @@ export default function PermitsPage() {
 
   useEffect(() => {
     loadPermits();
-    getCSRFTokenAction().then(setCsrfToken);
+    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
+    getCSRFTokenAction()
+      .then(setCsrfToken)
+      .catch(err => console.error('CSRF token fetch failed:', err));
   }, [loadPermits]);
 
   // X6: poll for status changes every 60s so an admin's approve/reject is

@@ -522,44 +522,56 @@ Items checked and **clean** per the re-audit: Part B fail-fast propagation (all 
 
 #### Part A — Type-safe Supabase rows 🟡
 
-- [ ] **TS-H-1 — Remove `as unknown as PermitRow[]`** at [actions/permits.ts:386, 441](actions/permits.ts#L386) and [actions/admin-permits.ts:48](actions/admin-permits.ts#L48). Either generate Supabase types via `supabase gen types typescript` or use a Zod parse at the boundary in a `permitRowFromDb` helper.
-- [ ] **TS-H-4 — Replace `as any` on chat_sessions join** at [actions/chat-history.ts:472](actions/chat-history.ts#L472) with a typed inline interface.
+- [x] **TS-H-1 — New `rowToPermit` / `rowsToPermits` helpers** in [lib/transforms.ts](lib/transforms.ts) centralise the boundary cast + add `assertPermitRowShape` (throws + dev `console.warn` listing row keys when id/user_id are missing). All 3 sites in [actions/permits.ts](actions/permits.ts) and [actions/admin-permits.ts](actions/admin-permits.ts) updated; inline `as unknown as PermitRow[]` casts removed. Also re-exported `BuildingDetails` / `ComplianceRequirements` types from `lib/transforms` for backcompat consumers.
+- [x] **TS-H-4 — Replaced `as any` in [actions/chat-history.ts](actions/chat-history.ts)** `searchChatHistory` with a typed inline `JoinedSession` interface (`{ title?: string|null; user_id?: string|null; updated_at?: string|null }`).
 
 #### Part B — Null guards on `permit.status` cast 🟡
 
-- [ ] **TS-H-2 — Add null guards** at all 6 sites where `permit?.status as PermitStatus` is used. Pattern: if `!permit?.status` return `'Permit not found'` instead of falling through to `canPerformOperation` with `undefined`.
+- [x] **TS-H-2 — Added explicit `if (!permit) return { success: false, error: 'Permit not found' }` BEFORE the cast** at the 3 [actions/permits.ts](actions/permits.ts) sites that lacked it (updatePermitBuildingDetails, updatePermitComplianceRequirements, deletePermit). Without the guard, `permit?.status` is `undefined` and `canPerformOperation` returns a misleading wrong-status message instead of "Permit not found". Sites at runComplianceCheck (already guarded), `permit-attachments.ts:85` and `certificate/route.ts:72` (already guarded), `app/permits/[id]/page.tsx:227` (client-side, upstream null-check) confirmed safe.
 
 #### Part C — `transformPermit` returns `undefined` for absent details 🟡
 
-- [ ] **TS-H-6 — Stop casting `{} as BuildingDetails`** at [lib/transforms.ts:82-83](lib/transforms.ts#L82-L83). Return `undefined` and update consumers to handle the absence (or use `?` chaining).
-- [ ] Audit `actions/permits.ts:641` and `lib/permit-compliance.ts:41` to ensure they handle `undefined` correctly.
+- [x] **TS-H-6 — Stopped casting `{} as BuildingDetails`** in [lib/transforms.ts](lib/transforms.ts) `transformPermit`. `row.building_details ?? undefined` and same for `compliance_requirements`. Marked both fields as **optional** in [types/index.ts](types/index.ts) `PermitApplication` so the type matches the runtime. Existing consumers were already defensive (`bd?.field`, `if (!bd)` patterns), so no consumer broke at the type level.
+- [x] Verified [actions/permits.ts](actions/permits.ts) `runComplianceCheck` and [lib/permit-compliance.ts](lib/permit-compliance.ts) `checkPermitCompliance` handle `undefined`/null details correctly. Updated baseline regression test in `test/transforms.test.ts` from "expects `{}`" to "expects `undefined`".
 
 #### Part D — `error.tsx` boundaries 🟡
 
-- [ ] **TS-M-9 — Add `error.tsx`** for each major route segment: `app/error.tsx` (global), `app/permits/error.tsx`, `app/admin/error.tsx`, `app/profile/error.tsx`. Each renders a scoped error UI + "try again" button.
-- [ ] Add `app/global-error.tsx` for catastrophic root-layout failures.
+- [x] **TS-M-9 — Added 5 new boundary files:**
+  - [app/error.tsx](app/error.tsx) — global App-Router segment boundary with Retry + Home buttons, AlertTriangle icon, displays `error.digest` for ops correlation.
+  - [app/global-error.tsx](app/global-error.tsx) — root-layout catastrophic boundary; renders its own `<html>` + `<body>` with inline styles since the theme/layout is the thing that crashed (no shadcn / lucide dependency).
+  - [app/permits/error.tsx](app/permits/error.tsx), [app/admin/error.tsx](app/admin/error.tsx), [app/profile/error.tsx](app/profile/error.tsx) — per-segment boundaries that keep the dashboard shell intact when a leaf component crashes.
+- [x] All 5 log `[app/.../error.tsx] route segment crashed:` to `console.error` in `useEffect` with `{ message, digest }` so the user-facing "Something went wrong" can be correlated with Vercel logs.
 
 #### Part E — Hydration-safe dates + remove `console.log` from prod paths 🟢
 
-- [ ] **TS-M-4 — Replace `toLocaleString()`** at 3 sites with `Intl.DateTimeFormat('en-US', {...})`. Pattern already used at `components/chat/message-bubble.tsx`.
-- [ ] **TS-M-6 — Gate `console.log`** in `lib/chat-pipeline.ts`, `lib/semantic-cache.ts`, `lib/tree-cache.ts`, `lib/email.ts` behind a `DEBUG` env var or remove. Keep `console.error` / `console.warn`.
+- [x] **TS-M-4 — Replaced `toLocaleString()`** at 2 date sites with module-level `new Intl.DateTimeFormat('en-US', {...})` formatters in [components/permits/compliance-check-panel.tsx](components/permits/compliance-check-panel.tsx) and [components/permits/permit-detail-view.tsx](components/permits/permit-detail-view.tsx). The 3rd `toLocaleString` hit is `card.value.toLocaleString()` (numeric formatting, not date) — left as-is. Locale pinned to `en-US` so SSR/CSR strings match regardless of browser locale.
+- [x] **TS-M-6 — New [lib/debug-log.ts](lib/debug-log.ts)** `debugLog(...args)` — no-op unless `DEBUG_PERMITFORGE=1`. Converted 4 sites in `lib/chat-pipeline.ts` + 1 site in `lib/semantic-cache.ts` + 5 sites in `lib/tree-cache.ts`. **`lib/email.ts` deliberately kept as `console.log`** — those are low-volume audit signals (hashed recipient hash for ops correlation). `console.error` / `console.warn` left alone everywhere.
 
 #### Part F — Misc TS mediums batch 🟢
 
-- [ ] **TS-M-1** — replace `key={index}` on dynamic lists with stable keys
-- [ ] **TS-M-2** — add `.catch()` to floating `getCSRFTokenAction()` promise
-- [ ] **TS-M-3** — `loadSessionMessages` mount guard
-- [ ] **TS-M-5** — `JSON.parse` try/catch with surfaced error in `use-ingestion-stream.ts`
-- [ ] **TS-M-7** — log errors inside the 7 empty `catch` blocks in `actions/chat-history.ts`
-- [ ] **TS-M-8** — tighten `withMutation` type (`parsed: T | undefined` or generic constraint)
+- [ ] **TS-M-1** — `key={index}` replacement deferred to v1.9.0 (pure polish; no runtime impact).
+- [x] **TS-M-2 — `.catch()` added** to all 10 floating `getCSRFTokenAction().then(...)` callsites across `components/admin/*`, `components/chat/*`, `components/dashboard/*`, `components/notifications/*`, `components/permits/*`, `app/admin/page.tsx`, `app/permits/page.tsx`, `app/permits/[id]/page.tsx`, `app/permits/new/page.tsx`. Each catch logs `console.error('CSRF token fetch failed:', err)`.
+- [ ] **TS-M-3** — `loadSessionMessages` mount guard deferred to v1.9.0 (low-impact, requires per-component refactor).
+- [x] **TS-M-5 — [hooks/use-ingestion-stream.ts](hooks/use-ingestion-stream.ts) JSON.parse catch** no longer empty; logs `console.warn` with the error message + a comment that most failures are expected mid-buffer SSE slicing.
+- [x] **TS-M-7 — All 7 empty `} catch {}`** in [actions/chat-history.ts](actions/chat-history.ts) (createChatSession, saveMessageToSession, getChatSessions, getSessionMessages, deleteChatSession, updateChatSessionTitle, searchChatHistory) now log `console.error('functionName error:', err)` so transient failures are debuggable from Vercel logs without local reproduction.
+- [ ] **TS-M-8** — `withMutation` generic-type tightening deferred to v1.8.0 Refactor & Simplify (it's the entry point for that release's adopt-everywhere sweep).
 
 **Verification (every Part):**
-- [ ] `npx tsc --noEmit` green
-- [ ] `npm run lint` green
-- [ ] No new `as any` or `as unknown as` introduced (grep check)
-- [ ] Hydration warnings absent in browser console during manual smoke test
+- [x] `npx tsc --noEmit` green
+- [x] `npm run lint` green
+- [x] grep `as any\|as unknown as` returns only the pre-existing eslint-suppressed sites in test fixtures; no new production source.
+- [ ] Hydration warnings absent in browser console — defense-day manual smoke.
 
-**v1.6.0 totals:** ~300 LOC + ~20 tests.
+#### Part G — Re-audit follow-ups 🟢
+
+The v1.6.0 typescript-reviewer re-audit found 0 Critical, 0 High, 0 Medium, 2 Low. Both fixed before commit.
+
+- [x] **TR1 (Low) — `console.warn` in `assertPermitRowShape` wasn't dev-only.** [lib/transforms.ts](lib/transforms.ts) — wrapped the warn in `if (process.env.NODE_ENV !== 'production')` so a real column-rename failure doesn't leak schema info (row keys) to production Lambda logs. The throw beneath it always fires either way.
+- [x] **TR2 (Low) — `app/error.tsx` and `app/global-error.tsx` had swapped function names.** Renamed `app/error.tsx`'s export to `RouteError` (it's the segment boundary) and `app/global-error.tsx`'s export to `GlobalError` (it's the root-layout catastrophic boundary). Next.js routes by default export so the rename is purely React DevTools / stack-trace hygiene.
+- [x] TR3 (informational) — `deletePermit` `.single()` null path confirmed correctly handled by the new guard.
+- [x] TR4 (clean) — all 3 consumers of `permit.buildingDetails` / `complianceRequirements` use optional access; no fallout from the Part C `undefined` change.
+
+**v1.6.0 totals:** planned ~300 LOC + ~20 tests; actual ~500 LOC + 0 new tests (+1 test updated to match new `undefined` contract). All 5 TS High + 4 of 7 TS Medium closed; TS-M-1/M-3/M-8 deferred per scope. Re-audit TR1/TR2 (Low) folded in before commit.
 
 ---
 
@@ -807,8 +819,8 @@ Update after every release ships:
 | v1.2.0 | `394cef6` | 5 | 10 | 3 | 0 | Click-path — A/B/C/D/E + re-audit Part F. 8 Medium items deferred to v1.9.0. Pending push. |
 | v1.3.0 | `783de45` | 4 | 1 | 1 | 0 | Pipeline resilience — A/B/C/D + re-audit Part E (PR1/PR2/PR4/PR5/PR6 folded in before push). v1.3.0 tag. |
 | v1.4.0 | `8bab47c` | 10 (coverage) | 0 | 0 | 0 | Coverage foundation — Parts A/B/C/E + re-audit Part F (PT1 fixed). +101 net tests, 72.9% lines, 60.4% branches. Part D Playwright deferred. v1.4.0 tag. |
-| v1.5.0 | — | 0 | 11 | 18 | 0 | Security + DB cleanup — Parts B/C/D/E/F + re-audit Part G (PSE1 Crit + PSE2 High + PSE3 Med + PSE4/PSE5 Low fixed before push). +30 net tests. Part A wontfix. Pending push. |
-| v1.6.0 | — | 0 | 5 | 10 | 0 | TypeScript safety |
+| v1.5.0 | `688cb23` | 0 | 11 | 18 | 0 | Security + DB cleanup — Parts B/C/D/E/F + re-audit Part G (PSE1 Crit + PSE2 High + PSE3 Med + PSE4/PSE5 Low fixed before push). +30 net tests. Part A wontfix. v1.5.0 tag. |
+| v1.6.0 | — | 0 | 5 | 4 | 0 | TypeScript safety — Parts A/B/C/D/E/F shipped. TS-M-1/3/8 deferred (low-impact polish + withMutation belongs to v1.8). Pending push. |
 | v1.7.0 | — | 0 | 9 | 8 | 0 | Architecture |
 | v1.8.0 | — | 0 | 12 | 16 | 0 | Refactor + simplify |
 | v1.9.0 | — | 0 | 0 | 15 | 0 | Medium kitchen sink |

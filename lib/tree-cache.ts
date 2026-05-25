@@ -13,6 +13,7 @@
 // ============================================================================
 
 import { createAdminClient } from '@/lib/supabase-server';
+import { debugLog } from '@/lib/debug-log';
 import { TREE_CACHE_TTL_MS } from '@/lib/constants';
 import type { TreeNode } from '@/types';
 
@@ -78,7 +79,7 @@ export async function getCachedDocumentTree(documentName: string): Promise<TreeN
         // Data hasn't changed — just refresh the TTL
         const refreshed = { ...cache, cachedAt: now };
         cacheMap.set(documentName, refreshed);
-        console.log(`🌳 Tree cache TTL refreshed for ${documentName} (data unchanged)`);
+        debugLog(`🌳 Tree cache TTL refreshed for ${documentName} (data unchanged)`);
         return refreshed.data;
       }
     }
@@ -100,7 +101,7 @@ export async function getCachedDocumentTree(documentName: string): Promise<TreeN
       if (!rpcError && rpcData) {
         const tree = rpcData as TreeNode[];
         cacheMap.set(documentName, { data: tree, updatedAt: new Date().toISOString(), cachedAt: now });
-        console.log(`🌳 Tree cache populated via RPC for ${documentName}: ${tree.length} nodes`);
+        debugLog(`🌳 Tree cache populated via RPC for ${documentName}: ${tree.length} nodes`);
         return tree;
       }
 
@@ -121,7 +122,7 @@ export async function getCachedDocumentTree(documentName: string): Promise<TreeN
       updatedAt: data.updated_at,
       cachedAt: now,
     });
-    console.log(`🌳 Tree cache refreshed for ${documentName}: ${tree.length} nodes`);
+    debugLog(`🌳 Tree cache refreshed for ${documentName}: ${tree.length} nodes`);
     return tree;
   } catch (error) {
     console.error(`🌳 Tree cache error for ${documentName}:`, error);
@@ -185,10 +186,10 @@ export async function getAllCachedDocumentTrees(): Promise<Map<string, TreeNode[
 export function clearDocumentTreeCache(documentName?: string): void {
   if (documentName) {
     cacheMap.delete(documentName);
-    console.log(`🌳 Tree cache cleared for ${documentName}`);
+    debugLog(`🌳 Tree cache cleared for ${documentName}`);
   } else {
     cacheMap.clear();
-    console.log('🌳 All tree caches cleared');
+    debugLog('🌳 All tree caches cleared');
   }
 }
 

@@ -6,6 +6,20 @@ import { PROJECT_TYPES } from '@/lib/constants';
 import { Building2, MapPin, Ruler, ParkingSquare, Layers } from 'lucide-react';
 import type { PermitApplication } from '@/types';
 
+// TS-M-4 / v1.6.0 Part E: pinned-locale formatter (see compliance-check-panel).
+const REVIEWED_AT_FMT = new Intl.DateTimeFormat('en-US', {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+});
+
+function formatReviewedAt(iso: string): string {
+  return REVIEWED_AT_FMT.format(new Date(iso));
+}
+
 interface PermitDetailViewProps {
   permit: PermitApplication;
 }
@@ -126,7 +140,8 @@ export function PermitDetailView({ permit }: PermitDetailViewProps) {
             <p className="text-sm">{permit.reviewComments}</p>
             {permit.reviewedAt && (
               <p className="text-xs text-muted-foreground mt-2">
-                Reviewed: {new Date(permit.reviewedAt).toLocaleString()}
+                {/* TS-M-4 / v1.6.0 Part E: pinned locale so SSR/CSR strings match. */}
+                Reviewed: {formatReviewedAt(permit.reviewedAt)}
               </p>
             )}
           </CardContent>

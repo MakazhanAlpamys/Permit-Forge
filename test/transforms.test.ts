@@ -157,17 +157,17 @@ describe('transformPermit (golden-file)', () => {
     expect(out.projectDescription).toBeUndefined();
   });
 
-  // TS-H-6 — flagged in v1.6.0 plan. Confirming current behaviour so the v1.6
-  // refactor has a baseline regression test.
-  it('substitutes empty objects for absent building_details / compliance_requirements (TS-H-6 baseline)', () => {
+  // TS-H-6 / v1.6.0 Part C: absent JSONB columns now surface as `undefined`
+  // (was `{}`), so consumers' `if (!bd)` / `bd?.field` checks actually work.
+  it('returns undefined for absent building_details / compliance_requirements (TS-H-6 fix)', () => {
     const row: PermitRow = {
       ...fullRow,
       building_details: null,
       compliance_requirements: null,
     };
     const out = transformPermit(row);
-    expect(out.buildingDetails).toEqual({});
-    expect(out.complianceRequirements).toEqual({});
+    expect(out.buildingDetails).toBeUndefined();
+    expect(out.complianceRequirements).toBeUndefined();
   });
 
   it('defaults complianceCheckResult to null when absent', () => {

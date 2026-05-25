@@ -5,6 +5,13 @@
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
 
+// TS-M-6 / v1.6.0 Part E: email logs are intentionally KEPT as console.log
+// (audit signal — operators need "verification email to user X.X.X.X was
+// dispatched" to correlate user reports). Recipients are hashed via
+// hashRecipient() so no PII leaks. The high-volume noise (chat-pipeline,
+// tree-cache, semantic-cache hot-path logs) is what gets gated through
+// lib/debug-log.
+
 function getFromEmail(): string {
   return `PermitForge <${process.env.SMTP_USER || 'noreply@permitforge.app'}>`;
 }

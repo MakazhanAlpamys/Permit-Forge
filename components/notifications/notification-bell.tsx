@@ -61,7 +61,11 @@ export function NotificationBell() {
 
   useEffect(() => {
     fetchNotifications();
-    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+    // TS-M-2 / v1.6.0 Part F: surface CSRF fetch errors instead of leaving
+    // an unhandled-rejection warning when the server-action transiently fails.
+    getCSRFTokenAction()
+      .then(token => { csrfTokenRef.current = token; })
+      .catch(err => console.error('CSRF token fetch failed:', err));
 
     // X7: 30s base poll with ±5s jitter so a tab full of users opened at
     // the same time doesn't stampede the notifications endpoint at the

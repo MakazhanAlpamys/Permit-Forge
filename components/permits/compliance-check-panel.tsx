@@ -75,6 +75,22 @@ function CheckItem({ check }: { check: ComplianceCheckItem }) {
   );
 }
 
+// TS-M-4 / v1.6.0 Part E: hydration-safe date formatter pinned to en-US so
+// the SSR-rendered string and the client-rendered string always match
+// regardless of the browser's locale.
+const CHECKED_AT_FMT = new Intl.DateTimeFormat('en-US', {
+  year: 'numeric',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  hour12: true,
+});
+
+function formatCheckedAt(iso: string): string {
+  return CHECKED_AT_FMT.format(new Date(iso));
+}
+
 export function ComplianceCheckPanel({ result }: ComplianceCheckPanelProps) {
   const overallConfig = statusConfig[result.overallStatus];
   const OverallIcon = overallConfig.icon;
@@ -103,7 +119,10 @@ export function ComplianceCheckPanel({ result }: ComplianceCheckPanelProps) {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Checked: {new Date(result.checkedAt).toLocaleString()}
+          {/* TS-M-4 / v1.6.0 Part E: fixed locale to avoid hydration mismatch
+              (server renders en-US, client may pick up user locale → date
+              format diverges → React hydration warning). */}
+          Checked: {formatCheckedAt(result.checkedAt)}
         </p>
       </CardContent>
     </Card>

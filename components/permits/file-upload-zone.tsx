@@ -32,7 +32,10 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    getCSRFTokenAction().then(token => { csrfTokenRef.current = token; });
+    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
+    getCSRFTokenAction()
+      .then(token => { csrfTokenRef.current = token; })
+      .catch(err => console.error('CSRF token fetch failed:', err));
   }, []);
 
   const handleUpload = useCallback(async (file: File) => {

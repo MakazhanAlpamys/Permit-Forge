@@ -137,8 +137,17 @@ export function useIngestionStream(
                   return next;
                 });
               }
-            } catch {
-              // Incomplete SSE line — ignore until the next chunk completes it.
+            } catch (err) {
+              // TS-M-5 / v1.6.0 Part F: surface the parse failure to the
+              // console so a malformed SSE payload (vs. an incomplete buffer
+              // boundary) is at least debuggable. Most failures here are
+              // expected mid-buffer slicing — the loop reassembles on the
+              // next chunk via `buffer = lines.pop()` — so we don't surface
+              // to UI, just operator logs.
+              console.warn(
+                '[use-ingestion-stream] JSON.parse failed (likely partial SSE line):',
+                err instanceof Error ? err.message : String(err),
+              );
             }
           }
         }

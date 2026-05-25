@@ -67,7 +67,11 @@ export async function createChatSession(title?: string): Promise<{ sessionId: st
     }
 
     return { sessionId: data.id };
-  } catch {
+  } catch (err) {
+    // TS-M-7 / v1.6.0 Part F: surface swallowed errors to operator logs
+    // so a recurring Supabase / network failure is debuggable from Vercel
+    // logs without having to reproduce locally.
+    console.error('createChatSession error:', err);
     return {
       sessionId: null,
       error: 'Failed to create session'
@@ -134,7 +138,8 @@ export async function saveMessageToSession(params: {
     }
 
     return { success: true };
-  } catch {
+  } catch (err) {
+    console.error('saveMessageToSession error:', err);
     return {
       success: false,
       error: 'Failed to save message'
@@ -207,7 +212,8 @@ export async function getChatSessions(
       nextCursor,
       hasMore,
     };
-  } catch {
+  } catch (err) {
+    console.error('getChatSessions error:', err);
     return {
       sessions: [],
       hasMore: false,
@@ -301,7 +307,8 @@ export async function getSessionMessages(
     }));
 
     return { messages, nextCursor, hasMore };
-  } catch {
+  } catch (err) {
+    console.error('getSessionMessages error:', err);
     return {
       messages: [],
       hasMore: false,
@@ -357,7 +364,8 @@ export async function deleteChatSession(sessionId: string, csrfToken: string): P
     });
 
     return { success: true };
-  } catch {
+  } catch (err) {
+    console.error('deleteChatSession error:', err);
     return {
       success: false,
       error: 'Failed to delete session'
@@ -409,7 +417,8 @@ export async function updateSessionTitle(sessionId: string, title: string, csrfT
     }
 
     return { success: true };
-  } catch {
+  } catch (err) {
+    console.error('updateChatSessionTitle error:', err);
     return {
       success: false,
       error: 'Failed to update title'
@@ -487,9 +496,16 @@ export async function searchChatHistory(
       }
     }
 
+    // TS-H-4 / v1.6.0 Part A: type the inner-join result explicitly. Supabase
+    // models `chat_sessions!inner` as the related row's shape; the runtime
+    // value can still be null in a left-join, so the typed view is optional.
+    interface JoinedSession {
+      title?: string | null;
+      user_id?: string | null;
+      updated_at?: string | null;
+    }
     for (const m of messageMatches || []) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const session = m.chat_sessions as any;
+      const session = m.chat_sessions as JoinedSession | null;
       if (!seenSessions.has(m.session_id)) {
         seenSessions.add(m.session_id);
         // Extract a snippet around the match
@@ -508,7 +524,8 @@ export async function searchChatHistory(
     }
 
     return { results: results.slice(0, 15) };
-  } catch {
+  } catch (err) {
+    console.error('searchChatHistory error:', err);
     return {
       results: [],
       error: 'Search failed',

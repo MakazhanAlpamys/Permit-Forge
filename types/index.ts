@@ -296,8 +296,13 @@ export interface PermitApplication {
   projectAddress: string;
   plotNumber?: string;
   projectDescription?: string;
-  buildingDetails: BuildingDetails;
-  complianceRequirements: ComplianceRequirements;
+  // TS-H-6 / v1.6.0 Part C: these are nullable in the DB (draft permit
+  // created before step 2 / step 3 → null). Old transforms.ts cast `{}` to
+  // the concrete type, which silently passed `if (!bd || !bd.numberOfFloors)`
+  // checks (the empty object is truthy). Surface `undefined` so callers
+  // narrow correctly.
+  buildingDetails?: BuildingDetails;
+  complianceRequirements?: ComplianceRequirements;
   complianceCheckResult?: ComplianceCheckResult | null;
   reviewedBy?: string | null;
   reviewedAt?: string | null;

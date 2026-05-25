@@ -13,6 +13,7 @@ import { searchCache, storeInCache } from '@/lib/semantic-cache';
 import { getAllCachedDocumentTrees } from '@/lib/tree-cache';
 import { generateEmbedding } from '@/lib/gemini';
 import { getAllDocuments } from '@/lib/document-registry';
+import { debugLog } from '@/lib/debug-log';
 import type { Citation, MatchedChunk } from '@/types';
 
 // Re-export classifyTopic for backward compatibility
@@ -248,7 +249,7 @@ async function runRAGPipeline(query: string, signal?: AbortSignal): Promise<Pipe
 
   // Step 3: Document Selector (0 API)
   const selectedDocs = selectDocuments(query);
-  console.log(`Document selector: [${getSelectedDocumentNames(selectedDocs).join(', ')}]`);
+  debugLog(`Document selector: [${getSelectedDocumentNames(selectedDocs).join(', ')}]`);
 
   // Step 4: Scope Detector (0 API)
   const scope = detectScope(query);
@@ -285,7 +286,7 @@ async function runRAGPipeline(query: string, signal?: AbortSignal): Promise<Pipe
 
   // Step 6: CRAG Check (0 API)
   if (!passesCRAGCheck(chunks)) {
-    console.log('CRAG check failed — search quality too low');
+    debugLog('CRAG check failed — search quality too low');
     return { chunks: [], queryEmbedding, fromCache: false };
   }
 
@@ -327,7 +328,7 @@ async function executeTreePath(
         const pageRanges = getPageRangesForNodes(selectedNodes, tree);
         allPageRanges.push(...pageRanges);
         bestConfidence = Math.max(bestConfidence, treeResult.confidence);
-        console.log(`Tree [${docName}]: ${selectedNodes.length} nodes, ${treeResult.confidence}% conf`);
+        debugLog(`Tree [${docName}]: ${selectedNodes.length} nodes, ${treeResult.confidence}% conf`);
       }
     }
 
@@ -380,7 +381,7 @@ export function generateCitations(chunks: MatchedChunk[]): Citation[] {
   const citations = createChunkCitations(chunks);
 
   const stats = getCitationStats(citations);
-  console.log(`Citations: ${stats.total} total, ${stats.uniquePages} pages, ${stats.uniqueSections} sections`);
+  debugLog(`Citations: ${stats.total} total, ${stats.uniquePages} pages, ${stats.uniqueSections} sections`);
 
   return citations;
 }

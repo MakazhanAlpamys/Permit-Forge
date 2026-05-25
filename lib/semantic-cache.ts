@@ -9,6 +9,7 @@ import {
   CACHE_TTL_SECONDS,
   MIN_CACHEABLE_RESPONSE_LENGTH,
 } from '@/lib/constants';
+import { debugLog } from '@/lib/debug-log';
 import type { Citation, SemanticCacheResult } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -47,7 +48,7 @@ export async function searchCache(
       if (typeof entry.response !== 'string' || entry.response.length < MIN_CACHEABLE_RESPONSE_LENGTH) {
         return { hit: false };
       }
-      console.log(`Cache HIT (similarity: ${entry.similarity.toFixed(3)})`);
+      debugLog(`Cache HIT (similarity: ${entry.similarity.toFixed(3)})`);
       return {
         hit: true,
         response: entry.response,

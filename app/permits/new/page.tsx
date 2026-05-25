@@ -105,7 +105,10 @@ function NewPermitPageInner() {
   const [bootstrapping, setBootstrapping] = useState(true);
 
   useEffect(() => {
-    getCSRFTokenAction().then(setCsrfToken);
+    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
+    getCSRFTokenAction()
+      .then(setCsrfToken)
+      .catch(err => console.error('CSRF token fetch failed:', err));
   }, []);
 
   // Form data

@@ -59,6 +59,8 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `lint` → `tsc -
 
 Admin users are redirected away from user pages (`/`, `/permits`). Non-admins are redirected away from `/admin`.
 
+**Error boundaries (v1.6.0 TS-M-9):** `app/error.tsx` (global App-Router segment), `app/global-error.tsx` (catastrophic root-layout — renders its own `<html>` + `<body>` with inline styles), and per-segment `app/permits/error.tsx` / `app/admin/error.tsx` / `app/profile/error.tsx`. All log `[app/.../error.tsx] route segment crashed:` to `console.error` with `{ message, digest }`.
+
 ### Server Actions (`actions/`)
 
 | Action | Purpose |
@@ -184,7 +186,10 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/supabase-server.ts` | Three clients: `createServerClient()` (anon), `createAdminClient()` (service_role, singleton), and `createUserContextClient(userId)` (anon key + a Supabase-compatible JWT minted with `SUPABASE_JWT_SECRET` so RLS `auth.uid()` engages). The user-context client is **opt-in via `ENABLE_USER_CONTEXT_RLS=1`** — when the flag is off, the function returns the admin singleton (pre-A2 behavior). When the flag is on AND `SUPABASE_JWT_SECRET` is missing, the function THROWS rather than silently falling back to service_role (v1.5.0 Part B / S-H-3 fail-fast). See `LOCAL_NOTES.md`. |
 | `lib/file-upload.ts` | File validation (size, extension, MIME), storage path generation |
 | `lib/email.ts` | Email sending via Nodemailer SMTP: verification, password reset, password change codes; `generateSixDigitCode()` |
-| `lib/transforms.ts` | Shared data transforms: permit DB row → TypeScript object |
+| `lib/transforms.ts` | Shared data transforms: permit DB row → TypeScript object. Exports `rowToPermit` / `rowsToPermits` boundary helpers (v1.6.0 TS-H-1) that throw on shape mismatch + `transformPermit` itself. `BuildingDetails` / `ComplianceRequirements` are now optional on the `PermitApplication` type (v1.6.0 TS-H-6 — was cast `{}`). |
+| `lib/debug-log.ts` | `debugLog(...args)` no-op unless `DEBUG_PERMITFORGE=1`. Gates hot-path `console.log` in `chat-pipeline.ts`, `semantic-cache.ts`, `tree-cache.ts` (v1.6.0 TS-M-6). `lib/email.ts` deliberately uses raw `console.log` (low-volume audit signal). |
+| `lib/http-headers.ts` | `contentDispositionAttachment(filename)` (v1.5.0 S-H-4) — RFC 5987 helper used by chat/export + certificate download routes. |
+| `lib/user-facing-error.ts` | `userFacingError(err, fallback)` (v1.5.0 SECRET-M1/M3) — drops raw Postgres / driver detail before echoing to clients. Recognises a `UF:` sentinel prefix for caller-controlled pass-through. |
 | `lib/notifications.ts` | In-app + email (Nodemailer SMTP) notifications, failure-silent |
 
 ### Middleware (`middleware.ts`)

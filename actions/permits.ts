@@ -20,7 +20,7 @@ import type {
   PermitApplication,
   PermitStatusHistoryEntry,
 } from '@/types';
-import { transformPermit, type PermitRow } from '@/lib/transforms';
+import { rowToPermit, rowsToPermits } from '@/lib/transforms';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
 import { canPerformOperation, type PermitStatus } from '@/lib/permit-state-machine';
 
@@ -132,7 +132,14 @@ export async function updatePermitBuildingDetails(
       .eq('id', validation.data.permitId)
       .single();
 
-    const editCheck = canPerformOperation(permit?.status as PermitStatus, 'edit');
+    // TS-H-2 / v1.6.0 Part B: surface "permit not found" explicitly. Without
+    // this, `permit?.status` is `undefined` and `canPerformOperation` returns
+    // a misleading "Can only edit draft permits" — same wording as a status
+    // mismatch, so an admin debugging a 404 sees a wrong-status error instead.
+    if (!permit) {
+      return { success: false, error: 'Permit not found' };
+    }
+    const editCheck = canPerformOperation(permit.status as PermitStatus, 'edit');
     if (!editCheck.allowed) {
       return { success: false, error: editCheck.reason };
     }
@@ -212,7 +219,12 @@ export async function updatePermitComplianceRequirements(
       .eq('id', validation.data.permitId)
       .single();
 
-    const editCheck = canPerformOperation(permit?.status as PermitStatus, 'edit');
+    // TS-H-2 / v1.6.0 Part B: explicit not-found before the canPerformOperation
+    // cast — see updatePermitBuildingDetails above for the why.
+    if (!permit) {
+      return { success: false, error: 'Permit not found' };
+    }
+    const editCheck = canPerformOperation(permit.status as PermitStatus, 'edit');
     if (!editCheck.allowed) {
       return { success: false, error: editCheck.reason };
     }
@@ -383,7 +395,10 @@ export async function getMyPermits(): Promise<{ data: PermitApplication[]; error
 
     if (error) throw error;
 
-    return { data: ((data || []) as unknown as PermitRow[]).map(transformPermit) };
+    // TS-H-1 / v1.6.0 Part A: rowsToPermits centralises the boundary cast +
+    // adds a dev-mode shape check, so a renamed column above can't slip past
+    // the type checker silently.
+    return { data: rowsToPermits(data) };
   } catch (error) {
     console.error('getMyPermits error:', error);
     return {
@@ -438,7 +453,7 @@ export async function getPermitById(
       return { data: null, error: error?.message || 'Permit not found' };
     }
 
-    return { data: transformPermit(data as unknown as PermitRow) };
+    return { data: rowToPermit(data) };
   } catch (error) {
     console.error('getPermitById error:', error);
     return {
@@ -545,7 +560,11 @@ export async function deletePermit(
       .eq('id', permitId)
       .single();
 
-    const deleteCheck = canPerformOperation(permit?.status as PermitStatus, 'delete');
+    // TS-H-2 / v1.6.0 Part B: explicit not-found before canPerformOperation cast.
+    if (!permit) {
+      return { success: false, error: 'Permit not found' };
+    }
+    const deleteCheck = canPerformOperation(permit.status as PermitStatus, 'delete');
     if (!deleteCheck.allowed) {
       return { success: false, error: deleteCheck.reason };
     }

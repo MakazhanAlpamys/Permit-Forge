@@ -85,14 +85,20 @@ vi.mock('@/lib/permit-compliance', () => ({
 }));
 
 // Mock transforms
-vi.mock('@/lib/transforms', () => ({
-  transformPermit: (row: Record<string, unknown>) => ({
+vi.mock('@/lib/transforms', () => {
+  const transformPermit = (row: Record<string, unknown>) => ({
     ...row,
     projectName: row.project_name,
     projectType: row.project_type,
     projectAddress: row.project_address,
-  }),
-}));
+  });
+  return {
+    transformPermit,
+    rowToPermit: transformPermit,
+    rowsToPermits: (rows: Record<string, unknown>[] | null | undefined) =>
+      (rows ?? []).map(transformPermit),
+  };
+});
 
 import {
   updatePermitBuildingDetails,
