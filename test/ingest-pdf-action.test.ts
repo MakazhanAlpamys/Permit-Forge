@@ -38,6 +38,24 @@ vi.mock('@/lib/auth', async () => {
     ...actual,
     logAuditEvent: (...args: unknown[]) => mockLogAudit(...args),
     getRequestMetadata: () => mockGetReqMeta(),
+    // v1.8.0 Part B: actual.logAuditWithMeta refers to the in-module
+    // logAuditEvent, which the mock override doesn't reach. Re-implement
+    // here so callers that now route through the convenience wrapper still
+    // hit the mockLogAudit spy with the expected shape.
+    logAuditWithMeta: async (
+      userId: string,
+      action: string,
+      extras?: { targetUserId?: string; metadata?: Record<string, unknown> },
+    ) => {
+      const meta = await mockGetReqMeta();
+      return mockLogAudit({
+        userId,
+        action,
+        targetUserId: extras?.targetUserId,
+        metadata: extras?.metadata,
+        ...meta,
+      });
+    },
   };
 });
 

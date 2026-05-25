@@ -16,6 +16,21 @@ vi.mock('@/lib/auth', () => ({
   getQuickSession: (...args: unknown[]) => mockGetQuickSession(...args),
   logAuditEvent: (...args: unknown[]) => mockLogAuditEvent(...args),
   getRequestMetadata: (...args: unknown[]) => mockGetRequestMetadata(...args),
+  // v1.8.0 Part B: delegate to existing mocks so audit-event assertions still fire.
+  logAuditWithMeta: async (
+    userId: string,
+    action: string,
+    extras?: { targetUserId?: string; metadata?: Record<string, unknown> },
+  ) => {
+    const meta = await mockGetRequestMetadata();
+    return mockLogAuditEvent({
+      userId,
+      action,
+      targetUserId: extras?.targetUserId,
+      metadata: extras?.metadata,
+      ...meta,
+    });
+  },
 }));
 
 // AUTH-C1 / v1.0.0 Part E: API routes now boot through `requireAuth` /

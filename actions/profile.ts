@@ -6,7 +6,7 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { requireAuth, requireAdmin, requireCSRF } from '@/lib/security';
-import { hashPassword, verifyPassword, logAuditEvent, getRequestMetadata, createSession } from '@/lib/auth';
+import { hashPassword, verifyPassword, logAuditWithMeta, createSession } from '@/lib/auth';
 import { updateProfileSchema, validatePassword } from '@/lib/validations';
 import { generateSixDigitCode, sendPasswordChangeCodeEmail } from '@/lib/email';
 import { safeEqual } from '@/lib/code-verification';
@@ -92,12 +92,8 @@ export async function updateProfileAction(
     });
   }
 
-  const metadata = await getRequestMetadata();
-  await logAuditEvent({
-    userId: auth.user.id,
-    action: 'user_updated',
+  await logAuditWithMeta(auth.user.id, 'user_updated', {
     metadata: { fields: Object.keys(updates) },
-    ...metadata,
   });
 
   return { success: true };
@@ -220,12 +216,8 @@ export async function confirmPasswordChangeAction(
     tokenVersion: newTv,
   });
 
-  const metadata = await getRequestMetadata();
-  await logAuditEvent({
-    userId: auth.user.id,
-    action: 'password_changed',
+  await logAuditWithMeta(auth.user.id, 'password_changed', {
     metadata: { method: 'email_code' },
-    ...metadata,
   });
 
   return { success: true };
@@ -282,12 +274,8 @@ export async function adminChangePasswordAction(
     tokenVersion: newTv,
   });
 
-  const metadata = await getRequestMetadata();
-  await logAuditEvent({
-    userId: auth.user.id,
-    action: 'password_changed',
+  await logAuditWithMeta(auth.user.id, 'password_changed', {
     metadata: { method: 'admin_direct' },
-    ...metadata,
   });
 
   return { success: true };

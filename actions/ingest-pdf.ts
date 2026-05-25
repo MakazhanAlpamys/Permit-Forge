@@ -12,7 +12,7 @@
 import { createAdminClient } from '@/lib/supabase-server';
 import { requireAdmin, requireCSRF } from '@/lib/security';
 import { clearDocumentTreeCache } from '@/lib/tree-cache';
-import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
+import { logAuditWithMeta } from '@/lib/auth';
 import { userFacingError } from '@/lib/user-facing-error';
 import type { ChunkMetadata } from '@/types';
 
@@ -53,13 +53,8 @@ export async function clearDocumentChunks(
       // Invalidate tree cache for this document
       clearDocumentTreeCache(documentId);
 
-      // Log admin action
-      const metadata = await getRequestMetadata();
-      await logAuditEvent({
-        userId: authCheck.user.id,
-        action: 'chunks_cleared',
+      await logAuditWithMeta(authCheck.user.id, 'chunks_cleared', {
         metadata: { documentId, chunksCleared: deletedCount },
-        ...metadata,
       });
 
       return { success: true, deletedCount };
@@ -99,12 +94,8 @@ export async function clearDocumentChunks(
 
     clearDocumentTreeCache(documentId);
 
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'chunks_cleared',
+    await logAuditWithMeta(authCheck.user.id, 'chunks_cleared', {
       metadata: { documentId, chunksCleared: deletedCount },
-      ...metadata,
     });
 
     return { success: true, deletedCount };

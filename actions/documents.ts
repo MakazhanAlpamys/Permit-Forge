@@ -6,7 +6,7 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { requireAdmin, requireCSRF } from '@/lib/security';
-import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
+import { logAuditWithMeta, getRequestMetadata } from '@/lib/auth';
 import { invalidateAllDocumentCaches } from '@/lib/document-cache';
 import { DOCUMENT_PDF_LIMITS } from '@/lib/constants';
 import { uploadDocumentPdfShared } from '@/lib/document-pdf-upload';
@@ -157,12 +157,8 @@ export async function upsertDocument(
     // bound to a new registration yet, so omit the documentName arg.
     invalidateAllDocumentCaches();
 
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'pdf_ingested', // reuse existing action type
+    await logAuditWithMeta(authCheck.user.id, 'pdf_ingested', {
       metadata: { stage: 'document_registered', documentId: sanitizedId, displayName: input.displayName },
-      ...metadata,
     });
 
     return { success: true };
@@ -243,12 +239,8 @@ export async function deleteDocument(
     // since the document is now invisible to chat queries either way.
     invalidateAllDocumentCaches(documentId);
 
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'chunks_cleared',
+    await logAuditWithMeta(authCheck.user.id, 'chunks_cleared', {
       metadata: { documentId, action: 'document_deleted', chunksCleared: clearChunks },
-      ...metadata,
     });
 
     return { success: true };
@@ -302,12 +294,8 @@ export async function restoreDocument(
     // a document was re-activated. Reuse `pdf_ingested` action type with a
     // distinct `stage` so we don't have to add a new AuditAction enum value
     // (keeps the migration surface frozen — diploma scope).
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'pdf_ingested',
+    await logAuditWithMeta(authCheck.user.id, 'pdf_ingested', {
       metadata: { stage: 'document_restored', documentId },
-      ...metadata,
     });
 
     return { success: true };

@@ -6,7 +6,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase-server';
-import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
+import { logAuditWithMeta } from '@/lib/auth';
 import { requireAdmin, requireCSRF, requireActionRateLimit } from '@/lib/security';
 import { uuidSchema, reviewPermitSchema, type ReviewPermitInput } from '@/lib/validations';
 import type { PermitApplication, PermitStats } from '@/types';
@@ -123,13 +123,11 @@ export async function reviewPermit(
       project_name: rpcResult.project_name ?? '',
     };
 
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: action === 'request_revision' ? 'permit_revision_requested' : 'permit_reviewed',
-      metadata: { permitId, decision: action, comments },
-      ...metadata,
-    });
+    await logAuditWithMeta(
+      authCheck.user.id,
+      action === 'request_revision' ? 'permit_revision_requested' : 'permit_reviewed',
+      { metadata: { permitId, decision: action, comments } },
+    );
 
     // B8: notify the permit owner. Failure must not roll back the review
     // (the DB transition already committed) but the admin should see a warning
@@ -239,12 +237,8 @@ export async function setPermitUnderReview(
     // the DB-level change, but admin-action queries hit audit_logs, so without
     // this entry "who started reviewing what, when" is unanswerable from the
     // admin pane.
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'permit_review_started',
+    await logAuditWithMeta(authCheck.user.id, 'permit_review_started', {
       metadata: { permitId, prevStatus: rpcResult.prev_status ?? 'submitted' },
-      ...metadata,
     });
 
     // B8: same pattern as reviewPermit — notification failure is reported as

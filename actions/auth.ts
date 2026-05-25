@@ -12,6 +12,7 @@ import {
   destroySession,
   generateCSRFToken,
   logAuditEvent,
+  logAuditWithMeta,
   getQuickSession
 } from '@/lib/auth';
 import {
@@ -618,12 +619,8 @@ export async function resetPasswordAction(
 
     await resetCodeAttempts(resetAttemptKey);
 
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: user.id,
-      action: 'password_reset',
+    await logAuditWithMeta(user.id, 'password_reset', {
       metadata: { method: 'email_code' },
-      ...metadata,
     });
 
     return { success: true };

@@ -3,7 +3,7 @@
 // ============================================================================
 
 import { NextRequest } from 'next/server';
-import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
+import { logAuditWithMeta } from '@/lib/auth';
 import { requireAuth } from '@/lib/security';
 import { uuidSchema } from '@/lib/validations';
 import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
@@ -155,12 +155,8 @@ export async function GET(
           console.error('Certificate insert error:', certInsertError);
         }
       } else {
-        const metadata = await getRequestMetadata();
-        await logAuditEvent({
-          userId: user.id,
-          action: 'permit_certificate_generated',
+        await logAuditWithMeta(user.id, 'permit_certificate_generated', {
           metadata: { permitId, certificateNumber: certNumber },
-          ...metadata,
         });
       }
     } else if (storedPath && !existingCert.storage_path) {

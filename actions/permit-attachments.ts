@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
-import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
+import { getQuickSession, logAuditWithMeta } from '@/lib/auth';
 import { requireAuth, requireCSRF } from '@/lib/security';
 import { uuidSchema } from '@/lib/validations';
 import { validateFile, generateStoragePath } from '@/lib/file-upload';
@@ -154,12 +154,8 @@ export async function uploadPermitAttachment(
 
     const attachment = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
 
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'permit_attachment_uploaded',
+    await logAuditWithMeta(authCheck.user.id, 'permit_attachment_uploaded', {
       metadata: { permitId, fileName: file.name, fileSize: file.size },
-      ...metadata,
     });
 
     return { success: true, attachment: transformAttachment(attachment) };
@@ -235,12 +231,8 @@ export async function deletePermitAttachment(
       .from(FILE_UPLOAD_LIMITS.storageBucket)
       .remove([attachment.storage_path]);
 
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'permit_attachment_deleted',
+    await logAuditWithMeta(authCheck.user.id, 'permit_attachment_deleted', {
       metadata: { attachmentId, permitId: attachment.permit_id, fileName: attachment.file_name },
-      ...metadata,
     });
 
     return { success: true };

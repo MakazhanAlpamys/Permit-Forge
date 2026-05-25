@@ -5,7 +5,7 @@
 // ============================================================================
 
 import { createAdminClient, createUserContextClient } from '@/lib/supabase-server';
-import { getQuickSession, logAuditEvent, getRequestMetadata } from '@/lib/auth';
+import { getQuickSession, logAuditWithMeta } from '@/lib/auth';
 import { requireAuth, requireCSRF, verifyOwnership, requireActionRateLimit } from '@/lib/security';
 import {
   uuidSchema,
@@ -77,12 +77,8 @@ export async function createPermit(
     const newId = Array.isArray(rpcRows) ? rpcRows[0]?.permit_id : (rpcRows as { permit_id?: string } | null)?.permit_id;
     if (!newId) throw new Error('create_permit_atomic returned no id');
 
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'permit_created',
+    await logAuditWithMeta(authCheck.user.id, 'permit_created', {
       metadata: { permitId: newId, projectName: validation.data.projectName },
-      ...metadata,
     });
 
     return { success: true, permitId: newId };
@@ -352,12 +348,8 @@ export async function submitPermit(
     const isResubmission: boolean = !!row.is_resubmission;
     const projectName: string = row.project_name;
 
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'permit_submitted',
+    await logAuditWithMeta(authCheck.user.id, 'permit_submitted', {
       metadata: { permitId, isResubmission },
-      ...metadata,
     });
 
     // B8: notification dispatch is best-effort and must not block the submit,
@@ -618,12 +610,8 @@ export async function deletePermit(
         .remove(paths);
     }
 
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'permit_deleted',
+    await logAuditWithMeta(authCheck.user.id, 'permit_deleted', {
       metadata: { permitId },
-      ...metadata,
     });
 
     return { success: true };
@@ -767,12 +755,8 @@ export async function runComplianceCheck(
       };
     }
 
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'permit_compliance_checked',
+    await logAuditWithMeta(authCheck.user.id, 'permit_compliance_checked', {
       metadata: { permitId, overallStatus: result.overallStatus },
-      ...metadata,
     });
 
     return { success: true, data: result };
@@ -836,12 +820,8 @@ export async function revisePermit(
       return { success: false, error: 'Can only revise permits with revision requested' };
     }
 
-    const metadata = await getRequestMetadata();
-    await logAuditEvent({
-      userId: authCheck.user.id,
-      action: 'permit_revised',
+    await logAuditWithMeta(authCheck.user.id, 'permit_revised', {
       metadata: { permitId, previousStatus: row.prev_status },
-      ...metadata,
     });
 
     return { success: true };

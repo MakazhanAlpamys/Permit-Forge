@@ -24,6 +24,21 @@ vi.mock('@/lib/auth', () => ({
   getRequestMetadata: (...args: unknown[]) => mockGetRequestMetadata(...args),
   getQuickSession: (...args: unknown[]) => mockGetQuickSession(...args),
   getCSRFToken: (...args: unknown[]) => mockGetCSRFToken(...args),
+  // v1.8.0 Part B: delegate to existing mocks so audit-event assertions still fire.
+  logAuditWithMeta: async (
+    userId: string,
+    action: string,
+    extras?: { targetUserId?: string; metadata?: Record<string, unknown> },
+  ) => {
+    const meta = await mockGetRequestMetadata();
+    return mockLogAuditEvent({
+      userId,
+      action,
+      targetUserId: extras?.targetUserId,
+      metadata: extras?.metadata,
+      ...meta,
+    });
+  },
 }));
 
 // Mock email

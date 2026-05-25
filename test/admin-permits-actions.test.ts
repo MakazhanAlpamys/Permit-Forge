@@ -20,6 +20,23 @@ const mockGetRequestMetadata = vi.fn().mockResolvedValue({ ip: '127.0.0.1', user
 vi.mock('@/lib/auth', () => ({
   logAuditEvent: (...args: unknown[]) => mockLogAuditEvent(...args),
   getRequestMetadata: (...args: unknown[]) => mockGetRequestMetadata(...args),
+  // v1.8.0 Part B: delegate logAuditWithMeta to the existing mocks so the
+  // existing shape assertions (mockLogAuditEvent.toHaveBeenCalledWith({...}))
+  // still fire after callers swap to the convenience wrapper.
+  logAuditWithMeta: async (
+    userId: string,
+    action: string,
+    extras?: { targetUserId?: string; metadata?: Record<string, unknown> },
+  ) => {
+    const meta = await mockGetRequestMetadata();
+    return mockLogAuditEvent({
+      userId,
+      action,
+      targetUserId: extras?.targetUserId,
+      metadata: extras?.metadata,
+      ...meta,
+    });
+  },
 }));
 
 // Mock supabase with chainable query builder
