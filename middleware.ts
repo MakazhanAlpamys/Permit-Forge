@@ -69,9 +69,12 @@ function clearSessionAndRedirect(request: NextRequest, nonce: string, reason?: s
     const safeReason = reason.replace(/[<>"'&]/g, '').slice(0, 100);
     // C13H/M2: harden the blocked-reason cookie (used to display the
     // "your account was blocked" message on /login). Same secure + strict
-    // defaults as the session/CSRF cookies; NEXT_PUBLIC_DEV_INSECURE_COOKIES=1
-    // is the dev escape hatch.
-    const devInsecure = process.env.NEXT_PUBLIC_DEV_INSECURE_COOKIES === '1';
+    // defaults as the session/CSRF cookies; DEV_INSECURE_COOKIES=1 is the dev
+    // escape hatch. v1.5.0 Part D renamed from NEXT_PUBLIC_DEV_INSECURE_COOKIES
+    // — the legacy name is still honored at runtime (see lib/cookie-options).
+    const devInsecure =
+      process.env.DEV_INSECURE_COOKIES === '1' ||
+      process.env.NEXT_PUBLIC_DEV_INSECURE_COOKIES === '1';
     response.cookies.set('ef_blocked_reason', safeReason, {
       httpOnly: false,
       secure: !devInsecure,

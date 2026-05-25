@@ -18,8 +18,19 @@ const DEFAULT_MATCH_COUNT = 25;
 const FINAL_CHUNK_COUNT = 10;
 const MAX_CHUNK_LENGTH = 1500;
 
-// CRAG threshold — if top chunk score is below this, search quality is too low
-const CRAG_THRESHOLD = 0.3;
+// CRAG threshold — if top chunk score is below this, search quality is too
+// low and we short-circuit to a "no info found" reply.
+//
+// DB-H-4 / v1.5.0 Part E: re-derived against the actual post-RRF range.
+// The hybrid path maps each result via Math.min(hybridScore * 10, 1.0)
+// where hybridScore = vector_weight*(1/(rrf_k+rank)) + keyword_weight*(1/(rrf_k+rank)).
+// With defaults (rrf_k=60, vw=0.7, kw=0.3): best possible hybridScore ≈ 0.0164,
+// so the mapped similarity tops out at ~0.164. A threshold of 0.3 (as set in
+// v0) was UNREACHABLE — every hybrid query CRAG-failed, defeating the gate.
+// 0.08 is calibrated against the empirical hybrid score range: rank-1 hits
+// in both vector + keyword pass; weak (no-vector-match + rank-20+ keyword)
+// hits fail. The exact-search path returns similarity=1.0 so it always passes.
+const CRAG_THRESHOLD = 0.08;
 
 // -----------------------------------------------------------------------------
 // Row mappers (F11 / Simplify #11)
@@ -386,7 +397,14 @@ async function hybridSearchWithPostFilter(
   matchCount: number,
   precomputedEmbedding?: number[]
 ): Promise<HybridSearchResult[]> {
-  const expandedCount = matchCount * 3;
+  // PSE2 (v1.5.0 re-audit): the DB-side cap is LEAST(match_count, 50). Asking
+  // for matchCount * 3 here used to over-fetch (since the DB silently truncated
+  // to a higher implicit limit), giving the post-filter a wide candidate pool.
+  // Now the DB caps at 50, so requesting matchCount * 3 with matchCount > 16
+  // collapses to the same 50 — wasted clamp on the DB side. Cap at 50 here
+  // so the call shape stays honest, AND we still get the widest pool the DB
+  // is willing to return for the post-filter step.
+  const expandedCount = Math.min(matchCount * 3, 50);
   const results = await hybridSearch(query, expandedCount, {
     precomputedEmbedding: precomputedEmbedding,
   });

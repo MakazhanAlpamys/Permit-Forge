@@ -208,6 +208,31 @@ export interface IngestionOptions {
 
 type Supa = ReturnType<typeof createAdminClient>;
 
+// INPUT-H2 / v1.5.0 Part F: hard ceiling on the PDF.js parse step. A
+// malicious / corrupt PDF can wedge pdfjs-dist in a CPU-bound loop with no
+// natural abort point. 30 s is comfortably above the worst observed parse
+// time for a 100 MB document on a Vercel Lambda; anything past that is
+// treated as a hung parse and aborted so the ingestion slot doesn't hold
+// the per-document advisory lock indefinitely.
+const PDF_PARSE_TIMEOUT_MS = 30_000;
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race<T>([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error(`${label} timed out after ${ms}ms`)),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 async function loadPdfStage(
   options: IngestionOptions,
   sendProgress: ProgressCallback,
@@ -217,13 +242,15 @@ async function loadPdfStage(
     stage: 'parsing', progress: 5, total: 100,
     message: `Loading PDF (${documentId})...`,
   });
-  if (pdfBuffer) return createPDFParser(pdfBuffer);
+  if (pdfBuffer) {
+    return withTimeout(createPDFParser(pdfBuffer), PDF_PARSE_TIMEOUT_MS, 'PDF parse');
+  }
 
   const pdfPath = path.join(process.cwd(), relativePdfPath!);
   if (!fs.existsSync(pdfPath)) {
     throw new Error(`PDF file not found at ${pdfPath}`);
   }
-  return createPDFParser(pdfPath);
+  return withTimeout(createPDFParser(pdfPath), PDF_PARSE_TIMEOUT_MS, 'PDF parse');
 }
 
 async function persistKeywordsStage(

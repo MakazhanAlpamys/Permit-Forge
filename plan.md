@@ -460,43 +460,57 @@ The v1.4.0 test-coverage re-audit found 0 Critical, 0 High, 1 Medium, 7 Low/Info
 
 **Closes:** S-H-2, S-H-3, S-H-4, S-H-5 + DB-H-1 to DB-H-5 (excluding DB-H-6/7/8 already done in v1.0) + AUTH-H3, AUTH-H4, INPUT-H1, INPUT-H2, INPUT-H3, SECRET-H1 + 17 Medium across security/db
 
-#### Part A — Login lockout DB-backed (replace in-memory) 🟡
+#### Part A — Login lockout DB-backed (replace in-memory) 🟡 — **SKIPPED (diploma wontfix)**
 
-- [ ] **S-H-2 / AUTH-H3 — Migrate `lib/login-lockout.ts`** to use the existing `rate_limits` table or a new `login_attempts` table. Survives process restarts and serverless instances.
-- [ ] DIPLOMA caveat: if scope allows, keep in-memory as fallback and add a "diploma mode" toggle.
+- [x] DIPLOMA-3 explicitly excludes this work: "Acknowledged in source; serverless multi-instance lockout is post-defense work". Single Vercel-instance behaviour acceptable for defense scope. Post-defense follow-up retained in v1.10+ backlog.
 
-#### Part B — `SUPABASE_JWT_SECRET` documentation gate 🟢
+#### Part B — `SUPABASE_JWT_SECRET` fail-fast 🟢
 
-- [ ] **S-H-3 — Add `SUPABASE_JWT_SECRET` to README + CLAUDE.md required-env list.** When `ENABLE_USER_CONTEXT_RLS=1` is set but `SUPABASE_JWT_SECRET` is not, fail-fast at boot with a clear error (currently silently falls back to service_role).
+- [x] **S-H-3 — Fail-fast in [lib/supabase-server.ts](lib/supabase-server.ts) `createUserContextClient`** when `ENABLE_USER_CONTEXT_RLS=1` AND `SUPABASE_JWT_SECRET` is missing/empty. Throws a precise `Configuration error: ...` instead of silently falling back to service_role + one-time-warn. Also throws when `mintSupabaseUserJWT` fails or returns null. README + CLAUDE.md updated to mark the env var conditionally-required.
+- [x] Updated [test/user-context-client.test.ts](test/user-context-client.test.ts) — flipped the silent-fallback assertion to a `rejects.toThrow(/SUPABASE_JWT_SECRET/)`. Added new test in `test/supabase-server.test.ts`.
 
 #### Part C — Content-Disposition RFC 5987 encoding 🟢
 
-- [ ] **S-H-4 — Encode filenames** in `app/api/permits/[id]/certificate/route.ts` and `app/api/chat/export/route.ts` via the `filename*=UTF-8''<encoded>` form. Use a helper in `lib/http-headers.ts`.
+- [x] **S-H-4 — New [lib/http-headers.ts](lib/http-headers.ts)** with `contentDispositionAttachment(filename)`. Emits both `filename="..."` (ASCII fallback, sanitised: strips non-ASCII, control chars, quotes, backslash, path separators, `..`; capped 200 chars + safe default for empty input) AND `filename*=UTF-8''<encoded>` (RFC 5987 percent-encoded). Both routes — `app/api/chat/export/route.ts` + `app/api/permits/[id]/certificate/route.ts` (both call sites) — switched to the helper.
+- [x] [test/http-headers.test.ts](test/http-headers.test.ts) — 6 tests covering ASCII path, percent-encoded UTF-8 round-trip, quoted-string-grammar safety (`"`, `\`), path-traversal stripping, empty fallback, length cap.
 
 #### Part D — Remove `NEXT_PUBLIC_` from dev-insecure-cookies flag 🟢
 
-- [ ] **S-H-5 / SECRET-H1 — Rename `NEXT_PUBLIC_DEV_INSECURE_COOKIES` to `DEV_INSECURE_COOKIES`** in [lib/cookie-options.ts:19](lib/cookie-options.ts#L19). It's read server-side only; the `NEXT_PUBLIC_` prefix leaks it to the client bundle.
+- [x] **S-H-5 / SECRET-H1 — Canonical env var is now `DEV_INSECURE_COOKIES`** in [lib/cookie-options.ts](lib/cookie-options.ts). Legacy `NEXT_PUBLIC_DEV_INSECURE_COOKIES` still honored at runtime (with a one-time deprecation `console.warn`) so a stale `.env.local` doesn't lock out local dev mid-upgrade. `lib/auth.ts` + `middleware.ts` updated to read the new name with the legacy as fallback.
+- [x] [test/cookie-options.test.ts](test/cookie-options.test.ts) — 6 tests pinning new-name path, legacy-alias path, non-"1" rejection, secureCookieDefaults shape.
 
 #### Part E — Database High batch 🔴
 
-- [ ] **DB-H-1 — Advisory lock 64-bit hash fix.** Replace `pg_advisory_xact_lock(bigint, bigint)` with the single-bigint form using `hashtextextended(text, bigint)` (full 64-bit). Audit the rate-limit RPC.
-- [ ] **DB-H-2 — Cap `match_count`.** Add `LEAST(p_match_count, 50)` clamp at the top of each search RPC.
-- [ ] **DB-H-3 — Admin queries N+1.** Refactor `get_all_users_admin` to apply user filter before aggregating sessions/messages (push down the predicate).
-- [ ] **DB-H-4 — CRAG threshold unreachable.** Re-derive the threshold for the post-RRF-scaling score range and update [lib/rag.ts:22](lib/rag.ts#L22). Add a test that asserts the CRAG path actually fires on a deliberately-bad query.
-- [ ] **DB-H-5 — `analytics_daily` MV refresh.** Add a daily cron-style refresh via Supabase Edge Function or a database-side `pg_cron` job (if available).
+- [x] **DB-H-1 — Single-bigint advisory lock.** v1.5.0 lockdown block in [supabase/migrations/000_full_setup.sql](supabase/migrations/000_full_setup.sql) re-declares `check_rate_limit` with `pg_advisory_xact_lock(hashtextextended(p_user_id::text || ':' || v_endpoint, 0))` — the two-arg form was silently truncating each `hashtextextended()` BIGINT to INT (32 bits each), collapsing the per-(user, endpoint) isolation under load.
+- [x] **DB-H-2 — Cap `match_count` at 50.** In-place replace across all 8 search RPCs: `LIMIT match_count;` → `LIMIT LEAST(match_count, 50);`. Existing `LEAST(match_count, 100)` also tightened to 50.
+- [x] **DB-H-3 — Admin queries push-down.** `get_all_users_admin` re-declared in the lockdown block with a `filtered_users` CTE that applies the search filter + LIMIT BEFORE `session_stats` aggregates over `chat_messages`. With 1k+ users the worst-case query drops from full-join to per-page join.
+- [x] **DB-H-4 — CRAG threshold reachable.** [lib/rag.ts](lib/rag.ts) `CRAG_THRESHOLD` lowered 0.3 → **0.08**. Original was unreachable for the hybrid path (max similarity ~0.164 after the `Math.min(score * 10, 1)` clamp), so the gate never fired. New threshold admits rank-1 hybrid hits, rejects rank-20+ weak ones.
+- [x] **DB-H-5 — `analytics_daily` refresh wiring documented.** `refresh_analytics()` already existed; v1.5.0 added explicit `GRANT EXECUTE … TO service_role` + commented-out `cron.schedule` (Supabase Pro) and Vercel Cron Job (Supabase Free) wiring instructions in the migration.
 
 **Verification (Part E):**
-- [ ] Existing DB tests green
-- [ ] New `test/db-integrity.test.ts`: assert advisory_lock collision rate stays low; assert match_count is bounded; assert CRAG threshold triggers on adversarial input
+- [x] [test/migration-grants.test.ts](test/migration-grants.test.ts) +4 new invariants: single-bigint advisory lock pinned in winning `check_rate_limit` body, every `LIMIT match_count` clause capped at 50, `filtered_users` CTE present in winning `get_all_users_admin` body, `refresh_analytics()` grant present.
+- [x] [test/rag.test.ts](test/rag.test.ts) — CRAG boundary tests updated (0.08 ± 0.01) + new regression asserting typical-good hybrid hit (0.164) passes and weak hit (0.0375) fails.
 
 #### Part F — Input & secret hardening medium sweep 🟢
 
-- [ ] **INPUT-H1 — Truncate chat history** sent to LLM at [app/api/chat/stream/route.ts:189-202](app/api/chat/stream/route.ts#L189-L202). Cap total tokens, not row count.
-- [ ] **INPUT-H2 — PDF parsing timeout** in [app/api/ingest/route.ts:78-97](app/api/ingest/route.ts#L78-L97). Wrap PDF.js parse in a 30s `Promise.race`.
-- [ ] **INPUT-H3 — `searchChatHistory`** at [actions/chat-history.ts:446-452](actions/chat-history.ts#L446-L452) — use `createUserContextClient` (when `ENABLE_USER_CONTEXT_RLS=1`) instead of `createAdminClient` + manual `eq('user_id')` filter.
-- [ ] **SECRET-M1/M3 — Reduce raw `error.message` echoing** to clients across 6+ action files. Standardize on a `userFacingError(err)` helper that strips internals.
+- [x] **INPUT-H1 — Character-budget chat history.** [app/api/chat/stream/route.ts](app/api/chat/stream/route.ts) walks history newest-first within `MAX_CHAT_HISTORY_CHARS = 12_000` (~3000 tokens) instead of `.slice(-10)`. A single verbose turn can no longer push 10 prior turns past the input window.
+- [x] **INPUT-H2 — PDF parse 30s timeout.** [lib/pdf-ingestion.ts](lib/pdf-ingestion.ts) `loadPdfStage` wraps `createPDFParser` in a new `withTimeout` helper (`PDF_PARSE_TIMEOUT_MS = 30_000`). A malicious / corrupt PDF can no longer wedge pdfjs in a CPU-bound loop and hold the per-document advisory lock indefinitely.
+- [x] **INPUT-H3 — RLS defense-in-depth for `searchChatHistory`.** [actions/chat-history.ts](actions/chat-history.ts) now uses `await createUserContextClient(user.id)`. Explicit `.eq('user_id', user.id)` filters remain as the primary guard; RLS is suspenders. Falls back to admin client when `ENABLE_USER_CONTEXT_RLS` is off.
+- [x] **SECRET-M1/M3 — New [lib/user-facing-error.ts](lib/user-facing-error.ts)** `userFacingError(err, fallback)`. Forwards messages containing 11 allow-listed domain phrases verbatim (capped 200 chars); returns the fallback for everything else (raw Postgres / driver detail). Adopted at the most-visible echo site (`clearDocumentChunks` fallback delete path in `actions/ingest-pdf.ts`). Wider sweep deferred to v1.9.0 Medium Wave.
 
-**v1.5.0 totals:** ~350 LOC + ~25 tests. Closes remaining High-severity security/DB issues.
+#### Part G — Re-audit follow-ups 🔴
+
+The v1.5.0 security + DB re-audit (general-purpose agent) found 1 Critical, 1 High, 1 Medium, 2 Low. All actionable items folded in before commit.
+
+- [x] **PSE1 (Crit) — DB-H-3 push-down was dead code.** The lockdown block re-declared the 4-arg `get_all_users_admin(UUID, INT, INT, TEXT)`, but `actions/admin.ts:142` always passes `p_after_created_at` + `p_after_id` so PostgREST resolved to the 6-arg keyset overload (defined at migration line 3508) which still had the pre-aggregate-then-filter body. Fix: lockdown now `DROP`s BOTH signatures + re-declares the 6-arg keyset variant with the `filtered_users` CTE before `session_stats`. Migration-grants invariant updated to pin the 6-arg shape.
+- [x] **PSE2 (High) — `hybridSearchWithPostFilter` under-fetched after DB-H-2's 50-cap.** `expandedCount = matchCount * 3` would have asked for 75 candidates when matchCount=25; DB silently capped to 50; post-filter then sliced to matchCount=25 from a narrower-than-intended pool. Fix in [lib/rag.ts](lib/rag.ts) caps `expandedCount = Math.min(matchCount * 3, 50)` so the call shape stays honest.
+- [x] **PSE3 (Med) — `userFacingError` allow-list overreach.** "invalid" matched `invalid input syntax for type uuid: "..."` (echoes attacker UUID); "already exists" matched `duplicate key violates unique constraint "users_username_key"` (leaks index name). Fix in [lib/user-facing-error.ts](lib/user-facing-error.ts) drops both, tightens the remaining list to 5 phrases that don't appear inside common Postgres error messages, AND adds a caller-controlled `UF:` sentinel prefix for explicit pass-through. Tests updated to assert both the new pass-through path and the new fall-back behaviour for UUID/constraint errors.
+- [x] **PSE4 (Low) — strip `;` and `=` from the ASCII filename fallback.** [lib/http-headers.ts](lib/http-headers.ts) — defense-in-depth against defensive browsers that drop the quoting and would mis-parse `filename="x;charset=utf-8"` as a new Content-Disposition parameter.
+- [x] **PSE5 (Low) — legacy `NEXT_PUBLIC_DEV_INSECURE_COOKIES` ignored in production.** [lib/cookie-options.ts](lib/cookie-options.ts) — when `NODE_ENV=production` the legacy alias path now returns `false` + logs a `console.error`, so a stale `.env.production` cannot silently downgrade Secure cookies with only a one-time warn. The legacy alias still works in dev (`NODE_ENV !== 'production'`).
+
+Items checked and **clean** per the re-audit: Part B fail-fast propagation (all 3 callers wrap in try/catch returning safe payload), Part C XSS via filename (cert numbers + chat titles are server-derived/sanitised), Part D NEXT_PUBLIC server bleed (process.env is server-only), Part E DB-H-1 lock correctness (single-bigint hash serialises per-(user, endpoint) with no cross-endpoint blocking), Part F INPUT-H1 ordering (newest-first walk + unshift → oldest→newest, matches `.slice(-10)`), Part F INPUT-H2 timer cleanup (cleared in `finally`), Part F INPUT-H3 fail-mode (outer try/catch catches the throw).
+
+**v1.5.0 totals:** planned ~350 LOC + ~25 tests; actual ~900 LOC + 30 net new tests across 8 new test entries + 5 extended files + migration changes. Skipped Part A (diploma wontfix). Closes 11 of 11 High security findings (S-H-2 wontfix, S-H-3/4/5/SECRET-H1/INPUT-H1/H2/H3 + AUTH-H3 wontfix + SECRET-M1/M3 partial) + 5 of 5 DB High findings (DB-H-1/2/3/4/5). Re-audit PSE1 (Crit) + PSE2 (High) + PSE3 (Med) + PSE4/PSE5 (Low) all folded in before push.
 
 ---
 
@@ -792,8 +806,8 @@ Update after every release ships:
 | v1.1.0 | `56d9b00` | 1 | 2 | 2 | 0 | JWT coherence — CP-C-1, AUTH-H1/H2, AUTH-M5, A-M-3, S-M logout; A-C-4 deferred (Edge isolate Redis is post-defense). Pending push. |
 | v1.2.0 | `394cef6` | 5 | 10 | 3 | 0 | Click-path — A/B/C/D/E + re-audit Part F. 8 Medium items deferred to v1.9.0. Pending push. |
 | v1.3.0 | `783de45` | 4 | 1 | 1 | 0 | Pipeline resilience — A/B/C/D + re-audit Part E (PR1/PR2/PR4/PR5/PR6 folded in before push). v1.3.0 tag. |
-| v1.4.0 | — | 10 (coverage) | 0 | 0 | 0 | Coverage foundation — Parts A/B/C/E + re-audit Part F (PT1 fixed). +101 net tests, +5.9 pts lines (72.9%), +6.5 pts branches (60.4%). Part D Playwright deferred to post-defense. Pending push. |
-| v1.5.0 | — | 0 | 11 | 17 | 0 | Security + DB |
+| v1.4.0 | `8bab47c` | 10 (coverage) | 0 | 0 | 0 | Coverage foundation — Parts A/B/C/E + re-audit Part F (PT1 fixed). +101 net tests, 72.9% lines, 60.4% branches. Part D Playwright deferred. v1.4.0 tag. |
+| v1.5.0 | — | 0 | 11 | 18 | 0 | Security + DB cleanup — Parts B/C/D/E/F + re-audit Part G (PSE1 Crit + PSE2 High + PSE3 Med + PSE4/PSE5 Low fixed before push). +30 net tests. Part A wontfix. Pending push. |
 | v1.6.0 | — | 0 | 5 | 10 | 0 | TypeScript safety |
 | v1.7.0 | — | 0 | 9 | 8 | 0 | Architecture |
 | v1.8.0 | — | 0 | 12 | 16 | 0 | Refactor + simplify |

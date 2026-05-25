@@ -44,6 +44,16 @@ export function getJWTSecret(): Uint8Array {
 
 export const MAX_MESSAGE_LENGTH = 500;
 
+/**
+ * INPUT-H1 / v1.5.0 Part F — character budget for chat history sent to the
+ * LLM. ~4 chars per token (English heuristic) → ~3000 tokens. The old code
+ * capped at 10 rows, which let a single long user message (500 chars) ×
+ * 10 + a long assistant reply blow past the model's input window. Walking
+ * newest-first within this budget bounds the worst case regardless of how
+ * verbose any individual turn was.
+ */
+export const MAX_CHAT_HISTORY_CHARS = 12_000;
+
 // ============================================================================
 // RAG & AI Configuration
 // ============================================================================

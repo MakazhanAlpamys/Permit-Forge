@@ -73,18 +73,17 @@ describe('createUserContextClient (A2)', () => {
     expect(opts.global.headers.Authorization).toMatch(/^Bearer eyJ/);
   });
 
-  it('falls back to admin client and warns once when SUPABASE_JWT_SECRET is missing', async () => {
+  // S-H-3 / v1.5.0 Part B: behavioral change — when the operator opts INTO
+  // RLS defense-in-depth but forgets the secret, fail FAST instead of silently
+  // falling back to service_role. Silent fallback escaped routine log review
+  // and defeated the point of enabling the flag.
+  it('throws (fail-fast) when ENABLE_USER_CONTEXT_RLS=1 but SUPABASE_JWT_SECRET is missing', async () => {
     delete process.env.SUPABASE_JWT_SECRET;
     const { createUserContextClient } = await freshModule();
 
-    const c1 = await createUserContextClient('user-1');
-    const c2 = await createUserContextClient('user-2');
-
-    // Same admin-client singleton returned both times.
-    expect(c1).toBe(c2);
-    // Warn fires exactly once.
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy.mock.calls[0][0]).toContain('SUPABASE_JWT_SECRET');
+    await expect(createUserContextClient('user-1')).rejects.toThrow(/SUPABASE_JWT_SECRET/);
+    // Second call (same misconfig) must also throw — not silently fall back.
+    await expect(createUserContextClient('user-2')).rejects.toThrow(/SUPABASE_JWT_SECRET/);
   });
 
   it('returns admin client (silently) when ENABLE_USER_CONTEXT_RLS is not set', async () => {

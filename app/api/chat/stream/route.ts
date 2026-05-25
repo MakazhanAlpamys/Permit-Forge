@@ -5,7 +5,7 @@ import { requireAuth } from '@/lib/security';
 import { chatMessageSchema } from '@/lib/validations';
 import { HumanMessage, SystemMessage, AIMessage } from '@langchain/core/messages';
 import { COMPLIANCE_SYSTEM_PROMPT, getStreamingModel } from '@/lib/gemini';
-import { MAX_CONTEXT_LENGTH, MIN_CACHEABLE_RESPONSE_LENGTH } from '@/lib/constants';
+import { MAX_CONTEXT_LENGTH, MIN_CACHEABLE_RESPONSE_LENGTH, MAX_CHAT_HISTORY_CHARS } from '@/lib/constants';
 import {
   classifyUserTopic,
   executeRAGPipeline,
@@ -199,9 +199,22 @@ export async function POST(request: NextRequest) {
       ? `CONTEXT:\n${context.slice(0, MAX_CONTEXT_LENGTH)}\n\nQ: ${trimmedMessage}`
       : `Q: ${trimmedMessage}`;
 
+    // INPUT-H1 / v1.5.0 Part F: budget history by characters (proxy for tokens)
+    // not row count. Walk newest-first, keep messages until the budget would
+    // be exceeded, then reverse to chronological order. A single verbose turn
+    // can no longer push 10 prior turns past the model's input window.
+    const historyBudgeted: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    let historyChars = 0;
+    for (let i = conversationHistory.length - 1; i >= 0; i--) {
+      const m = conversationHistory[i];
+      if (historyChars + m.content.length > MAX_CHAT_HISTORY_CHARS) break;
+      historyChars += m.content.length;
+      historyBudgeted.unshift(m);
+    }
+
     const langchainMessages = [
       new SystemMessage(COMPLIANCE_SYSTEM_PROMPT),
-      ...conversationHistory.slice(-10).map(msg =>
+      ...historyBudgeted.map(msg =>
         msg.role === 'user'
           ? new HumanMessage(msg.content)
           : new AIMessage(msg.content)

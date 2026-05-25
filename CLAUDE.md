@@ -181,7 +181,7 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/auth.ts` | JWT create/verify, bcrypt, CSRF, audit logging, session management |
 | `lib/security.ts` | `requireAuth`/`requireAdmin` middleware guards for server actions |
 | `lib/validations.ts` | Zod v4 schemas for all inputs (passwords, chat messages, citations, JWT payloads) |
-| `lib/supabase-server.ts` | Three clients: `createServerClient()` (anon), `createAdminClient()` (service_role, singleton), and `createUserContextClient(userId)` (anon key + a Supabase-compatible JWT minted with `SUPABASE_JWT_SECRET` so RLS `auth.uid()` engages). The user-context client is **opt-in via `ENABLE_USER_CONTEXT_RLS=1`** — without it the function returns the admin singleton so a misconfigured `SUPABASE_JWT_SECRET` can't 500 every "read your own X" action (see `LOCAL_NOTES.md`). |
+| `lib/supabase-server.ts` | Three clients: `createServerClient()` (anon), `createAdminClient()` (service_role, singleton), and `createUserContextClient(userId)` (anon key + a Supabase-compatible JWT minted with `SUPABASE_JWT_SECRET` so RLS `auth.uid()` engages). The user-context client is **opt-in via `ENABLE_USER_CONTEXT_RLS=1`** — when the flag is off, the function returns the admin singleton (pre-A2 behavior). When the flag is on AND `SUPABASE_JWT_SECRET` is missing, the function THROWS rather than silently falling back to service_role (v1.5.0 Part B / S-H-3 fail-fast). See `LOCAL_NOTES.md`. |
 | `lib/file-upload.ts` | File validation (size, extension, MIME), storage path generation |
 | `lib/email.ts` | Email sending via Nodemailer SMTP: verification, password reset, password change codes; `generateSixDigitCode()` |
 | `lib/transforms.ts` | Shared data transforms: permit DB row → TypeScript object |
@@ -264,14 +264,16 @@ Required in `.env.local`:
 - `GEMINI_API_KEY` — Google Gemini API key
 - `JWT_SECRET` — Min 32 chars (64+ for production)
 
+Conditionally required:
+- `SUPABASE_JWT_SECRET` — **required when `ENABLE_USER_CONTEXT_RLS=1`** (v1.5.0 Part B: `createUserContextClient` now THROWS at runtime if the flag is on but this secret is missing or empty). Must match the project's actual JWT secret in the Supabase dashboard, otherwise every query through this client returns RLS denials. When the flag is off (default), the secret is unused.
+
 Optional:
 - `SMTP_HOST` — SMTP server host (default: `smtp.gmail.com`)
 - `SMTP_PORT` — SMTP port (default: `587`)
 - `SMTP_USER` — Gmail address for sending emails
 - `SMTP_PASS` — Gmail App Password (16 chars)
-- `SUPABASE_JWT_SECRET` — used by `createUserContextClient` to mint a Supabase-compatible JWT. Must match the project's actual JWT secret in the Supabase dashboard, otherwise every query through this client returns RLS denials. Only consulted when `ENABLE_USER_CONTEXT_RLS=1`.
 - `ENABLE_USER_CONTEXT_RLS` — set to `1` to route user-context reads through the anon key + minted JWT (engages RLS as defense-in-depth). Off by default: `createUserContextClient` returns the admin singleton.
-- `NEXT_PUBLIC_DEV_INSECURE_COOKIES` — set to `1` in local dev to drop the `Secure` flag and relax `SameSite` so cookies survive plain-HTTP `localhost`.
+- `DEV_INSECURE_COOKIES` — set to `1` in local dev to drop the `Secure` flag and relax `SameSite` so cookies survive plain-HTTP `localhost`. v1.5.0 Part D renamed from `NEXT_PUBLIC_DEV_INSECURE_COOKIES` (the `NEXT_PUBLIC_` prefix leaked the flag into the client bundle); legacy name still honored at runtime with a one-time deprecation warning.
 
 ## Debugging Production
 

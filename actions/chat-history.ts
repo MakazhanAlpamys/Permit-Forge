@@ -446,7 +446,12 @@ export async function searchChatHistory(
     const escapedQuery = trimmedQuery.replace(/[%_]/g, '\\$&');
     const searchPattern = `%${escapedQuery}%`;
 
-    const supabase = createAdminClient();
+    // INPUT-H3 / v1.5.0 Part F: route through createUserContextClient so the
+    // chat_sessions / chat_messages RLS policies (own-rows-only) engage as
+    // defense-in-depth. The explicit `.eq('user_id', user.id)` / inner-join
+    // filter is the primary guard; RLS is suspenders. Without
+    // ENABLE_USER_CONTEXT_RLS=1 this falls back to admin client (pre-A2 behavior).
+    const supabase = await createUserContextClient(user.id);
 
     // Search session titles first
     const { data: titleMatches } = await supabase

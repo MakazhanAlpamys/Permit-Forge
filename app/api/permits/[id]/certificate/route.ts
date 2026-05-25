@@ -9,6 +9,7 @@ import { uuidSchema } from '@/lib/validations';
 import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 import { generateCertificateNumber, generateCertificatePDF, type CertificateData } from '@/lib/permit-certificate';
 import { applySecurityHeaders } from '@/lib/api-security-headers';
+import { contentDispositionAttachment } from '@/lib/http-headers';
 import { canPerformOperation, type PermitStatus } from '@/lib/permit-state-machine';
 
 export async function GET(
@@ -98,7 +99,7 @@ export async function GET(
           new Response(cachedBytes, {
             headers: {
               'Content-Type': 'application/pdf',
-              'Content-Disposition': `attachment; filename="permit-certificate-${certNumber}.pdf"`,
+              'Content-Disposition': contentDispositionAttachment(`permit-certificate-${certNumber}.pdf`),
               'Cache-Control': 'private, max-age=3600',
               'X-Cert-Cache': 'hit',
             },
@@ -176,7 +177,7 @@ export async function GET(
       new Response(new Uint8Array(pdfBuffer), {
         headers: {
           'Content-Type': 'application/pdf',
-          'Content-Disposition': `attachment; filename="permit-certificate-${certNumber}.pdf"`,
+          'Content-Disposition': contentDispositionAttachment(`permit-certificate-${certNumber}.pdf`),
           'Cache-Control': 'private, max-age=3600',
           'X-Cert-Cache': 'miss',
         },

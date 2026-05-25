@@ -117,6 +117,23 @@ describe('createUserContextClient', () => {
     }
   });
 
+  // S-H-3 / v1.5.0 Part B: fail-fast when the operator opted INTO RLS
+  // defense-in-depth but forgot to configure the JWT secret. Previously this
+  // silently fell back to service_role + logged a warning — easy to miss in
+  // production logs, which defeats the point of enabling the flag.
+  it('throws (fail-fast) when ENABLE_USER_CONTEXT_RLS=1 but SUPABASE_JWT_SECRET is missing', async () => {
+    process.env.ENABLE_USER_CONTEXT_RLS = '1';
+    delete process.env.SUPABASE_JWT_SECRET;
+    try {
+      const mod = await freshModule();
+      await expect(
+        mod.createUserContextClient('550e8400-e29b-41d4-a716-446655440000'),
+      ).rejects.toThrow(/SUPABASE_JWT_SECRET/);
+    } finally {
+      delete process.env.ENABLE_USER_CONTEXT_RLS;
+    }
+  });
+
   it('mints a Supabase JWT and uses Authorization header when SUPABASE_JWT_SECRET is set and ENABLE_USER_CONTEXT_RLS=1', async () => {
     process.env.SUPABASE_JWT_SECRET =
       'unit-test-supabase-jwt-secret-must-be-long-enough-for-hs256';

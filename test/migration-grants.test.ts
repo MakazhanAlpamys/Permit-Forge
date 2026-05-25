@@ -353,3 +353,74 @@ describe('v1.3.0 Part C — semantic_cache de-duplication (A-C-3)', () => {
     );
   });
 });
+
+describe('v1.5.0 Part E — DB High Cleanup', () => {
+  // DB-H-1: The last (winning) definition of check_rate_limit must use the
+  // single-bigint advisory lock form. The two-bigint form silently truncates
+  // each arg to INT, collapsing per-(user, endpoint) isolation under load.
+  it('check_rate_limit uses single-bigint pg_advisory_xact_lock (DB-H-1)', () => {
+    const matches = [
+      ...sql.matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+check_rate_limit[\s\S]*?\$\$\s*;/gi),
+    ];
+    expect(matches.length).toBeGreaterThan(0);
+    const lastBody = matches[matches.length - 1][0];
+    // Must contain a single-arg pg_advisory_xact_lock(hashtextextended(...)).
+    expect(lastBody).toMatch(
+      /pg_advisory_xact_lock\s*\(\s*hashtextextended\s*\([^)]+\|\|[^)]+\)/i,
+    );
+    // And must NOT use the truncating two-arg form anywhere in the winning body.
+    const twoArgRegex = /pg_advisory_xact_lock\s*\(\s*hashtextextended\s*\([^)]*\)\s*,\s*hashtextextended\s*\([^)]*\)\s*\)/i;
+    expect(lastBody).not.toMatch(twoArgRegex);
+  });
+
+  // DB-H-2: every search RPC's outer LIMIT must be capped at 50 so a caller
+  // can't ask for 10k rows + DoS the LLM context builder.
+  it('every search RPC caps match_count at 50 (DB-H-2)', () => {
+    // Find all LIMIT clauses that reference match_count.
+    const limitClauses = sql.match(/LIMIT\s+[^;]*match_count[^;]*;/gi) || [];
+    expect(limitClauses.length).toBeGreaterThan(0);
+    for (const clause of limitClauses) {
+      // Each must be of the form LIMIT LEAST(match_count, N) with N <= 50.
+      expect(clause).toMatch(/LIMIT\s+LEAST\s*\(\s*match_count\s*,\s*(\d+)\s*\)/i);
+      const n = Number(clause.match(/LEAST\s*\(\s*match_count\s*,\s*(\d+)\s*\)/i)![1]);
+      expect(n).toBeLessThanOrEqual(50);
+    }
+  });
+
+  // DB-H-3: the winning definition of get_all_users_admin must filter users
+  // BEFORE aggregating sessions+messages, not after. We assert the order of
+  // the CTEs (filtered_users defined before session_stats).
+  //
+  // Re-audit PSE1: actions/admin.ts calls the 6-arg keyset overload, NOT the
+  // 4-arg form. The lockdown drop must hit BOTH signatures so the keyset
+  // overload also gets the push-down body. Without this the v1.5.0 fix is
+  // dead code.
+  it('get_all_users_admin filters users before aggregating sessions — applies to 6-arg keyset overload (DB-H-3 push-down + PSE1)', () => {
+    const matches = [
+      ...sql.matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+get_all_users_admin[\s\S]*?\$\$\s*;/gi),
+    ];
+    expect(matches.length).toBeGreaterThan(0);
+    const lastBody = matches[matches.length - 1][0];
+    // Winning overload must be the 6-arg keyset signature (the active caller).
+    expect(lastBody).toMatch(/p_after_created_at\s+TIMESTAMPTZ/i);
+    expect(lastBody).toMatch(/p_after_id\s+UUID/i);
+    // The push-down version declares a filtered_users CTE BEFORE session_stats.
+    expect(lastBody).toMatch(/WITH\s+filtered_users\s+AS/i);
+    expect(lastBody).toMatch(/session_stats[\s\S]*?filtered_users/i);
+    // And v1.5.0 explicitly drops both overloads so the 4-arg form can't
+    // shadow this one when PostgREST picks the function variant.
+    expect(sql).toMatch(
+      /DROP\s+FUNCTION\s+IF\s+EXISTS\s+get_all_users_admin\(UUID,\s*INT,\s*INT,\s*TEXT,\s*TIMESTAMPTZ,\s*UUID\)/i,
+    );
+  });
+
+  // DB-H-5: refresh_analytics() must be explicitly grantable to service_role
+  // so a Vercel cron / Supabase pg_cron job can fire it without service_role
+  // owning the function (which CREATE OR REPLACE preserves but we want
+  // belt + suspenders).
+  it('refresh_analytics() is GRANT EXECUTE to service_role (DB-H-5)', () => {
+    expect(sql).toMatch(
+      /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+refresh_analytics\(\)\s+TO\s+service_role/i,
+    );
+  });
+});

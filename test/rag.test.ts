@@ -332,16 +332,29 @@ describe('RAG Module', () => {
     });
 
     it('returns true at exactly the threshold', () => {
-      // CRAG_THRESHOLD = 0.3 in lib/rag.ts; equality counts as pass.
-      expect(passesCRAGCheck([mkChunk(0.3)])).toBe(true);
+      // DB-H-4 / v1.5.0 Part E: CRAG_THRESHOLD lowered from 0.3 to 0.08 so the
+      // gate actually fires on hybrid scores (range ~0..0.164 after the *10 clamp).
+      expect(passesCRAGCheck([mkChunk(0.08)])).toBe(true);
     });
 
     it('returns false just below the threshold', () => {
-      expect(passesCRAGCheck([mkChunk(0.29)])).toBe(false);
+      expect(passesCRAGCheck([mkChunk(0.07)])).toBe(false);
     });
 
     it('returns true well above the threshold', () => {
       expect(passesCRAGCheck([mkChunk(0.85)])).toBe(true);
+    });
+
+    // DB-H-4: regression. The OLD threshold (0.3) was unreachable for the
+    // hybrid path (max ~0.164 after the Math.min(score*10, 1.0) clamp), so
+    // every hybrid query CRAG-failed. This test pins that the new threshold
+    // accepts a typical-good hybrid hit and rejects a weak one.
+    it('hybrid-path: typical-good rank-1 hit passes, weak rank-20 hit fails', () => {
+      // Math.min(hybridScore * 10, 1) where hybridScore for vw=0.7,kw=0.3,rrf_k=60:
+      //   rank-1 in both:    (0.7+0.3)/61 ≈ 0.0164 → mapped ≈ 0.164
+      //   rank-20 keyword only: 0.3/80 ≈ 0.00375 → mapped ≈ 0.0375
+      expect(passesCRAGCheck([mkChunk(0.164)])).toBe(true);   // good hit
+      expect(passesCRAGCheck([mkChunk(0.0375)])).toBe(false); // weak hit
     });
   });
 

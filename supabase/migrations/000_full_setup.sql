@@ -501,7 +501,7 @@ BEGIN
   WHERE 1 - (d.embedding <=> query_embedding) > 0.5
     AND (filter_document IS NULL OR d.document_name = filter_document)
   ORDER BY d.embedding <=> query_embedding
-  LIMIT match_count;
+  LIMIT LEAST(match_count, 50);
 END;
 $$;
 
@@ -542,7 +542,7 @@ BEGIN
   WHERE d.fts @@ tsquery_val
     AND (filter_document IS NULL OR d.document_name = filter_document)
   ORDER BY ts_rank_cd(d.fts, tsquery_val) DESC
-  LIMIT LEAST(match_count, 100);
+  LIMIT LEAST(match_count, 50);
 END;
 $$;
 
@@ -623,7 +623,7 @@ BEGIN
     combined_v_similarity, combined_k_rank, combined_score
   FROM combined
   ORDER BY combined_score DESC
-  LIMIT match_count;
+  LIMIT LEAST(match_count, 50);
 END;
 $$;
 
@@ -723,7 +723,7 @@ BEGIN
     combined_v_similarity, combined_k_rank, combined_score
   FROM combined
   ORDER BY combined_score DESC
-  LIMIT match_count;
+  LIMIT LEAST(match_count, 50);
 END;
 $$;
 
@@ -759,7 +759,7 @@ BEGIN
   WHERE LOWER(d.content) LIKE '%' || LOWER(safe_pattern) || '%'
     AND (filter_document IS NULL OR d.document_name = filter_document)
   ORDER BY match_position
-  LIMIT LEAST(match_count, 100);
+  LIMIT LEAST(match_count, 50);
 END;
 $$;
 
@@ -809,7 +809,7 @@ BEGIN
       ELSE 3
     END,
     d.id
-  LIMIT match_count;
+  LIMIT LEAST(match_count, 50);
 END;
 $$;
 
@@ -857,7 +857,7 @@ BEGIN
       ELSE 4
     END,
     (d.metadata->>'startPage')::INT
-  LIMIT match_count;
+  LIMIT LEAST(match_count, 50);
 END;
 $$;
 
@@ -910,7 +910,7 @@ BEGIN
     )
     AND (filter_document IS NULL OR d.document_name = filter_document)
   ORDER BY match_score DESC
-  LIMIT match_count;
+  LIMIT LEAST(match_count, 50);
 END;
 $$;
 
@@ -3850,7 +3850,7 @@ BEGIN
     combined_v_similarity, combined_k_rank, combined_score
   FROM combined
   ORDER BY combined_score DESC
-  LIMIT match_count;
+  LIMIT LEAST(match_count, 50);
 END;
 $$;
 
@@ -4144,6 +4144,236 @@ REVOKE EXECUTE ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) FROM a
 GRANT EXECUTE ON FUNCTION search_semantic_cache(VECTOR(768), FLOAT, INT) TO service_role;
 REVOKE EXECUTE ON FUNCTION get_parent_chunks(BIGINT[]) FROM anon, authenticated, PUBLIC;
 GRANT EXECUTE ON FUNCTION get_parent_chunks(BIGINT[]) TO service_role;
+
+
+-- ============================================================================
+-- v1.5.0 "Security + DB High Cleanup" (audit 2026-05-21)
+-- ============================================================================
+-- Closes:
+--   DB-H-1 — Advisory lock 64-bit hash fix (single bigint instead of (int,int)
+--            which silently truncated to 32 bits each).
+--   DB-H-2 — Cap match_count (handled inline in the search RPCs above:
+--            LIMIT LEAST(match_count, 50) replaces unbounded LIMIT match_count).
+--   DB-H-3 — Admin N+1: push the username/full_name filter into the CTE so a
+--            search-filtered admin user list doesn't aggregate every user's
+--            sessions+messages before filtering.
+--   DB-H-5 — analytics_daily MV refresh scheduling guidance (the RPC has
+--            existed since v0; v1.5.0 documents how to actually wire it).
+
+-- --------------------------------------------------------------------------
+-- DB-H-1: rewrite the two-arg pg_advisory_xact_lock(BIGINT, BIGINT) — which
+-- doesn't exist as an overload, so PostgreSQL silently casts both args to
+-- INT and truncates the high 32 bits — to the single-arg BIGINT form. We
+-- combine user_id + endpoint into one hashtextextended() call so the full
+-- 64-bit collision space is preserved.
+-- --------------------------------------------------------------------------
+
+DROP FUNCTION IF EXISTS check_rate_limit(UUID, TEXT, INT, INT, INT);
+
+CREATE OR REPLACE FUNCTION check_rate_limit(
+  p_user_id UUID,
+  p_endpoint TEXT DEFAULT 'default',
+  p_window_seconds INT DEFAULT 60,
+  p_max_requests INT DEFAULT 10,
+  p_min_interval_ms INT DEFAULT 2000
+)
+RETURNS TABLE (
+  allowed BOOLEAN,
+  retry_after_ms INT,
+  current_count INT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_window_start TIMESTAMPTZ;
+  v_last_request TIMESTAMPTZ;
+  v_request_count INT;
+  v_ms_since_last INT;
+  v_endpoint TEXT;
+  v_window_seconds INT;
+  v_max_requests INT;
+  v_min_interval_ms INT;
+BEGIN
+  v_endpoint := COALESCE(p_endpoint, 'default');
+
+  -- Per-endpoint limits (same as the v1.0 hardcoded matrix — caller no longer
+  -- picks its own cap).
+  CASE v_endpoint
+    WHEN 'chat'                                 THEN v_window_seconds := 60;   v_max_requests := 20; v_min_interval_ms := 1500;
+    WHEN 'permit_certificate'                   THEN v_window_seconds := 60;   v_max_requests := 5;  v_min_interval_ms := 1000;
+    WHEN 'pdf_ingest'                           THEN v_window_seconds := 300;  v_max_requests := 3;  v_min_interval_ms := 5000;
+    WHEN 'createPermit'                         THEN v_window_seconds := 60;   v_max_requests := 10; v_min_interval_ms := 1000;
+    WHEN 'updatePermitBuildingDetails'          THEN v_window_seconds := 60;   v_max_requests := 30; v_min_interval_ms := 500;
+    WHEN 'updatePermitComplianceRequirements'   THEN v_window_seconds := 60;   v_max_requests := 30; v_min_interval_ms := 500;
+    WHEN 'runComplianceCheck'                   THEN v_window_seconds := 300;  v_max_requests := 5;  v_min_interval_ms := 10000;
+    WHEN 'reviewPermit'                         THEN v_window_seconds := 60;   v_max_requests := 30; v_min_interval_ms := 500;
+    WHEN 'setPermitUnderReview'                 THEN v_window_seconds := 60;   v_max_requests := 30; v_min_interval_ms := 500;
+    WHEN 'blockUser'                            THEN v_window_seconds := 60;   v_max_requests := 20; v_min_interval_ms := 500;
+    WHEN 'updateUserRole'                       THEN v_window_seconds := 60;   v_max_requests := 20; v_min_interval_ms := 500;
+    WHEN 'adminCreateUser'                      THEN v_window_seconds := 60;   v_max_requests := 10; v_min_interval_ms := 1000;
+    WHEN 'adminDeleteUser'                      THEN v_window_seconds := 60;   v_max_requests := 10; v_min_interval_ms := 1000;
+    WHEN 'adminResetPassword'                   THEN v_window_seconds := 60;   v_max_requests := 10; v_min_interval_ms := 1000;
+    WHEN 'default'                              THEN v_window_seconds := COALESCE(p_window_seconds, 60);
+                                                      v_max_requests := COALESCE(p_max_requests, 10);
+                                                      v_min_interval_ms := COALESCE(p_min_interval_ms, 2000);
+    ELSE                                              v_window_seconds := 60;  v_max_requests := 10; v_min_interval_ms := 2000;
+  END CASE;
+
+  -- DB-H-1 / v1.5.0 Part E: single-bigint advisory lock with full 64-bit
+  -- collision space. (Was: pg_advisory_xact_lock(BIGINT, BIGINT) which doesn't
+  -- exist as an overload — both args were truncated to INT.)
+  PERFORM pg_advisory_xact_lock(
+    hashtextextended(p_user_id::text || ':' || v_endpoint, 0)
+  );
+
+  v_window_start := NOW() - (v_window_seconds || ' seconds')::INTERVAL;
+
+  SELECT COUNT(*), MAX(request_timestamp)
+  INTO v_request_count, v_last_request
+  FROM rate_limits
+  WHERE user_id = p_user_id
+    AND endpoint = v_endpoint
+    AND request_timestamp > v_window_start;
+
+  IF v_last_request IS NOT NULL THEN
+    v_ms_since_last := EXTRACT(EPOCH FROM (NOW() - v_last_request)) * 1000;
+    IF v_ms_since_last < v_min_interval_ms THEN
+      RETURN QUERY SELECT FALSE, (v_min_interval_ms - v_ms_since_last)::INT, v_request_count::INT;
+      RETURN;
+    END IF;
+  END IF;
+
+  IF v_request_count >= v_max_requests THEN
+    RETURN QUERY SELECT FALSE, (v_window_seconds * 1000)::INT, v_request_count::INT;
+    RETURN;
+  END IF;
+
+  INSERT INTO rate_limits (user_id, endpoint, request_timestamp)
+  VALUES (p_user_id, v_endpoint, NOW());
+
+  DELETE FROM rate_limits
+  WHERE user_id = p_user_id
+    AND endpoint = v_endpoint
+    AND request_timestamp < NOW() - INTERVAL '1 hour';
+
+  RETURN QUERY SELECT TRUE, 0, (v_request_count + 1)::INT;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION check_rate_limit(UUID, TEXT, INT, INT, INT) TO authenticated, service_role;
+
+
+-- --------------------------------------------------------------------------
+-- DB-H-3: push the user-search filter into the session_stats CTE so a
+-- filtered admin user list only aggregates over the matching users instead
+-- of the whole users x chat_sessions x chat_messages join. With 1k+ users
+-- this drops the worst-case query from a full join to a per-page join.
+--
+-- The active overload is the 6-arg keyset version added in migration 020
+-- (line 3508 above) — that's what actions/admin.ts:142 actually calls. We
+-- drop BOTH the 4-arg and 6-arg signatures so the lockdown re-declaration
+-- below is the only definition that survives. (Re-audit PSE1.)
+-- --------------------------------------------------------------------------
+
+DROP FUNCTION IF EXISTS get_all_users_admin(UUID, INT, INT, TEXT);
+DROP FUNCTION IF EXISTS get_all_users_admin(UUID, INT, INT, TEXT, TIMESTAMPTZ, UUID);
+
+CREATE OR REPLACE FUNCTION get_all_users_admin(
+  p_admin_id UUID,
+  p_limit INT DEFAULT 50,
+  p_offset INT DEFAULT 0,
+  p_search TEXT DEFAULT NULL,
+  p_after_created_at TIMESTAMPTZ DEFAULT NULL,
+  p_after_id UUID DEFAULT NULL
+)
+RETURNS TABLE (
+  id UUID,
+  username TEXT,
+  full_name TEXT,
+  role TEXT,
+  blocked BOOLEAN,
+  blocked_reason TEXT,
+  created_at TIMESTAMPTZ,
+  last_login TIMESTAMPTZ,
+  session_count BIGINT,
+  message_count BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_admin_role TEXT;
+  v_use_keyset BOOLEAN := (p_after_created_at IS NOT NULL AND p_after_id IS NOT NULL);
+BEGIN
+  SELECT users.role INTO v_admin_role FROM users WHERE users.id = p_admin_id;
+  IF v_admin_role != 'admin' THEN RAISE EXCEPTION 'Unauthorized: Admin role required'; END IF;
+
+  RETURN QUERY
+  WITH filtered_users AS (
+    SELECT u.id, u.username, u.full_name, u.role, u.blocked, u.blocked_reason,
+           u.created_at, u.last_login
+    FROM users u
+    WHERE (p_search IS NULL
+           OR u.username ILIKE '%' || p_search || '%'
+           OR u.full_name ILIKE '%' || p_search || '%')
+      -- Keyset: take rows strictly *after* the cursor in (created_at DESC, id DESC) order.
+      AND (NOT v_use_keyset OR (u.created_at, u.id) < (p_after_created_at, p_after_id))
+    ORDER BY u.created_at DESC, u.id DESC
+    LIMIT LEAST(p_limit, 100)
+    OFFSET CASE WHEN v_use_keyset THEN 0 ELSE GREATEST(p_offset, 0) END
+  ),
+  -- DB-H-3: aggregate ONLY over the filtered page of users (filtered_users
+  -- is at most 100 rows). Previous version pre-aggregated every user's
+  -- sessions before joining; the search filter then threw most of that
+  -- work away.
+  session_stats AS (
+    SELECT cs.user_id,
+           COUNT(*)::BIGINT AS session_count,
+           COUNT(cm.id)::BIGINT AS message_count
+    FROM chat_sessions cs
+    LEFT JOIN chat_messages cm ON cm.session_id = cs.id
+    WHERE cs.user_id IN (SELECT fu.id FROM filtered_users fu)
+    GROUP BY cs.user_id
+  )
+  SELECT
+    fu.id, fu.username, fu.full_name, fu.role, fu.blocked, fu.blocked_reason,
+    fu.created_at, fu.last_login,
+    COALESCE(s.session_count, 0)::BIGINT,
+    COALESCE(s.message_count, 0)::BIGINT
+  FROM filtered_users fu
+  LEFT JOIN session_stats s ON s.user_id = fu.id
+  ORDER BY fu.created_at DESC, fu.id DESC;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION get_all_users_admin(UUID, INT, INT, TEXT, TIMESTAMPTZ, UUID) TO service_role;
+REVOKE EXECUTE ON FUNCTION get_all_users_admin(UUID, INT, INT, TEXT, TIMESTAMPTZ, UUID) FROM anon, authenticated;
+
+
+-- --------------------------------------------------------------------------
+-- DB-H-5: refresh_analytics() already exists (line 1069); v1.5.0 documents
+-- how to actually fire it on a schedule.
+--
+-- On Supabase (pg_cron is enabled out of the box on Pro and above):
+--   SELECT cron.schedule(
+--     'refresh-analytics-daily',
+--     '5 1 * * *',                            -- 01:05 UTC every day
+--     $$SELECT refresh_analytics();$$
+--   );
+--
+-- On Supabase Free / hosted PG without pg_cron, use a Vercel Cron Job:
+--   1. Create a /api/cron/refresh-analytics route that calls the RPC via
+--      createAdminClient (service_role).
+--   2. Add a `crons` entry in vercel.json with `schedule: "5 1 * * *"`.
+--
+-- Grant adjusted so the cron Edge Function (also running as service_role)
+-- can fire it without extra setup.
+-- --------------------------------------------------------------------------
+
+GRANT EXECUTE ON FUNCTION refresh_analytics() TO service_role;
 
 
 -- ============================================================================

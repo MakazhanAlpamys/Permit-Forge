@@ -13,6 +13,7 @@ import { createAdminClient } from '@/lib/supabase-server';
 import { requireAdmin, requireCSRF } from '@/lib/security';
 import { clearDocumentTreeCache } from '@/lib/tree-cache';
 import { logAuditEvent, getRequestMetadata } from '@/lib/auth';
+import { userFacingError } from '@/lib/user-facing-error';
 import type { ChunkMetadata } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -82,7 +83,15 @@ export async function clearDocumentChunks(
       .eq('document_name', documentId);
 
     if (deleteError) {
-      return { success: false, error: `Delete error: ${deleteError.message}` };
+      // SECRET-M1 / v1.5.0 Part F: filter raw Postgres error text. The
+      // delete error commonly mentions table names + constraint names, which
+      // are recon material in production. Allow-listed phrases ("permission
+      // denied", "not found") still surface verbatim so the admin can act.
+      console.error('Delete error in clearDocumentChunks:', deleteError);
+      return {
+        success: false,
+        error: userFacingError(deleteError, 'Failed to delete document chunks'),
+      };
     }
 
     const deletedCount = count || 0;

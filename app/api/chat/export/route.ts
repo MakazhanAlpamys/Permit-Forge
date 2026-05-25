@@ -7,6 +7,7 @@ import { requireAuth } from '@/lib/security';
 import { createAdminClient } from '@/lib/supabase-server';
 import { uuidSchema } from '@/lib/validations';
 import { applySecurityHeaders } from '@/lib/api-security-headers';
+import { contentDispositionAttachment } from '@/lib/http-headers';
 
 /**
  * Escape characters that have special meaning inside a Markdown table cell.
@@ -95,14 +96,17 @@ export async function GET(request: NextRequest) {
 
     markdown += `\n*Exported from PermitForge — Building Code Compliance Assistant*\n`;
 
-    // Sanitize title for filename
-    const safeTitle = title.replace(/[^a-zA-Z0-9-_ ]/g, '').slice(0, 50).trim() || 'chat-export';
+    // S-H-4 / v1.5.0 Part C: use the RFC 5987 helper so non-ASCII session
+    // titles (Arabic / Cyrillic project names) survive the download instead
+    // of getting truncated to mojibake by the browser. The helper handles
+    // ASCII fallback + UTF-8 percent-encoding + path-traversal stripping.
+    const downloadName = `${title.trim() || 'chat-export'}.md`;
 
     return applySecurityHeaders(
       new Response(markdown, {
         headers: {
           'Content-Type': 'text/markdown; charset=utf-8',
-          'Content-Disposition': `attachment; filename="${safeTitle}.md"`,
+          'Content-Disposition': contentDispositionAttachment(downloadName),
           'Cache-Control': 'no-cache',
         },
       })

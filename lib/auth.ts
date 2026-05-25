@@ -103,9 +103,10 @@ export async function createSession(user: TokenUser): Promise<void> {
   const token = await createJWTToken(user);
   const cookieStore = await cookies();
   
-  // C13H/M1: always secure + sameSite=strict. NEXT_PUBLIC_DEV_INSECURE_COOKIES=1
-  // is the documented local-dev escape hatch (http://localhost would otherwise
-  // lose the cookie under these flags).
+  // C13H/M1: always secure + sameSite=strict. DEV_INSECURE_COOKIES=1 is the
+  // documented local-dev escape hatch (http://localhost would otherwise lose
+  // the cookie under these flags). v1.5.0 Part D renamed from
+  // NEXT_PUBLIC_DEV_INSECURE_COOKIES — see lib/cookie-options.ts.
   cookieStore.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     ...secureCookieDefaults(),

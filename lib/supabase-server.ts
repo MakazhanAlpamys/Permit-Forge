@@ -137,30 +137,46 @@ export async function createUserContextClient(userId: string): Promise<SupabaseC
     return createAdminClient();
   }
 
-  let userJwt: string | null = null;
+  // S-H-3 / v1.5.0 Part B: fail FAST when the operator opted in but forgot
+  // the secret. Previously this silently fell back to service_role + logged
+  // a warning, which trivially escapes routine log review and defeats the
+  // point of enabling defense-in-depth. The thrown error fires once per
+  // request that touches a user-context read; the message is explicit about
+  // both the flag and the secret so the misconfiguration is unambiguous.
+  if (!process.env.SUPABASE_JWT_SECRET) {
+    throw new Error(
+      'Configuration error: ENABLE_USER_CONTEXT_RLS=1 requires SUPABASE_JWT_SECRET ' +
+        'to be set (the Supabase project\'s JWT signing secret, found in Project ' +
+        'Settings → API → "JWT Secret"). Either set the secret, or unset ' +
+        'ENABLE_USER_CONTEXT_RLS to fall back to the service_role admin client.',
+    );
+  }
+
+  let userJwt: string | null;
   try {
     userJwt = await mintSupabaseUserJWT(userId);
   } catch (err) {
+    // Signing itself failed (e.g. invalid secret encoding). Surface it to
+    // the caller — silent fallback hides real misconfiguration.
     if (!_missingSupabaseJwtSecretWarned) {
       _missingSupabaseJwtSecretWarned = true;
-      console.warn(
-        '[supabase] createUserContextClient: JWT signing failed, falling back to ' +
-          'service_role for this and subsequent calls. Error:',
+      console.error(
+        '[supabase] createUserContextClient: JWT signing failed. ' +
+          'Verify SUPABASE_JWT_SECRET matches the project\'s JWT secret. Error:',
         err instanceof Error ? err.message : err,
       );
     }
-    return createAdminClient();
+    throw err instanceof Error
+      ? err
+      : new Error('Configuration error: SUPABASE_JWT_SECRET signing failed');
   }
   if (!userJwt) {
-    if (!_missingSupabaseJwtSecretWarned) {
-      _missingSupabaseJwtSecretWarned = true;
-      console.warn(
-        '[supabase] SUPABASE_JWT_SECRET not configured — createUserContextClient ' +
-          'is falling back to service_role. RLS ownership policies (A1) will not engage ' +
-          'until this env var is set. See LOCAL_NOTES.md.',
-      );
-    }
-    return createAdminClient();
+    // mintSupabaseUserJWT returned null with no throw — defensive: treat as
+    // misconfiguration rather than silently fall back.
+    throw new Error(
+      'Configuration error: createUserContextClient could not mint a user JWT ' +
+        '(SUPABASE_JWT_SECRET may be empty or invalid).',
+    );
   }
   return createClient(getSupabaseUrl(), getAnonKey(), {
     global: { headers: { Authorization: `Bearer ${userJwt}` } },

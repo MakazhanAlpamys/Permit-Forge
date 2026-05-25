@@ -81,6 +81,7 @@ vi.mock('@langchain/core/messages', () => ({
 vi.mock('@/lib/constants', () => ({
   MAX_CONTEXT_LENGTH: 10000,
   MIN_CACHEABLE_RESPONSE_LENGTH: 50,
+  MAX_CHAT_HISTORY_CHARS: 12000,
 }));
 
 import { NextRequest } from 'next/server';
