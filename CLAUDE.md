@@ -31,7 +31,7 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `lint` → `tsc -
 - **AI:** Google Gemini 2.5 Flash via LangChain 0.3 (chat), gemini-embedding-001 via @google/genai SDK (embeddings, 768-dim vectors)
 - **Database:** Supabase (PostgreSQL) with pgvector (HNSW) + pg_trgm extensions, 30+ RPC functions
 - **Auth:** JWT (HS256, jose), bcrypt (12 rounds), CSRF tokens, HttpOnly cookies
-- **Testing:** Vitest 4 (node environment), @testing-library/react, 25 test suites in `test/` (566 tests)
+- **Testing:** Vitest 4 (node + jsdom), @testing-library/react, 66 test suites in `test/` (1129 tests, ~72.9% line / ~60% branch coverage as of v1.4.0)
 - **Email:** Nodemailer + Gmail SMTP (optional, for verification emails, password reset, permit notifications)
 - **PDF Generation:** PDFKit (permit certificates)
 
@@ -237,7 +237,7 @@ Schema in `supabase/migrations/000_full_setup.sql` (single idempotent migration 
 
 ## Testing
 
-25 test suites in `test/` (566 tests). Run with `--pool forks` on Windows for reliability.
+66 test suites in `test/` (1129 tests, ~72.9% line / ~60.4% branch coverage). Run with `--pool forks` on Windows for reliability. v1.4.0 added route-level coverage for `app/api/ingest` (80.8% lines) and `app/api/admin/documents/upload` (95.2% lines), plus component coverage for permit-card / compliance-check-panel / message-bubble / source-citation / permit-management (66.7%). Coverage config in `vitest.config.ts` now includes `app/api/**/*.ts`; global Supabase mock in `test/setup.ts` exposes `upsert/in/order/limit/range/maybeSingle/storage`.
 
 **Suites:** auth, auth-actions (login/register/verify/reset), profile-actions (profile CRUD, password change), validations, validations-new (10 schemas), citation-parser, admin, admin-actions (7 admin functions), admin-permits-actions (review workflow), agents, tree-reasoning, rag, chat-pipeline, api-chat-stream, api-routes (health, export, certificate), permit-compliance, permits-actions, permits-actions-extended (building details, compliance, revise), permit-attachments (file upload/delete), chat-history (session CRUD, search), documents-actions (registry CRUD + PDF upload), analytics-actions (5 stats endpoints), email (Nodemailer SMTP + code generation), notifications-actions (read/mark), lib-modules (security, file-upload, reranker, scope-detector).
 

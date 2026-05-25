@@ -42,7 +42,7 @@ vi.mock('@/lib/auth', async () => {
 });
 
 import { createAdminClient } from '@/lib/supabase-server';
-import { clearDocumentChunks, getIngestionStatus } from '@/actions/ingest-pdf';
+import { clearDocumentChunks, getIngestionStatus, testRAGQuery } from '@/actions/ingest-pdf';
 
 const ADMIN = { id: 'admin-1', username: 'admin', role: 'admin' as const };
 
@@ -59,12 +59,22 @@ interface Chain {
 function setupAdminClient(opts: Chain = {}) {
   const single = vi.fn().mockResolvedValue(opts.registryRow ?? { data: null, error: null });
   const eq = vi.fn().mockReturnValue({ single, delete: vi.fn().mockResolvedValue({ error: null }) });
-  // For the "select count head" path, the chain ends differently. We model the
-  // common chain shape used by the action by returning a chainable proxy.
+  // For the "select count head" path, the chain ends differently. The action
+  // either awaits the select directly (getIngestionStatus / testRAGQuery) OR
+  // chains `.eq(...)` on top (clearDocumentChunks fallback). We return a
+  // thenable that supports both — directly awaitable, AND `.eq()` resolves
+  // with the same count payload.
+  const countResolved = {
+    count: opts.countResult?.count ?? 0,
+    error: opts.countResult?.error ?? null,
+  };
   const select = vi.fn().mockImplementation((_: string, options?: { count?: string; head?: boolean }) => {
     if (options?.count === 'exact' && options?.head) {
-      // Return a thenable that resolves with the count result.
-      return Promise.resolve({ count: opts.countResult?.count ?? 0, error: opts.countResult?.error ?? null });
+      const thenable = {
+        then: (resolve: (v: typeof countResolved) => void) => resolve(countResolved),
+        eq: vi.fn().mockResolvedValue(countResolved),
+      };
+      return thenable;
     }
     return {
       eq,
@@ -137,6 +147,43 @@ describe('clearDocumentChunks', () => {
     expect(out).toMatchObject({ success: true, deletedCount: 25 });
     expect(mockClearTreeCache).toHaveBeenCalledWith('doc-a');
   });
+
+  it('rejects when documentId is empty', async () => {
+    const out = await clearDocumentChunks('', 'csrf');
+    expect(out.success).toBe(false);
+    expect(out.error).toMatch(/Missing documentId/);
+  });
+
+  // COV-C-2 (v1.4.0 Part B): when the RPC is unavailable the action falls
+  // back to a direct DELETE + count query. Critical: future schema migration
+  // that drops the RPC must not silently 0-clear chunks.
+  it('falls back to direct DELETE when clear_document_chunks RPC errors and reports counted rows', async () => {
+    setupAdminClient({
+      rpcResult: { data: null, error: { message: 'function does not exist' } },
+      countResult: { count: 12, error: null },
+      deleteResult: { error: null },
+    });
+
+    const out = await clearDocumentChunks('doc-a', 'csrf');
+    expect(out).toMatchObject({ success: true, deletedCount: 12 });
+    expect(mockClearTreeCache).toHaveBeenCalledWith('doc-a');
+    expect(mockLogAudit).toHaveBeenCalledWith(expect.objectContaining({
+      action: 'chunks_cleared',
+      metadata: expect.objectContaining({ documentId: 'doc-a', chunksCleared: 12 }),
+    }));
+  });
+
+  it('surfaces the DELETE error when the fallback delete itself fails', async () => {
+    setupAdminClient({
+      rpcResult: { data: null, error: { message: 'no rpc' } },
+      countResult: { count: 5, error: null },
+      deleteResult: { error: { message: 'permission denied' } },
+    });
+
+    const out = await clearDocumentChunks('doc-a', 'csrf');
+    expect(out.success).toBe(false);
+    expect(out.error).toMatch(/permission denied/);
+  });
 });
 
 // ============================================================================
@@ -175,5 +222,96 @@ describe('getIngestionStatus', () => {
     expect(out.hasChunks).toBe(true);
     expect(out.chunkCount).toBe(7);
     expect(out.documentStats).toHaveLength(2);
+  });
+});
+
+// ============================================================================
+// COV-C-2 (v1.4.0 Part B) — testRAGQuery
+// ============================================================================
+// Helper that the admin "Test RAG" button calls. Previously fully uncovered.
+// We verify auth + the four early-return branches + the happy path.
+
+describe('testRAGQuery', () => {
+  // Specialised builder — testRAGQuery uses select-count, .single() for sample,
+  // and rpc('match_dubai_code_hybrid'). The default `setupAdminClient` doesn't
+  // model the .limit().single() chain, so we inline a minimal one here.
+  function setupRAGClient(opts: {
+    count?: { count?: number | null; error?: unknown };
+    rpcError?: { message: string } | null;
+    sample?: { data: unknown; error: unknown };
+  }) {
+    const sampleSingle = vi.fn().mockResolvedValue(opts.sample ?? { data: null, error: null });
+    const limit = vi.fn().mockReturnValue({ single: sampleSingle });
+    const select = vi.fn().mockImplementation((_: string, options?: { count?: string; head?: boolean }) => {
+      if (options?.count === 'exact' && options?.head) {
+        return Promise.resolve({ count: opts.count?.count ?? 0, error: opts.count?.error ?? null });
+      }
+      return { limit, single: sampleSingle };
+    });
+    const from = vi.fn().mockReturnValue({ select });
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: opts.rpcError ?? null });
+
+    vi.mocked(createAdminClient).mockReturnValue({
+      from,
+      rpc,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
+    return { from, select, rpc };
+  }
+
+  it('rejects unauthenticated callers', async () => {
+    mockRequireAdmin.mockResolvedValueOnce({ success: false, error: 'auth' });
+    const out = await testRAGQuery();
+    expect(out.success).toBe(false);
+    expect(out.chunksFound).toBe(0);
+  });
+
+  it('surfaces count error before attempting the hybrid RPC', async () => {
+    setupRAGClient({ count: { count: null, error: { message: 'relation missing' } } });
+    const out = await testRAGQuery();
+    expect(out.success).toBe(false);
+    expect(out.error).toMatch(/relation missing/);
+  });
+
+  it('returns success=true with a help message when the table is empty', async () => {
+    setupRAGClient({ count: { count: 0, error: null } });
+    const out = await testRAGQuery();
+    expect(out.success).toBe(true);
+    expect(out.chunksFound).toBe(0);
+    expect(out.error).toMatch(/No chunks/i);
+  });
+
+  it('surfaces hybrid-search RPC error', async () => {
+    setupRAGClient({
+      count: { count: 5, error: null },
+      rpcError: { message: 'function match_dubai_code_hybrid does not exist' },
+    });
+    const out = await testRAGQuery();
+    expect(out.success).toBe(false);
+    expect(out.error).toMatch(/match_dubai_code_hybrid/);
+  });
+
+  it('returns the sample chunk preview on the happy path', async () => {
+    setupRAGClient({
+      count: { count: 12, error: null },
+      sample: {
+        data: {
+          content: 'Section 3.1 says structural elements must withstand seismic loads of 0.2g.',
+          metadata: { page: 31, startPage: 31, endPage: 32, section: '3.1' },
+          document_name: 'building-code-2021',
+        },
+        error: null,
+      },
+    });
+    const out = await testRAGQuery();
+    expect(out.success).toBe(true);
+    expect(out.chunksFound).toBe(12);
+    expect(out.sampleChunk).toMatchObject({
+      page: 31,
+      section: '3.1',
+      documentName: 'building-code-2021',
+    });
+    expect(out.sampleChunk?.preview).toMatch(/seismic/);
+    expect(out.sampleChunk?.preview).toMatch(/\.\.\.$/); // suffix marker
   });
 });

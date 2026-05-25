@@ -154,7 +154,13 @@ describe('RAG Module', () => {
         matchCount: 10,
       });
 
-      expect(mockRpc).toHaveBeenCalledWith('search_dubai_code_exact', expect.any(Object));
+      // E (v1.4.0 Part E): typed-shape match — the exact-search RPC takes a
+      // search_pattern (the parsed section ID) + match_count cap. expect.any(Object)
+      // would mask a rename or dropped field.
+      expect(mockRpc).toHaveBeenCalledWith('search_dubai_code_exact', expect.objectContaining({
+        search_pattern: expect.any(String),
+        match_count: expect.any(Number),
+      }));
       // E17: the exact-search row must actually appear in the merged output,
       // not just trigger the RPC. The exact chunk has similarity 1.0 from
       // lib/rag.ts so it should be ranked first.

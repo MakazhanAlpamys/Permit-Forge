@@ -125,7 +125,15 @@ describe('Permits Server Actions', () => {
 
       expect(result.success).toBe(true);
       expect(result.permitId).toBe(permitId);
-      expect(mockRpc).toHaveBeenCalledWith('create_permit_atomic', expect.any(Object));
+      // E (v1.4.0 Part E): typed-shape match instead of expect.any(Object).
+      // A future refactor that drops one of the snake_case params (e.g.
+      // p_project_address) would silently pass the old assertion.
+      expect(mockRpc).toHaveBeenCalledWith('create_permit_atomic', expect.objectContaining({
+        p_user_id: testUser.id,
+        p_project_name: validPermitData.projectName,
+        p_project_type: validPermitData.projectType,
+        p_project_address: validPermitData.projectAddress,
+      }));
     });
 
     it('should return error when unauthenticated', async () => {

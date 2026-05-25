@@ -372,8 +372,14 @@ describe('runIngestionPipeline — happy path', () => {
     const linked = allChildren.filter((c) => c.parent_id !== null);
     expect(linked.length).toBeGreaterThan(0);
 
-    // save_document_tree RPC was invoked
-    expect(rpc).toHaveBeenCalledWith('save_document_tree', expect.any(Object));
+    // save_document_tree RPC was invoked with the typed argument shape.
+    // E (v1.4.0 Part E): tightened from expect.any(Object) — a rename of any
+    // of the three snake_case params would silently keep the old test green.
+    expect(rpc).toHaveBeenCalledWith('save_document_tree', expect.objectContaining({
+      p_document_name: expect.any(String),
+      p_total_pages: expect.any(Number),
+      p_tree_data: expect.any(Array),
+    }));
 
     // Stages walked through expected lifecycle
     expect(events).toContain('parsing');

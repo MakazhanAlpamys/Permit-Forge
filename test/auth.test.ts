@@ -8,6 +8,8 @@ import {
   destroySession,
   getQuickSession,
   logAuditEvent,
+  logAuditWithMeta,
+  getRequestMetadata,
 } from '@/lib/auth';
 import { cookies, headers } from 'next/headers';
 import { createAdminClient } from '@/lib/supabase-server';
@@ -45,6 +47,47 @@ describe('Auth Library', () => {
     it('should reject empty CSRF token', async () => {
       const isValid = await validateCSRFToken('');
       expect(isValid).toBe(false);
+    });
+
+    // COV-C-5 (v1.4.0 Part B): the HIT path was uncovered before. validate
+    // must return true when the supplied token matches the cookie byte-for-byte.
+    it('returns true when the supplied token matches the cookie', async () => {
+      const stored = 'a'.repeat(64);
+      vi.mocked(cookies).mockResolvedValueOnce({
+        get: vi.fn().mockReturnValue({ value: stored }),
+        set: vi.fn(),
+        delete: vi.fn(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      expect(await validateCSRFToken(stored)).toBe(true);
+    });
+
+    // COV-C-5: timingSafeEqual throws on length mismatch — must be caught and
+    // surfaced as false, not propagated. Defends against the regression where
+    // a 64-char vs 32-char comparison would 500 the action instead of denying.
+    it('returns false (without throwing) when token length does not match cookie length', async () => {
+      vi.mocked(cookies).mockResolvedValueOnce({
+        get: vi.fn().mockReturnValue({ value: 'a'.repeat(64) }),
+        set: vi.fn(),
+        delete: vi.fn(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      await expect(validateCSRFToken('b'.repeat(32))).resolves.toBe(false);
+    });
+
+    // COV-C-5: same-length-but-different tokens must compare false. Confirms
+    // the timing-safe compare actually catches forgeries (not just length).
+    it('returns false on same-length mismatched tokens (timing-safe negative)', async () => {
+      vi.mocked(cookies).mockResolvedValueOnce({
+        get: vi.fn().mockReturnValue({ value: 'a'.repeat(64) }),
+        set: vi.fn(),
+        delete: vi.fn(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      expect(await validateCSRFToken('b'.repeat(64))).toBe(false);
     });
 
     // C4H/H5: cookie must be readable from JS so the double-submit pattern works.
@@ -332,6 +375,73 @@ describe('Auth Library', () => {
       vi.mocked(headers).mockResolvedValueOnce(h);
       // Tests that the mock plumbing reaches the auth layer at all.
       expect((await headers()).get('user-agent')).toBe('jest-ua');
+    });
+  });
+
+  // ============================================================================
+  // COV-C-5 (v1.4.0 Part B): getRequestMetadata + logAuditWithMeta combinator
+  // ============================================================================
+  describe('getRequestMetadata', () => {
+    it('returns ipAddress (from getClientIp) and userAgent from request headers', async () => {
+      const h = new Headers();
+      h.set('user-agent', 'curl/8.0');
+      vi.mocked(headers).mockResolvedValueOnce(h);
+
+      const meta = await getRequestMetadata();
+      expect(meta.userAgent).toBe('curl/8.0');
+      expect(meta.ipAddress).toBeDefined();
+    });
+
+    it('falls back to "unknown" user-agent when header missing', async () => {
+      vi.mocked(headers).mockResolvedValueOnce(new Headers());
+      const meta = await getRequestMetadata();
+      expect(meta.userAgent).toBe('unknown');
+    });
+  });
+
+  describe('logAuditWithMeta', () => {
+    // The combinator collapses the getRequestMetadata + logAuditEvent pair
+    // that ~25 actions used to repeat by hand. We assert the spread shape so
+    // a future refactor that drops ipAddress/userAgent fails loudly.
+    it('inserts an audit row that includes ipAddress, userAgent, action, and metadata', async () => {
+      const h = new Headers();
+      h.set('user-agent', 'pino-agent/1');
+      vi.mocked(headers).mockResolvedValueOnce(h);
+
+      const insert = vi.fn().mockResolvedValue({ error: null });
+      vi.mocked(createAdminClient).mockReturnValueOnce({
+        from: vi.fn(() => ({ insert })),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      await logAuditWithMeta('u-1', 'permit_reviewed', {
+        targetUserId: 'u-2',
+        metadata: { permitId: 'p-1', decision: 'approve' },
+      });
+
+      expect(insert).toHaveBeenCalledTimes(1);
+      const row = insert.mock.calls[0][0];
+      expect(row.user_id).toBe('u-1');
+      expect(row.action).toBe('permit_reviewed');
+      expect(row.target_user_id).toBe('u-2');
+      expect(row.metadata).toEqual({ permitId: 'p-1', decision: 'approve' });
+      expect(row.user_agent).toBe('pino-agent/1');
+      expect(row.ip_address).toBeDefined();
+    });
+
+    it('defaults metadata to {} when no extras passed', async () => {
+      vi.mocked(headers).mockResolvedValueOnce(new Headers());
+      const insert = vi.fn().mockResolvedValue({ error: null });
+      vi.mocked(createAdminClient).mockReturnValueOnce({
+        from: vi.fn(() => ({ insert })),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any);
+
+      await logAuditWithMeta('u-1', 'login_success');
+
+      const row = insert.mock.calls[0][0];
+      expect(row.metadata).toEqual({});
+      expect(row.target_user_id).toBeUndefined();
     });
   });
 });

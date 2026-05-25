@@ -191,4 +191,71 @@ describe('Permit Compliance Check', () => {
     // Should fallback to requires_review
     expect(result.overallStatus).toBe('requires_review');
   });
+
+  // COV-C-6 (v1.4.0 Part B): the AbortSignal early-exit path was uncovered.
+  // checkPermitCompliance must bail BEFORE any embedding/RAG/LLM call when the
+  // caller's signal has already fired (user closed the tab, or the action
+  // detected supersession via v1.2.0 Part E's checkSupersededRef).
+  describe('AbortSignal early-exit', () => {
+    it('throws AbortError immediately when the signal is already aborted', async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      await expect(
+        checkPermitCompliance(
+          sampleBuildingDetails,
+          sampleComplianceReqs,
+          sampleProjectType,
+          controller.signal,
+        ),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+
+      // The whole point of the early-exit: NO embedding, NO LLM round-trip.
+      expect(mockHybridSearch).not.toHaveBeenCalled();
+      expect(mockInvoke).not.toHaveBeenCalled();
+    });
+
+    it('forwards an active (non-aborted) signal to getChatModel().invoke', async () => {
+      const controller = new AbortController();
+      mockInvoke.mockResolvedValueOnce({
+        content: JSON.stringify({
+          overallStatus: 'compliant',
+          checks: [],
+          summary: 'ok',
+        }),
+      });
+
+      await checkPermitCompliance(
+        sampleBuildingDetails,
+        sampleComplianceReqs,
+        sampleProjectType,
+        controller.signal,
+      );
+
+      // 2nd arg to invoke is { signal } when one is supplied. LangChain forwards
+      // it to the underlying Google GenAI fetch so an in-flight LLM call aborts.
+      const callOpts = mockInvoke.mock.calls[0][1];
+      expect(callOpts).toMatchObject({ signal: controller.signal });
+    });
+
+    it('omits the options object when no signal is passed (backward compat)', async () => {
+      mockInvoke.mockResolvedValueOnce({
+        content: JSON.stringify({
+          overallStatus: 'compliant',
+          checks: [],
+          summary: 'ok',
+        }),
+      });
+
+      await checkPermitCompliance(
+        sampleBuildingDetails,
+        sampleComplianceReqs,
+        sampleProjectType,
+      );
+
+      // No 2nd arg passed → invoke is called with undefined options.
+      const callOpts = mockInvoke.mock.calls[0][1];
+      expect(callOpts).toBeUndefined();
+    });
+  });
 });

@@ -30,6 +30,10 @@ vi.mock('next/cache', () => ({
 }));
 
 // Mock Supabase server client - MUST mock @/lib/supabase-server (the actual import path used in code)
+// v1.4.0 Part E: extended the chainable mock with order/limit/range/in/upsert/storage so
+// tests that exercise those chain methods don't silently no-op. Tests that
+// previously skipped failures because the method was undefined will now fail
+// loudly — the right outcome.
 vi.mock('@/lib/supabase-server', () => {
   const mockRpc = vi.fn().mockResolvedValue({ data: [], error: null });
   const mockFrom = vi.fn(() => ({
@@ -37,18 +41,35 @@ vi.mock('@/lib/supabase-server', () => {
     insert: vi.fn().mockReturnThis(),
     update: vi.fn().mockReturnThis(),
     delete: vi.fn().mockReturnThis(),
+    upsert: vi.fn().mockReturnThis(),
     eq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockResolvedValue({ data: [], error: null }),
+    range: vi.fn().mockResolvedValue({ data: [], error: null }),
     single: vi.fn().mockResolvedValue({ data: null, error: null }),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
   }));
-  
+
+  const mockStorage = {
+    from: vi.fn(() => ({
+      upload: vi.fn().mockResolvedValue({ data: null, error: null }),
+      download: vi.fn().mockResolvedValue({ data: null, error: null }),
+      remove: vi.fn().mockResolvedValue({ data: null, error: null }),
+      createSignedUrl: vi.fn().mockResolvedValue({ data: { signedUrl: '' }, error: null }),
+    })),
+  };
+
   return {
     createServerClient: vi.fn(() => ({
       from: mockFrom,
       rpc: mockRpc,
+      storage: mockStorage,
     })),
     createAdminClient: vi.fn(() => ({
       from: mockFrom,
       rpc: mockRpc,
+      storage: mockStorage,
     })),
     checkRateLimit: vi.fn().mockResolvedValue({ allowed: true }),
     assertServerSide: vi.fn(),

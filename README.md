@@ -679,7 +679,7 @@ Generated for approved permits via `GET /api/permits/[id]/certificate`:
 
 ## Testing
 
-**566 tests** across **25 test suites** with comprehensive coverage of all critical systems.
+**1129 tests** across **66 test suites** with ~72.9% line / ~60.4% branch coverage of `lib/`, `actions/`, `components/`, and `app/api/` (v1.4.0 baseline).
 
 ```bash
 npm test              # Run all tests (watch mode)
@@ -811,7 +811,7 @@ PermitForge/
 │   └── utils.ts                       #   Utilities (cn, etc.)
 │
 ├── types/index.ts                     # Shared TypeScript definitions
-├── test/                              # Vitest test suites (25 files, 566 tests)
+├── test/                              # Vitest test suites (66 files, 1129 tests)
 ├── supabase/migrations/               # Database schema (single 000_full_setup.sql)
 ├── middleware.ts                       # Edge auth + block check + security headers
 └── public/                            # Static assets
