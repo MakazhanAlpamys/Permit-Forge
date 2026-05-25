@@ -6,10 +6,9 @@
 
 import { createAdminClient } from '@/lib/supabase-server';
 import { requireAdmin, requireCSRF } from '@/lib/security';
-import { logAuditWithMeta, getRequestMetadata } from '@/lib/auth';
+import { logAuditWithMeta } from '@/lib/auth';
 import { invalidateAllDocumentCaches } from '@/lib/document-cache';
 import { DOCUMENT_PDF_LIMITS } from '@/lib/constants';
-import { uploadDocumentPdfShared } from '@/lib/document-pdf-upload';
 
 // -----------------------------------------------------------------------------
 // Types
@@ -383,56 +382,9 @@ export async function checkPdfReingest(
   }
 }
 
-// -----------------------------------------------------------------------------
-// Upload Document PDF to Supabase Storage
-// -----------------------------------------------------------------------------
-
-/**
- * @deprecated C5H/H6: prefer POST /api/admin/documents/upload — this server
- * action remains as a thin shim so existing tests and any direct callers keep
- * working, but the UI uses the API route to avoid pinning the global server-
- * actions body limit to 100MB.
- */
-export async function uploadDocumentPDF(
-  documentId: string,
-  formData: FormData,
-  csrfToken?: string
-): Promise<{
-  success: boolean;
-  storagePath?: string;
-  error?: string;
-  pdfHash?: string;
-  previousPdfHash?: string | null;
-}> {
-  const authCheck = await requireAdmin();
-  if (!authCheck.success || !authCheck.user) {
-    return { success: false, error: authCheck.error || 'Unauthorized' };
-  }
-
-  const csrf = await requireCSRF(csrfToken);
-  if (!csrf.valid) return { success: false, error: csrf.error };
-
-  const file = formData.get('file') as File | null;
-  if (!file || !(file instanceof File)) {
-    return { success: false, error: 'No file provided' };
-  }
-
-  try {
-    const metadata = await getRequestMetadata();
-    return await uploadDocumentPdfShared({
-      documentId,
-      file,
-      uploadedByUserId: authCheck.user.id,
-      ipAddress: metadata.ipAddress,
-      userAgent: metadata.userAgent,
-    });
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Upload failed',
-    };
-  }
-}
+// R-H-4 / v1.8.0 Part C: deprecated `uploadDocumentPDF` server action removed.
+// All callers (admin UI) use POST /api/admin/documents/upload directly, which
+// avoids pinning the global serverActions.bodySizeLimit to 100MB.
 
 // -----------------------------------------------------------------------------
 // Helpers

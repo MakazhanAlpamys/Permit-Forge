@@ -128,7 +128,6 @@ import {
   upsertDocument,
   deleteDocument,
   restoreDocument,
-  uploadDocumentPDF,
   checkPdfReingest,
 } from '@/actions/documents';
 
@@ -402,102 +401,9 @@ describe('Document Registry Server Actions', () => {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // uploadDocumentPDF
-  // ---------------------------------------------------------------------------
-
-  describe('uploadDocumentPDF', () => {
-    function createPDFFormData(): FormData {
-      const formData = new FormData();
-      const file = new File(['%PDF-1.4 content'], 'test.pdf', { type: 'application/pdf' });
-      formData.append('file', file);
-      return formData;
-    }
-
-    it('should upload PDF successfully', async () => {
-      const result = await uploadDocumentPDF('test-doc', createPDFFormData(), 'csrf-token');
-
-      expect(result.success).toBe(true);
-      expect(result.storagePath).toBeDefined();
-      expect(mockStorageUpload).toHaveBeenCalled();
-      expect(mockInvalidateRegistryCache).toHaveBeenCalled();
-    });
-
-    it('should return error when not admin', async () => {
-      mockRequireAdmin.mockResolvedValue({ success: false, error: 'Unauthorized' });
-
-      const result = await uploadDocumentPDF('test-doc', createPDFFormData(), 'csrf-token');
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Unauthorized');
-    });
-
-    it('should reject invalid CSRF token', async () => {
-      mockRequireCSRF.mockResolvedValue({ valid: false, error: 'CSRF token invalid' });
-
-      const result = await uploadDocumentPDF('test-doc', createPDFFormData(), 'bad-token');
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('CSRF token invalid');
-    });
-
-    it('should reject missing documentId', async () => {
-      const result = await uploadDocumentPDF('', createPDFFormData(), 'csrf-token');
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Invalid documentId');
-    });
-
-    it('should reject when no file provided', async () => {
-      const formData = new FormData();
-      const result = await uploadDocumentPDF('test-doc', formData, 'csrf-token');
-
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('No file provided');
-    });
-
-    it('should reject non-PDF files', async () => {
-      const formData = new FormData();
-      const file = new File(['content'], 'test.txt', { type: 'text/plain' });
-      formData.append('file', file);
-
-      const result = await uploadDocumentPDF('test-doc', formData, 'csrf-token');
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('PDF');
-    });
-
-    it('should return error on storage upload failure', async () => {
-      mockStorageUpload.mockResolvedValueOnce({ error: { message: 'Storage full' } });
-
-      const result = await uploadDocumentPDF('test-doc', createPDFFormData(), 'csrf-token');
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Upload failed');
-    });
-
-    it('should return error on DB update failure', async () => {
-      mockUpdate.mockReturnValueOnce({ eq: vi.fn().mockReturnValue({ error: { message: 'DB error' } }) });
-
-      const result = await uploadDocumentPDF('test-doc', createPDFFormData(), 'csrf-token');
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('DB update failed');
-    });
-
-    // B5: the upload response now exposes the SHA-256 of the file and the
-    // previous stored hash so the client can prompt before re-ingesting.
-    it('should return computed pdfHash and previousPdfHash', async () => {
-      // First single() = read prior hash; return an existing value.
-      mockSingle.mockResolvedValueOnce({ data: { pdf_hash: 'older-hash-deadbeef' }, error: null });
-
-      const result = await uploadDocumentPDF('test-doc', createPDFFormData(), 'csrf-token');
-
-      expect(result.success).toBe(true);
-      expect(result.pdfHash).toMatch(/^[a-f0-9]{64}$/);
-      expect(result.previousPdfHash).toBe('older-hash-deadbeef');
-    });
-  });
+  // R-H-4 / v1.8.0 Part C: uploadDocumentPDF was a deprecated shim that the
+  // UI no longer called (everything routes through /api/admin/documents/upload).
+  // The action and its 9-test describe block were removed.
 
   // ---------------------------------------------------------------------------
   // checkPdfReingest (B5)
