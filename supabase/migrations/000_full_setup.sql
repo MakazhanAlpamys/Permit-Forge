@@ -4555,13 +4555,17 @@ GRANT UPDATE (full_name, username, email) ON users TO authenticated;
 -- in actions/admin.ts). The cap keeps a buggy direct caller from triggering
 -- a sequential scan over the whole users+session_stats join.
 --
--- The v1.5.0 lockdown re-declared the 6-arg keyset signature; v1.9.0
--- re-declares it again with the same body PLUS the LEAST(p_offset, 1000)
--- guard. PostgREST resolves to whichever signature matches the call site,
--- so we must keep the 6-arg variant since actions/admin.ts:142 calls it.
+-- v1.9.0 re-audit M-1: the parameter MUST stay `p_admin_id` to match the
+-- named-parameter RPC call at actions/admin.ts:144. And the RETURNS TABLE
+-- shape MUST match the v1.5.0 shape verbatim (id, username, full_name, role,
+-- blocked, blocked_reason, created_at, last_login, session_count,
+-- message_count) — that's what AdminUserRow on the TypeScript side maps. A
+-- shape change here would silently turn admin-list rows into nulls. The
+-- ONLY new thing in this block vs v1.5.0 is the LEAST(GREATEST(p_offset, 0),
+-- 1000) cap.
 DROP FUNCTION IF EXISTS get_all_users_admin(UUID, INT, INT, TEXT, TIMESTAMPTZ, UUID);
 CREATE OR REPLACE FUNCTION get_all_users_admin(
-  p_caller_id UUID,
+  p_admin_id UUID,
   p_limit INT DEFAULT 50,
   p_offset INT DEFAULT 0,
   p_search TEXT DEFAULT NULL,
@@ -4571,78 +4575,56 @@ CREATE OR REPLACE FUNCTION get_all_users_admin(
 RETURNS TABLE (
   id UUID,
   username TEXT,
-  email TEXT,
-  email_verified BOOLEAN,
   full_name TEXT,
   role TEXT,
   blocked BOOLEAN,
   blocked_reason TEXT,
-  blocked_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ,
-  total_sessions BIGINT,
-  total_messages BIGINT,
-  last_active_at TIMESTAMPTZ
+  last_login TIMESTAMPTZ,
+  session_count BIGINT,
+  message_count BIGINT
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_is_admin BOOLEAN;
-  v_use_keyset BOOLEAN;
-  v_capped_offset INT;
+  v_admin_role TEXT;
+  v_use_keyset BOOLEAN := (p_after_created_at IS NOT NULL AND p_after_id IS NOT NULL);
+  v_capped_offset INT := LEAST(GREATEST(p_offset, 0), 1000);
 BEGIN
-  -- Admin guard inside the function body (defense-in-depth on top of REVOKE).
-  SELECT (u.role = 'admin') INTO v_is_admin FROM users u WHERE u.id = p_caller_id;
-  IF NOT COALESCE(v_is_admin, FALSE) THEN
-    RAISE EXCEPTION 'PERMISSION_DENIED: admin role required';
-  END IF;
+  SELECT users.role INTO v_admin_role FROM users WHERE users.id = p_admin_id;
+  IF v_admin_role != 'admin' THEN RAISE EXCEPTION 'Unauthorized: Admin role required'; END IF;
 
-  v_use_keyset := p_after_created_at IS NOT NULL AND p_after_id IS NOT NULL;
-  v_capped_offset := LEAST(GREATEST(p_offset, 0), 1000);
-
-  -- DB-H-3 / v1.5.0 push-down: filter users BEFORE aggregating session_stats.
   RETURN QUERY
   WITH filtered_users AS (
-    SELECT u.*
+    SELECT u.id, u.username, u.full_name, u.role, u.blocked, u.blocked_reason,
+           u.created_at, u.last_login
     FROM users u
-    WHERE (p_search IS NULL OR p_search = ''
+    WHERE (p_search IS NULL
            OR u.username ILIKE '%' || p_search || '%'
-           OR u.full_name ILIKE '%' || p_search || '%'
-           OR u.email    ILIKE '%' || p_search || '%')
-      AND (NOT v_use_keyset
-           OR (u.created_at, u.id) < (p_after_created_at, p_after_id))
+           OR u.full_name ILIKE '%' || p_search || '%')
+      AND (NOT v_use_keyset OR (u.created_at, u.id) < (p_after_created_at, p_after_id))
     ORDER BY u.created_at DESC, u.id DESC
-    LIMIT LEAST(GREATEST(p_limit, 1), 100)
+    LIMIT LEAST(p_limit, 100)
     OFFSET CASE WHEN v_use_keyset THEN 0 ELSE v_capped_offset END
   ),
   session_stats AS (
-    SELECT
-      cs.user_id,
-      COUNT(DISTINCT cs.id) AS session_count,
-      COUNT(cm.id) AS message_count,
-      MAX(cm.created_at) AS last_active
+    SELECT cs.user_id,
+           COUNT(*)::BIGINT AS session_count,
+           COUNT(cm.id)::BIGINT AS message_count
     FROM chat_sessions cs
     LEFT JOIN chat_messages cm ON cm.session_id = cs.id
     WHERE cs.user_id IN (SELECT fu.id FROM filtered_users fu)
     GROUP BY cs.user_id
   )
   SELECT
-    fu.id,
-    fu.username::TEXT,
-    fu.email::TEXT,
-    fu.email_verified,
-    fu.full_name::TEXT,
-    fu.role::TEXT,
-    fu.blocked,
-    fu.blocked_reason::TEXT,
-    fu.blocked_at,
-    fu.created_at,
-    COALESCE(ss.session_count, 0) AS total_sessions,
-    COALESCE(ss.message_count, 0) AS total_messages,
-    ss.last_active
+    fu.id, fu.username, fu.full_name, fu.role, fu.blocked, fu.blocked_reason,
+    fu.created_at, fu.last_login,
+    COALESCE(s.session_count, 0)::BIGINT,
+    COALESCE(s.message_count, 0)::BIGINT
   FROM filtered_users fu
-  LEFT JOIN session_stats ss ON ss.user_id = fu.id
+  LEFT JOIN session_stats s ON s.user_id = fu.id
   ORDER BY fu.created_at DESC, fu.id DESC;
 END;
 $$;
@@ -4650,28 +4632,38 @@ $$;
 REVOKE EXECUTE ON FUNCTION get_all_users_admin(UUID, INT, INT, TEXT, TIMESTAMPTZ, UUID) FROM anon, authenticated, PUBLIC;
 GRANT EXECUTE ON FUNCTION get_all_users_admin(UUID, INT, INT, TEXT, TIMESTAMPTZ, UUID) TO service_role;
 
--- DB-M-7 / v1.9.0 Part B: save_document_tree refuses tree blobs over 1 MB
+-- DB-M-7 / v1.9.0 Part B: save_document_tree refuses tree blobs over 4 MB
 -- so a malformed PDF outline can't bloat document_trees or repeatedly hit
--- the TOAST threshold. pg_column_size measures the on-disk encoded size
--- (including the implicit JSONB compression), which is the size that
--- actually matters for storage and read latency.
+-- the TOAST threshold.
+--
+-- v1.9.0 re-audit C-1: the original signature at line 944 is
+-- `(TEXT, INT, JSONB) RETURNS UUID`. `CREATE OR REPLACE` only replaces when
+-- the parameter + return types match exactly — `(VARCHAR(64), INT, JSONB)
+-- RETURNS BIGINT` would create a second overload and the original (without
+-- the cap) would still be the one PostgREST picked. Signature now matches.
+--
+-- v1.9.0 re-audit M-3: 4 MB cap instead of 1 MB. 1k-page PDFs with dense
+-- outlines legitimately produce ~1 MB trees; the previous limit would
+-- silently disable tree-reasoning for them. 4 MB matches Postgres's default
+-- TOAST out-of-line threshold so we still cap before storage gets ugly.
+DROP FUNCTION IF EXISTS save_document_tree(TEXT, INT, JSONB);
 CREATE OR REPLACE FUNCTION save_document_tree(
-  p_document_name VARCHAR(64),
+  p_document_name TEXT,
   p_total_pages INT,
   p_tree_data JSONB
 )
-RETURNS BIGINT
+RETURNS UUID
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
 DECLARE
-  v_id BIGINT;
+  v_id UUID;
   v_size INT;
 BEGIN
   v_size := pg_column_size(p_tree_data);
-  IF v_size > 1048576 THEN
-    RAISE EXCEPTION 'TREE_TOO_LARGE: document tree % bytes exceeds 1 MB cap', v_size;
+  IF v_size > 4194304 THEN
+    RAISE EXCEPTION 'TREE_TOO_LARGE: document tree % bytes exceeds 4 MB cap', v_size;
   END IF;
 
   INSERT INTO document_trees (document_name, total_pages, tree_data, updated_at)
@@ -4686,8 +4678,8 @@ BEGIN
 END;
 $$;
 
-REVOKE EXECUTE ON FUNCTION save_document_tree(VARCHAR, INT, JSONB) FROM anon, authenticated, PUBLIC;
-GRANT EXECUTE ON FUNCTION save_document_tree(VARCHAR, INT, JSONB) TO service_role;
+REVOKE EXECUTE ON FUNCTION save_document_tree(TEXT, INT, JSONB) FROM anon, authenticated, PUBLIC;
+GRANT EXECUTE ON FUNCTION save_document_tree(TEXT, INT, JSONB) TO service_role;
 
 
 -- ============================================================================

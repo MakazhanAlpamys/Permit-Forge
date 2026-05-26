@@ -34,8 +34,16 @@ export async function getAdminPermits(
       return { data: [], error: authCheck.error };
     }
 
-    const safeLimit = Math.min(Math.max(Math.floor(limit), 1), ADMIN_PERMITS_MAX_LIMIT);
-    const safeOffset = Math.max(Math.floor(offset), 0);
+    // v1.9.0 Part A re-audit (NEW-1, Medium): `Math.floor(NaN)` returns NaN
+    // and propagates through `Math.max(NaN, 1)` / `Math.min(NaN, 100)` to the
+    // Supabase `.range(NaN, NaN)` call — driver-version-dependent rows
+    // returned. UI never sends NaN, but server actions are publicly callable
+    // so we defend at the boundary.
+    const safeLimit = Math.min(
+      Math.max(Number.isFinite(limit) ? Math.floor(limit) : 50, 1),
+      ADMIN_PERMITS_MAX_LIMIT,
+    );
+    const safeOffset = Number.isFinite(offset) ? Math.max(Math.floor(offset), 0) : 0;
 
     const supabase = createAdminClient();
     let query = supabase

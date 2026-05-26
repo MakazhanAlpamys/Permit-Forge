@@ -23,7 +23,18 @@ function sanitizeCachedResponse(response: string): string {
     .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
     .replace(/<\/?script\b[^>]*>/gi, '')
     .replace(/javascript:/gi, 'about:blank#')
-    .replace(/vbscript:/gi, 'about:blank#');
+    .replace(/vbscript:/gi, 'about:blank#')
+    // v1.9.0 Part A re-audit (NEW-2, Low): `data:text/html,...` and
+    // `data:application/xhtml+xml,...` URIs can carry executable HTML that
+    // bypasses the link sanitizer in MessageBubble. Defuse at storage so a
+    // poisoned cache row can't serve a working `<a href="data:text/html,...">`
+    // payload to subsequent users. `[^)]*` greedily consumes the inline HTML
+    // payload (which can include spaces + tag fragments) up to the markdown
+    // link's closing `)`. Outside a markdown link, the regex still neutralises
+    // the protocol token + content to end of input. Innocuous `data:image/*`
+    // and `data:font/*` URIs are intentionally left alone — those don't
+    // execute and image previews in markdown rely on them.
+    .replace(/data:(?:text\/html|application\/xhtml\+xml)[^)]*/gi, 'about:blank#');
 }
 
 // -----------------------------------------------------------------------------

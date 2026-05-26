@@ -486,8 +486,12 @@ describe('v1.9.0 Part B — Database Mediums', () => {
   });
 
   // DB-M-7: save_document_tree must reject pathologically large tree_data
-  // blobs so a malformed PDF outline can't bloat document_trees.
-  it('save_document_tree raises on tree_data > 1MB (DB-M-7)', () => {
+  // blobs so a malformed PDF outline can't bloat document_trees. Re-audit
+  // C-1 + M-3 (v1.9.0): keep the original (TEXT, INT, JSONB) RETURNS UUID
+  // signature so CREATE OR REPLACE actually replaces (not creates an
+  // overload), and raise the cap from 1 MB to 4 MB so legitimate large
+  // outlines don't trip it.
+  it('save_document_tree raises on tree_data > 4MB and keeps the TEXT/UUID signature (DB-M-7 + re-audit C-1/M-3)', () => {
     const matches = [
       ...sql.matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+save_document_tree[\s\S]*?\$\$\s*;/gi),
     ];
@@ -495,6 +499,30 @@ describe('v1.9.0 Part B — Database Mediums', () => {
     const lastBody = matches[matches.length - 1][0];
     expect(lastBody).toMatch(/pg_column_size\s*\(\s*p_tree_data\s*\)/i);
     expect(lastBody).toMatch(/RAISE\s+EXCEPTION[^;]*TREE_TOO_LARGE/i);
+    // Winning body MUST use TEXT (matches original) — VARCHAR(64) would
+    // create a second overload instead of replacing.
+    expect(lastBody).toMatch(/p_document_name\s+TEXT/i);
+    expect(lastBody).toMatch(/RETURNS\s+UUID/i);
+    // Cap bumped to 4 MB so 1k-page outlines don't silently disable
+    // tree-reasoning. Allowed range: [4 MB, 8 MB].
+    const capMatch = lastBody.match(/(\d{6,7})\b/);
+    expect(capMatch).toBeTruthy();
+    const cap = Number(capMatch![1]);
+    expect(cap).toBeGreaterThanOrEqual(4194304);
+    expect(cap).toBeLessThanOrEqual(8388608);
+  });
+
+  // Re-audit M-1 (v1.9.0): the named-parameter RPC call at actions/admin.ts:144
+  // passes `p_admin_id`; renaming the function's first parameter to
+  // p_caller_id would break every admin user-list call at runtime. Pin the
+  // expected parameter name.
+  it('get_all_users_admin keeps p_admin_id as the first parameter (re-audit M-1)', () => {
+    const matches = [
+      ...sql.matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+get_all_users_admin[\s\S]*?\$\$\s*;/gi),
+    ];
+    expect(matches.length).toBeGreaterThan(0);
+    const lastBody = matches[matches.length - 1][0];
+    expect(lastBody).toMatch(/\(\s*p_admin_id\s+UUID/i);
   });
 
   // DB-M-8: HNSW ef_construction = 128 (was 64). Better recall on multi-doc

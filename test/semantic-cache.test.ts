@@ -191,6 +191,44 @@ describe('storeInCache', () => {
     expect(payload.p_response).not.toMatch(/<\/script>/i);
   });
 
+  // v1.9.0 Part A re-audit (NEW-2, Low): data:text/html URIs can carry
+  // executable HTML that bypasses the link sanitizer in MessageBubble.
+  it('strips data:text/html URIs from the cached response (S-M-7 re-audit NEW-2)', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    withRpc(rpc);
+
+    const malicious = 'Click [bait](data:text/html,<img src=x onerror=alert(1)>) now';
+    await storeInCache('q', SAMPLE_EMBEDDING, malicious, []);
+
+    const payload = rpc.mock.calls[0][1];
+    expect(payload.p_response).not.toMatch(/data:text\/html/i);
+    expect(payload.p_response).not.toMatch(/onerror=alert/i);
+  });
+
+  it('strips data:application/xhtml+xml URIs too', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    withRpc(rpc);
+
+    const malicious = '[bait](data:application/xhtml+xml;base64,PHNjcmlwdD4=)';
+    await storeInCache('q', SAMPLE_EMBEDDING, malicious, []);
+
+    const payload = rpc.mock.calls[0][1];
+    expect(payload.p_response).not.toMatch(/data:application/i);
+  });
+
+  it('does not touch innocuous data: URIs in non-HTML schemes', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    withRpc(rpc);
+
+    // Leaving image data: URIs alone is intentional — the cache primarily
+    // stores plain text but a Markdown image link is a known-safe shape.
+    const benign = '![logo](data:image/png;base64,AAAA)';
+    await storeInCache('q', SAMPLE_EMBEDDING, benign, []);
+
+    const payload = rpc.mock.calls[0][1];
+    expect(payload.p_response).toBe(benign);
+  });
+
   it('leaves benign markdown alone', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
     withRpc(rpc);

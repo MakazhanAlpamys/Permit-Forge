@@ -256,6 +256,36 @@ describe('Admin Permits Server Actions', () => {
 
       expect(mockRange).toHaveBeenCalledWith(0, 19);
     });
+
+    // v1.9.0 Part A re-audit (NEW-1, Medium): NaN propagated through the old
+    // Math.floor/Math.max/Math.min chain and made it to .range(NaN, NaN). The
+    // guard `Number.isFinite()` rebases to the default 50 / 0 instead.
+    it('handles NaN limit by falling back to the default (50) — re-audit NEW-1', async () => {
+      mockRange.mockReturnValueOnce({ data: [], error: null });
+
+      await getAdminPermits(undefined, Number.NaN, 0);
+
+      expect(mockRange).toHaveBeenCalledWith(0, 49);
+    });
+
+    it('handles NaN offset by falling back to 0 — re-audit NEW-1', async () => {
+      mockRange.mockReturnValueOnce({ data: [], error: null });
+
+      await getAdminPermits(undefined, 25, Number.NaN);
+
+      expect(mockRange).toHaveBeenCalledWith(0, 24);
+    });
+
+    // Per the re-audit fix: Number.isFinite(Infinity) === false → fallback to
+    // the default 50. (Infinity is never a legitimate UI input; the fallback
+    // is strictly safer than capping at 100.)
+    it('handles Infinity limit by falling back to the default (50)', async () => {
+      mockRange.mockReturnValueOnce({ data: [], error: null });
+
+      await getAdminPermits(undefined, Number.POSITIVE_INFINITY, 0);
+
+      expect(mockRange).toHaveBeenCalledWith(0, 49);
+    });
   });
 
   // ---------------------------------------------------------------------------
