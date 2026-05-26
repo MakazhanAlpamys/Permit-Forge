@@ -244,8 +244,8 @@ export function UserManagement({
     <>
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="min-w-0">
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-primary" />
                 User Management
@@ -254,17 +254,19 @@ export function UserManagement({
                 Manage user accounts, roles, and access
               </CardDescription>
             </div>
-            <Button onClick={onCreateUser} size="sm">
+            <Button onClick={onCreateUser} size="sm" className="shrink-0">
               <UserPlus className="h-4 w-4 mr-2" />
               Add User
             </Button>
           </div>
-          
+
           {/* Search */}
-          <form onSubmit={handleSearch} className="flex gap-2 mt-4">
+          <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2 mt-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <label htmlFor="user-search" className="sr-only">Search users</label>
               <input
+                id="user-search"
                 type="text"
                 placeholder="Search users..."
                 value={searchQuery}
@@ -288,33 +290,43 @@ export function UserManagement({
               No users found
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0">
+              <table className="w-full min-w-[640px]">
                 <thead>
                   <tr className="border-b text-left">
                     <th className="pb-3 font-medium text-sm text-muted-foreground">User</th>
-                    <th className="pb-3 font-medium text-sm text-muted-foreground">Role</th>
+                    <th className="pb-3 font-medium text-sm text-muted-foreground hidden md:table-cell">Role</th>
                     <th className="pb-3 font-medium text-sm text-muted-foreground">Status</th>
-                    <th className="pb-3 font-medium text-sm text-muted-foreground">Activity</th>
-                    <th className="pb-3 font-medium text-sm text-muted-foreground">Last Login</th>
+                    <th className="pb-3 font-medium text-sm text-muted-foreground hidden lg:table-cell">Activity</th>
+                    <th className="pb-3 font-medium text-sm text-muted-foreground hidden lg:table-cell">Last Login</th>
                     <th className="pb-3 font-medium text-sm text-muted-foreground text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {users.map((user) => (
                     <tr key={user.id} className="hover:bg-muted/50">
-                      <td className="py-4">
-                        <div>
-                          <p className="font-medium">{user.username}</p>
-                          <p className="text-xs text-muted-foreground">
+                      <td className="py-4 pr-2 min-w-0">
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{user.username}</p>
+                          <p className="text-xs text-muted-foreground truncate">
                             {user.fullName || 'No name'}
                           </p>
+                          {/* Mobile-only inline role badge (since Role column is hidden <md) */}
+                          <div className="md:hidden mt-1">
+                            <Badge
+                              variant={user.role === 'admin' ? 'default' : 'secondary'}
+                              className={user.role === 'admin' ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/30' : ''}
+                            >
+                              {user.role === 'admin' && <Shield className="h-3 w-3 mr-1" />}
+                              {user.role}
+                            </Badge>
+                          </div>
                         </div>
                       </td>
-                      <td className="py-4">
-                        <Badge 
+                      <td className="py-4 hidden md:table-cell">
+                        <Badge
                           variant={user.role === 'admin' ? 'default' : 'secondary'}
-                          className={user.role === 'admin' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' : ''}
+                          className={user.role === 'admin' ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/30' : ''}
                         >
                           {user.role === 'admin' && <Shield className="h-3 w-3 mr-1" />}
                           {user.role}
@@ -322,28 +334,28 @@ export function UserManagement({
                       </td>
                       <td className="py-4">
                         {user.blocked ? (
-                          <Badge variant="destructive" className="bg-red-500/20 text-red-400 border-red-500/30">
+                          <Badge variant="destructive" className="bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/30">
                             <Ban className="h-3 w-3 mr-1" />
                             Blocked
                           </Badge>
                         ) : (
-                          <Badge className="bg-violet-500/20 text-violet-400 border-violet-500/30">
+                          <Badge className="bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-500/30">
                             <CheckCircle className="h-3 w-3 mr-1" />
                             Active
                           </Badge>
                         )}
                       </td>
-                      <td className="py-4">
+                      <td className="py-4 hidden lg:table-cell">
                         <div className="text-sm">
                           <p>{user.sessionCount} sessions</p>
                           <p className="text-xs text-muted-foreground">{user.messageCount} messages</p>
                         </div>
                       </td>
-                      <td className="py-4 text-sm text-muted-foreground">
+                      <td className="py-4 text-sm text-muted-foreground hidden lg:table-cell">
                         {formatDate(user.lastLogin)}
                       </td>
                       <td className="py-4">
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-1 flex-wrap">
                           {actionLoading === user.id ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                           ) : (
@@ -352,41 +364,45 @@ export function UserManagement({
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => openRoleModal(user)}
+                                aria-label={user.role === 'admin' ? `Remove admin role from ${user.username}` : `Make ${user.username} an admin`}
                                 title={user.role === 'admin' ? 'Remove admin' : 'Make admin'}
                               >
                                 {user.role === 'admin' ? (
-                                  <ShieldOff className="h-4 w-4 text-orange-500" />
+                                  <ShieldOff className="h-4 w-4 text-orange-600 dark:text-orange-400" />
                                 ) : (
-                                  <Shield className="h-4 w-4 text-purple-500" />
+                                  <Shield className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                                 )}
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => openBlockModal(user)}
+                                aria-label={user.blocked ? `Unblock ${user.username}` : `Block ${user.username}`}
                                 title={user.blocked ? 'Unblock user' : 'Block user'}
                               >
                                 {user.blocked ? (
-                                  <CheckCircle className="h-4 w-4 text-violet-500" />
+                                  <CheckCircle className="h-4 w-4 text-violet-600 dark:text-violet-400" />
                                 ) : (
-                                  <Ban className="h-4 w-4 text-red-500" />
+                                  <Ban className="h-4 w-4 text-red-600 dark:text-red-400" />
                                 )}
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => openPasswordModal(user)}
+                                aria-label={`Reset password for ${user.username}`}
                                 title="Reset password"
                               >
-                                <Key className="h-4 w-4 text-blue-500" />
+                                <Key className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => openDeleteModal(user)}
+                                aria-label={`Delete ${user.username}`}
                                 title="Delete user"
                               >
-                                <Trash2 className="h-4 w-4 text-red-500" />
+                                <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
                               </Button>
                             </>
                           )}

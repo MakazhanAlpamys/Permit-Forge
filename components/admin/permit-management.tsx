@@ -4,7 +4,7 @@
 // Admin Permit Management Component
 // ============================================================================
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -60,6 +60,15 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
   // the action layer rejects a stale token.
   const { runWithCsrf } = useCsrfAction();
 
+  // Track the warning-clear timer so an unmount cancels it instead of firing
+  // setWarning() on a dead component (mirrors the X12 pattern in app/admin/page.tsx).
+  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    };
+  }, []);
+
   // X2: notify the parent of the initial filter so the underlying permit
   // query starts in sync with the URL on first mount.
   useEffect(() => {
@@ -88,7 +97,11 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
 
   const flashWarning = (msg: string) => {
     setWarning(msg);
-    setTimeout(() => setWarning(prev => (prev === msg ? '' : prev)), 6000);
+    if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
+    warningTimerRef.current = setTimeout(() => {
+      setWarning(prev => (prev === msg ? '' : prev));
+      warningTimerRef.current = null;
+    }, 6000);
   };
 
   const handleStartReview = async (permit: PermitApplication) => {
@@ -133,14 +146,14 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
     <div className="space-y-6">
       {/* Stats row */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3">
           <StatMini label="Total" value={stats.totalPermits} />
           <StatMini label="Drafts" value={stats.draftCount} color="text-muted-foreground" />
-          <StatMini label="Submitted" value={stats.submittedCount} color="text-blue-400" />
-          <StatMini label="Under Review" value={stats.underReviewCount} color="text-yellow-400" />
-          <StatMini label="Approved" value={stats.approvedCount} color="text-violet-400" />
-          <StatMini label="Rejected" value={stats.rejectedCount} color="text-red-400" />
-          <StatMini label="Revision" value={stats.revisionRequestedCount} color="text-orange-400" />
+          <StatMini label="Submitted" value={stats.submittedCount} color="text-blue-600 dark:text-blue-400" />
+          <StatMini label="Under Review" value={stats.underReviewCount} color="text-yellow-600 dark:text-yellow-400" />
+          <StatMini label="Approved" value={stats.approvedCount} color="text-violet-600 dark:text-violet-400" />
+          <StatMini label="Rejected" value={stats.rejectedCount} color="text-red-600 dark:text-red-400" />
+          <StatMini label="Revision" value={stats.revisionRequestedCount} color="text-orange-600 dark:text-orange-400" />
           <StatMini label="Today" value={stats.permitsToday} />
         </div>
       )}
@@ -161,13 +174,13 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
       </div>
 
       {error && (
-        <div className="p-3 rounded-md bg-red-500/10 border border-red-500/30 text-red-500 text-sm">
+        <div role="alert" className="p-3 rounded-md bg-red-500/10 border border-red-500/30 text-red-700 dark:text-red-300 text-sm">
           {error}
         </div>
       )}
 
       {warning && (
-        <div className="p-3 rounded-md bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 text-sm">
+        <div role="status" className="p-3 rounded-md bg-yellow-500/10 border border-yellow-500/30 text-yellow-700 dark:text-yellow-300 text-sm">
           {warning}
         </div>
       )}
@@ -193,13 +206,23 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
             return (
               <Card key={permit.id} className="overflow-hidden">
                 <div
-                  className="p-4 cursor-pointer hover:bg-muted/30 transition-colors"
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={isExpanded}
+                  aria-label={`${isExpanded ? 'Collapse' : 'Expand'} permit ${permit.projectName}`}
+                  className="p-4 cursor-pointer hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   onClick={() => setExpandedPermit(isExpanded ? null : permit.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setExpandedPermit(isExpanded ? null : permit.id);
+                    }
+                  }}
                 >
-                  <div className="flex items-center justify-between">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm">{permit.projectName}</span>
+                        <span className="font-medium text-sm truncate">{permit.projectName}</span>
                         <PermitStatusBadge status={permit.status} />
                         {permit.username && (
                           <Badge variant="secondary" className="text-xs">
@@ -207,18 +230,18 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                           </Badge>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Building2 className="h-3 w-3" />
-                          {typeLabel}
+                      <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1 min-w-0">
+                          <Building2 className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{typeLabel}</span>
                         </span>
-                        <span className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />
-                          {permit.projectAddress}
+                        <span className="flex items-center gap-1 min-w-0">
+                          <MapPin className="h-3 w-3 shrink-0" />
+                          <span className="truncate">{permit.projectAddress}</span>
                         </span>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap justify-end shrink-0">
                       {/* A-M-2 / v1.7.0 Part A: route show/hide decisions
                           through the central state machine so adding (or
                           renaming) a status only requires touching
@@ -248,7 +271,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                           <Button
                             variant="outline"
                             size="sm"
-                            className="text-violet-500 border-violet-500/30 hover:bg-violet-500/10"
+                            className="text-violet-600 dark:text-violet-400 border-violet-500/30 hover:bg-violet-500/10"
                             onClick={(e) => {
                               e.stopPropagation();
                               setReviewDialog({ permit, action: 'approve' });
@@ -260,7 +283,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                           <Button
                             variant="outline"
                             size="sm"
-                            className="text-orange-500 border-orange-500/30 hover:bg-orange-500/10"
+                            className="text-orange-600 dark:text-orange-400 border-orange-500/30 hover:bg-orange-500/10"
                             onClick={(e) => {
                               e.stopPropagation();
                               setReviewDialog({ permit, action: 'request_revision' });
@@ -272,7 +295,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                           <Button
                             variant="outline"
                             size="sm"
-                            className="text-red-500 border-red-500/30 hover:bg-red-500/10"
+                            className="text-red-600 dark:text-red-400 border-red-500/30 hover:bg-red-500/10"
                             onClick={(e) => {
                               e.stopPropagation();
                               setReviewDialog({ permit, action: 'reject' });
@@ -283,7 +306,9 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                           </Button>
                         </>
                       )}
-                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      <span aria-hidden="true" className="shrink-0">
+                        {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -294,21 +319,21 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
                       {permit.buildingDetails?.numberOfFloors && (
                         <>
-                          <div>
+                          <div className="min-w-0">
                             <p className="text-xs text-muted-foreground">Floors</p>
-                            <p className="font-medium">{permit.buildingDetails.numberOfFloors}</p>
+                            <p className="font-medium truncate">{permit.buildingDetails.numberOfFloors}</p>
                           </div>
-                          <div>
+                          <div className="min-w-0">
                             <p className="text-xs text-muted-foreground">Height</p>
-                            <p className="font-medium">{permit.buildingDetails.buildingHeight}m</p>
+                            <p className="font-medium truncate">{permit.buildingDetails.buildingHeight}m</p>
                           </div>
-                          <div>
+                          <div className="min-w-0">
                             <p className="text-xs text-muted-foreground">Built-Up Area</p>
-                            <p className="font-medium">{permit.buildingDetails.totalBuiltUpArea} m²</p>
+                            <p className="font-medium truncate">{permit.buildingDetails.totalBuiltUpArea} m²</p>
                           </div>
-                          <div>
+                          <div className="min-w-0">
                             <p className="text-xs text-muted-foreground">Parking</p>
-                            <p className="font-medium">{permit.buildingDetails.numberOfParkingSpaces}</p>
+                            <p className="font-medium truncate">{permit.buildingDetails.numberOfParkingSpaces}</p>
                           </div>
                         </>
                       )}
@@ -317,9 +342,9 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                       <div className="mt-3 p-3 rounded-lg bg-muted/50">
                         <p className="text-xs font-medium">AI Compliance: {' '}
                           <span className={
-                            permit.complianceCheckResult.overallStatus === 'compliant' ? 'text-violet-400' :
-                            permit.complianceCheckResult.overallStatus === 'non_compliant' ? 'text-red-400' :
-                            'text-yellow-400'
+                            permit.complianceCheckResult.overallStatus === 'compliant' ? 'text-violet-600 dark:text-violet-400' :
+                            permit.complianceCheckResult.overallStatus === 'non_compliant' ? 'text-red-600 dark:text-red-400' :
+                            'text-yellow-600 dark:text-yellow-400'
                           }>
                             {permit.complianceCheckResult.overallStatus.replace('_', ' ')}
                           </span>

@@ -42,17 +42,17 @@ const actionIcons: Record<string, React.ComponentType<{ className?: string }>> =
 };
 
 const actionColors: Record<string, string> = {
-  login_success: 'text-violet-500 bg-violet-500/10',
-  login_failed: 'text-red-500 bg-red-500/10',
-  logout: 'text-gray-500 bg-gray-500/10',
-  user_created: 'text-blue-500 bg-blue-500/10',
-  user_blocked: 'text-red-500 bg-red-500/10',
-  user_unblocked: 'text-violet-500 bg-violet-500/10',
-  role_changed: 'text-purple-500 bg-purple-500/10',
-  password_reset: 'text-orange-500 bg-orange-500/10',
-  pdf_ingested: 'text-cyan-500 bg-cyan-500/10',
-  chunks_cleared: 'text-red-500 bg-red-500/10',
-  session_deleted: 'text-gray-500 bg-gray-500/10',
+  login_success: 'text-violet-600 dark:text-violet-300 bg-violet-500/10',
+  login_failed: 'text-red-600 dark:text-red-300 bg-red-500/10',
+  logout: 'text-gray-600 dark:text-gray-300 bg-gray-500/10',
+  user_created: 'text-blue-600 dark:text-blue-300 bg-blue-500/10',
+  user_blocked: 'text-red-600 dark:text-red-300 bg-red-500/10',
+  user_unblocked: 'text-violet-600 dark:text-violet-300 bg-violet-500/10',
+  role_changed: 'text-purple-600 dark:text-purple-300 bg-purple-500/10',
+  password_reset: 'text-orange-600 dark:text-orange-300 bg-orange-500/10',
+  pdf_ingested: 'text-cyan-600 dark:text-cyan-300 bg-cyan-500/10',
+  chunks_cleared: 'text-red-600 dark:text-red-300 bg-red-500/10',
+  session_deleted: 'text-gray-600 dark:text-gray-300 bg-gray-500/10',
 };
 
 const actionLabels: Record<string, string> = {
@@ -146,12 +146,12 @@ export function AuditLogs({ logs, loading }: AuditLogsProps) {
                         )}
                       </p>
                       {log.metadata && Object.keys(log.metadata).length > 0 && (
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <p className="text-xs text-muted-foreground mt-1 break-all line-clamp-2">
                           {JSON.stringify(log.metadata)}
                         </p>
                       )}
                       {log.ipAddress && (
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <p className="text-xs text-muted-foreground mt-1 break-all">
                           IP: {log.ipAddress}
                         </p>
                       )}

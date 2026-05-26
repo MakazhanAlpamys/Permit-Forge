@@ -448,13 +448,18 @@ export function DocumentManagement() {
 
   return (
     <>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="min-w-0">
           <h2 className="text-2xl font-bold">Document Management</h2>
           <p className="text-muted-foreground">Manage documents, ingestion, and search configuration</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="ghost" size="sm" onClick={() => { loadDocuments(); runDiagnostics(); }}>
+        <div className="flex gap-2 shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Refresh documents"
+            onClick={() => { loadDocuments(); runDiagnostics(); }}
+          >
             <RefreshCw className={`h-4 w-4 ${loading || diagnostic.loading ? 'animate-spin' : ''}`} />
           </Button>
           <Button onClick={openAddForm} size="sm">
@@ -464,7 +469,7 @@ export function DocumentManagement() {
         </div>
       </div>
 
-      <div className="grid gap-6 max-w-4xl">
+      <div className="grid gap-6 max-w-4xl mx-auto sm:mx-0">
         {/* System Diagnostics */}
         <Card className={diagnostic.error ? 'border-yellow-500/50' : 'border-violet-500/50'}>
           <CardHeader className="pb-3">
@@ -541,38 +546,45 @@ export function DocumentManagement() {
               return (
                 <Card key={doc.id} className={isIngested ? 'border-violet-500/30' : ''}>
                   <CardHeader className="pb-3">
-                    <CardTitle className="flex items-center gap-2 text-base">
-                      <BookOpen className="h-4 w-4 text-primary" />
-                      <span className="flex-1 truncate">{doc.displayName}</span>
+                    <CardTitle className="flex items-center gap-2 text-base flex-wrap">
+                      <BookOpen className="h-4 w-4 text-primary shrink-0" />
+                      <span className="flex-1 min-w-0 truncate">{doc.displayName}</span>
                       <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-5 shrink-0 ${doc.badgeColor}`}>
                         {doc.shortName}
                       </Badge>
                       {doc.storagePath ? (
-                        <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-[10px] shrink-0">
+                        <Badge className="bg-green-500/20 text-green-700 dark:text-green-300 border-green-500/30 text-[10px] shrink-0">
                           PDF
                         </Badge>
                       ) : (
-                        <Badge className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30 text-[10px] shrink-0">
+                        <Badge className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border-yellow-500/30 text-[10px] shrink-0">
                           No PDF
                         </Badge>
                       )}
                       {isIngested && (
-                        <Badge className="bg-violet-500/20 text-violet-400 border-violet-500/30 text-[10px] shrink-0">
+                        <Badge className="bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-500/30 text-[10px] shrink-0">
                           {chunkCount} chunks
                         </Badge>
                       )}
-                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={() => openEditForm(doc)}>
-                        <Pencil className="h-3.5 w-3.5" />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="shrink-0"
+                        onClick={() => openEditForm(doc)}
+                        aria-label={`Edit ${doc.displayName}`}
+                        title="Edit document"
+                      >
+                        <Pencil className="h-4 w-4" />
                       </Button>
                     </CardTitle>
-                    <CardDescription className="text-xs flex items-center gap-3">
-                      <span className="flex items-center gap-1">
-                        <Database className="h-3 w-3" />
-                        {doc.fileName}
+                    <CardDescription className="text-xs flex items-center gap-3 flex-wrap">
+                      <span className="flex items-center gap-1 min-w-0">
+                        <Database className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{doc.fileName}</span>
                       </span>
-                      {pageRange && <span className="text-muted-foreground">{pageRange}</span>}
+                      {pageRange && <span className="text-muted-foreground shrink-0">{pageRange}</span>}
                       {doc.keywords.length > 0 && (
-                        <span className="text-muted-foreground">{doc.keywords.length} keywords</span>
+                        <span className="text-muted-foreground shrink-0">{doc.keywords.length} keywords</span>
                       )}
                     </CardDescription>
                   </CardHeader>
@@ -600,9 +612,9 @@ export function DocumentManagement() {
 
                     {/* Status message */}
                     {message && !progress && (
-                      <div className={`text-xs p-2 rounded ${
-                        status === 'success' ? 'bg-violet-500/10 text-violet-400' :
-                        status === 'error' ? 'bg-red-500/10 text-red-400' : 'text-muted-foreground'
+                      <div className={`text-xs p-2 rounded break-words ${
+                        status === 'success' ? 'bg-violet-500/10 text-violet-700 dark:text-violet-300' :
+                        status === 'error' ? 'bg-red-500/10 text-red-700 dark:text-red-300' : 'text-muted-foreground'
                       }`}>
                         {status === 'success' && <CheckCircle className="h-3 w-3 inline mr-1" />}
                         {status === 'error' && <XCircle className="h-3 w-3 inline mr-1" />}
@@ -611,7 +623,7 @@ export function DocumentManagement() {
                     )}
 
                     {/* Action buttons */}
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <Button
                         onClick={() => handleIngestDocument(doc.id)}
                         disabled={status === 'loading' || !diagnostic.dbConnected || !doc.storagePath}
@@ -662,9 +674,11 @@ export function DocumentManagement() {
                         disabled={status === 'loading'}
                         variant="ghost"
                         size="sm"
-                        className="text-muted-foreground hover:text-red-400"
+                        className="text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
+                        aria-label={`Deactivate ${doc.displayName}`}
+                        title="Deactivate document"
                       >
-                        <Archive className="h-3 w-3" />
+                        <Archive className="h-4 w-4" />
                       </Button>
                     </div>
                   </CardContent>
@@ -687,14 +701,14 @@ export function DocumentManagement() {
                   <div className="mt-3 space-y-3">
                     {inactiveDocuments.map(doc => (
                       <Card key={doc.id} className="opacity-60 border-dashed">
-                        <CardContent className="flex items-center justify-between py-3">
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-5 ${doc.badgeColor}`}>
+                        <CardContent className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-5 shrink-0 ${doc.badgeColor}`}>
                               {doc.shortName}
                             </Badge>
-                            <span className="text-sm text-muted-foreground">{doc.displayName}</span>
+                            <span className="text-sm text-muted-foreground truncate">{doc.displayName}</span>
                           </div>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap shrink-0">
                             <Button size="sm" variant="outline" onClick={() => handleRestore(doc.id, doc.displayName)}>
                               <RotateCcw className="h-3 w-3 mr-1" />
                               Restore

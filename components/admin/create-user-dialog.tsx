@@ -75,22 +75,35 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
   const safeClose = () => { if (!loading) onClose(); };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-user-dialog-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    >
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
         onClick={safeClose}
+        aria-hidden="true"
       />
 
       {/* Dialog */}
-      <Card className="relative z-10 w-full max-w-md mx-4">
+      <Card className="relative z-10 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <UserPlus className="h-5 w-5 text-primary" />
-              Create New User
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle id="create-user-dialog-title" className="flex items-center gap-2 min-w-0">
+              <UserPlus className="h-5 w-5 text-primary shrink-0" />
+              <span className="truncate">Create New User</span>
             </CardTitle>
-            <Button variant="ghost" size="icon" onClick={safeClose} disabled={loading}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={safeClose}
+              disabled={loading}
+              aria-label="Close create user dialog"
+              className="shrink-0"
+            >
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -102,10 +115,12 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Username */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Username *</label>
+              <label htmlFor="create-user-username" className="text-sm font-medium">Username *</label>
               <input
+                id="create-user-username"
                 type="text"
                 required
+                autoComplete="username"
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                 className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
@@ -116,9 +131,11 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
 
             {/* Full Name */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Full Name</label>
+              <label htmlFor="create-user-fullname" className="text-sm font-medium">Full Name</label>
               <input
+                id="create-user-fullname"
                 type="text"
+                autoComplete="name"
                 value={formData.full_name}
                 onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
                 className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
@@ -129,12 +146,14 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
 
             {/* Password */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Password *</label>
+              <label htmlFor="create-user-password" className="text-sm font-medium">Password *</label>
               <div className="relative">
                 <input
+                  id="create-user-password"
                   type={showPassword ? 'text' : 'password'}
                   required
                   minLength={8}
+                  autoComplete="new-password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   className="w-full px-3 py-2 pr-10 rounded-md border border-input bg-background text-sm"
@@ -144,7 +163,9 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
@@ -153,8 +174,9 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
 
             {/* Role */}
             <div className="space-y-2">
-              <label className="text-sm font-medium">Role *</label>
+              <label htmlFor="create-user-role" className="text-sm font-medium">Role *</label>
               <select
+                id="create-user-role"
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value as 'admin' | 'user' })}
                 className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
@@ -167,23 +189,23 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
 
             {/* Error */}
             {error && (
-              <div className="p-3 rounded-md bg-red-500/10 border border-red-500/30 text-red-500 text-sm">
+              <div role="alert" className="p-3 rounded-md bg-red-500/10 border border-red-500/30 text-red-700 dark:text-red-300 text-sm">
                 {error}
               </div>
             )}
 
             {/* Actions */}
             <div className="flex gap-3 pt-2">
-              <Button 
-                type="button" 
-                variant="outline" 
-                onClick={onClose}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={safeClose}
                 disabled={loading}
                 className="flex-1"
               >
                 Cancel
               </Button>
-              <Button 
+              <Button
                 type="submit"
                 disabled={loading}
                 className="flex-1"

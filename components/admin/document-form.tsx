@@ -112,9 +112,16 @@ export function DocumentForm({
   return (
     <Card className="border-primary/50">
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center justify-between text-base">
-          <span>{editingId ? 'Edit Document' : 'Register New Document'}</span>
-          <Button variant="ghost" size="sm" onClick={onCancel}>
+        <CardTitle className="flex items-center justify-between gap-2 text-base">
+          <span className="truncate">{editingId ? 'Edit Document' : 'Register New Document'}</span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onCancel}
+            aria-label="Close document form"
+            className="shrink-0"
+          >
             <X className="h-4 w-4" />
           </Button>
         </CardTitle>
@@ -125,18 +132,20 @@ export function DocumentForm({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Display Name *</label>
+            <label htmlFor="doc-display-name" className="text-xs font-medium text-muted-foreground">Display Name *</label>
             <Input
+              id="doc-display-name"
               value={formData.displayName}
               onChange={(e) => set('displayName', e.target.value)}
               placeholder="Building Code 2021"
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Short Name *</label>
+            <label htmlFor="doc-short-name" className="text-xs font-medium text-muted-foreground">Short Name *</label>
             <Input
+              id="doc-short-name"
               value={formData.shortName}
               onChange={(e) => set('shortName', e.target.value)}
               placeholder="DBC"
@@ -144,10 +153,11 @@ export function DocumentForm({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-medium text-muted-foreground">PDF File *</label>
+            <label htmlFor="doc-pdf-file" className="text-xs font-medium text-muted-foreground">PDF File *</label>
             <input
+              id="doc-pdf-file"
               type="file"
               accept=".pdf,application/pdf"
               onChange={(e) => {
@@ -160,19 +170,20 @@ export function DocumentForm({
               className="block w-full text-sm text-muted-foreground file:mr-3 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 file:cursor-pointer cursor-pointer mt-1"
             />
             {editingId && !pdfFile && formData.fileName && (
-              <p className="text-[10px] text-muted-foreground mt-1">
+              <p className="text-[10px] text-muted-foreground mt-1 break-all">
                 Current: {formData.fileName}
               </p>
             )}
             {pdfFile && (
-              <p className="text-[10px] text-muted-foreground mt-1">
+              <p className="text-[10px] text-muted-foreground mt-1 break-all">
                 {pdfFile.name} ({(pdfFile.size / 1024 / 1024).toFixed(1)} MB)
               </p>
             )}
           </div>
           <div>
-            <label className="text-xs font-medium text-muted-foreground">Authority</label>
+            <label htmlFor="doc-authority" className="text-xs font-medium text-muted-foreground">Authority</label>
             <Input
+              id="doc-authority"
               value={formData.authority}
               onChange={(e) => set('authority', e.target.value)}
               placeholder="e.g., City Authority"
@@ -182,10 +193,11 @@ export function DocumentForm({
 
         {!editingId && (
           <div>
-            <label className="text-xs font-medium text-muted-foreground">
+            <label htmlFor="doc-id" className="text-xs font-medium text-muted-foreground">
               Document ID (auto-generated from name if empty)
             </label>
             <Input
+              id="doc-id"
               value={formData.id}
               onChange={(e) => set('id', e.target.value)}
               placeholder="building-code-2021"
@@ -194,8 +206,9 @@ export function DocumentForm({
         )}
 
         <div>
-          <label className="text-xs font-medium text-muted-foreground">Description</label>
+          <label htmlFor="doc-description" className="text-xs font-medium text-muted-foreground">Description</label>
           <Input
+            id="doc-description"
             value={formData.description}
             onChange={(e) => set('description', e.target.value)}
             placeholder="Brief description of the document"
@@ -203,8 +216,9 @@ export function DocumentForm({
         </div>
 
         <div>
-          <label className="text-xs font-medium text-muted-foreground">Source URL</label>
+          <label htmlFor="doc-source-url" className="text-xs font-medium text-muted-foreground">Source URL</label>
           <Input
+            id="doc-source-url"
             value={formData.sourceUrl}
             onChange={(e) => set('sourceUrl', e.target.value)}
             placeholder="https://..."
@@ -212,10 +226,11 @@ export function DocumentForm({
         </div>
 
         <div>
-          <label className="text-xs font-medium text-muted-foreground">
+          <label htmlFor="doc-keywords" className="text-xs font-medium text-muted-foreground">
             Keywords (comma-separated, for search routing)
           </label>
           <Input
+            id="doc-keywords"
             value={formData.keywords}
             onChange={(e) => set('keywords', e.target.value)}
             placeholder="building, code, construction, parking"
@@ -223,8 +238,9 @@ export function DocumentForm({
         </div>
 
         <div>
-          <label className="text-xs font-medium text-muted-foreground">Categories (comma-separated)</label>
+          <label htmlFor="doc-categories" className="text-xs font-medium text-muted-foreground">Categories (comma-separated)</label>
           <Input
+            id="doc-categories"
             value={formData.categories}
             onChange={(e) => set('categories', e.target.value)}
             placeholder="structural, general"
@@ -232,36 +248,42 @@ export function DocumentForm({
         </div>
 
         <div>
-          <label className="text-xs font-medium text-muted-foreground">Badge Color</label>
-          <div className="flex flex-wrap gap-2 mt-1">
-            {DOCUMENT_BADGE_COLORS.map((color) => (
-              <button
-                key={color.label}
-                onClick={() => set('badgeColor', color.value)}
-                className={`px-2 py-1 rounded text-xs border transition-all ${color.value} ${
-                  formData.badgeColor === color.value
-                    ? 'ring-2 ring-primary ring-offset-1 ring-offset-background'
-                    : ''
-                }`}
-              >
-                {color.label}
-              </button>
-            ))}
+          <span className="text-xs font-medium text-muted-foreground">Badge Color</span>
+          <div role="radiogroup" aria-label="Badge color" className="flex flex-wrap gap-2 mt-1">
+            {DOCUMENT_BADGE_COLORS.map((color) => {
+              const selected = formData.badgeColor === color.value;
+              return (
+                <button
+                  key={color.label}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => set('badgeColor', color.value)}
+                  className={`px-2 py-1 rounded text-xs border transition-all ${color.value} ${
+                    selected
+                      ? 'ring-2 ring-primary ring-offset-1 ring-offset-background'
+                      : ''
+                  }`}
+                >
+                  {color.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
         {error && (
-          <div className="p-2 rounded bg-red-500/10 border border-red-500/30 text-xs text-red-400">
+          <div role="alert" className="p-2 rounded bg-red-500/10 border border-red-500/30 text-xs text-red-700 dark:text-red-300">
             {error}
           </div>
         )}
 
-        <div className="flex gap-2 pt-2">
-          <Button onClick={() => onSave(formData, pdfFile)} disabled={saving || uploading} size="sm">
+        <div className="flex gap-2 pt-2 flex-wrap">
+          <Button type="button" onClick={() => onSave(formData, pdfFile)} disabled={saving || uploading} size="sm">
             {(saving || uploading) ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
             {uploading ? 'Uploading PDF...' : saving ? 'Saving...' : editingId ? 'Update' : 'Register'}
           </Button>
-          <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
         </div>
       </CardContent>
     </Card>

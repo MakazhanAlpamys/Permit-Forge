@@ -73,8 +73,8 @@ export function PermitStatusChart({ data, loading }: PermitStatusChartProps) {
                   paddingAngle={2}
                   dataKey="value"
                 >
-                  {chartData.map((entry, index) => (
-                    <Cell key={index} fill={entry.color} />
+                  {chartData.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
                   ))}
                 </Pie>
                 <Tooltip

@@ -235,8 +235,8 @@ export default function AdminPage() {
       {/* Header */}
       <header className="border-b border-border bg-card sticky top-0 z-40">
         <div className="container mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-3 min-w-0">
               <Image
                 src={theme === 'dark' ? '/white-icon.svg' : '/black-icon.svg'}
                 alt="PermitForge"
@@ -244,14 +244,15 @@ export default function AdminPage() {
                 height={48}
                 className="h-10 w-auto"
               />
-              <Badge variant="outline" className="text-orange-500 border-orange-500">
+              <Badge variant="outline" className="text-orange-600 dark:text-orange-400 border-orange-500">
                 Admin Panel
               </Badge>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2 flex-wrap justify-end">
               <Button
                 variant="ghost"
                 size="sm"
+                aria-label="Refresh dashboard"
                 onClick={async () => {
                   // D2: refresh the analytics_daily MV before reloading so
                   // the dashboard reflects the latest pre-aggregated data.
@@ -267,16 +268,17 @@ export default function AdminPage() {
               <Button
                 variant="ghost"
                 size="sm"
+                aria-label="Open admin profile"
                 onClick={() => { setProfileOpen(true); setProfileError(''); setProfileSuccess(false); }}
               >
-                <UserCircle className="h-4 w-4 mr-2" />
-                Profile
+                <UserCircle className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Profile</span>
               </Button>
               <form action={logoutAction}>
                 <input type="hidden" name="csrfToken" value={csrfToken} />
-                <Button variant="ghost" size="sm" type="submit">
-                  <LogOut className="h-4 w-4 mr-2" />
-                  Logout
+                <Button variant="ghost" size="sm" type="submit" aria-label="Logout">
+                  <LogOut className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Logout</span>
                 </Button>
               </form>
             </div>
@@ -287,10 +289,15 @@ export default function AdminPage() {
       <div className="flex">
         {/* Sidebar Navigation */}
         <aside className="w-64 border-r border-border bg-card/50 min-h-[calc(100vh-57px)] hidden md:block">
-          <nav className="p-4 space-y-2">
+          <nav role="tablist" aria-label="Admin sections" aria-orientation="vertical" className="p-4 space-y-2">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                aria-controls={`admin-panel-${tab.id}`}
+                id={`admin-tab-${tab.id}`}
+                tabIndex={activeTab === tab.id ? 0 : -1}
                 onClick={() => setActiveTab(tab.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
                   activeTab === tab.id
@@ -307,31 +314,36 @@ export default function AdminPage() {
 
         {/* Mobile Tab Bar */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-card border-t border-border p-2">
-          <div className="flex justify-around">
+          <div role="tablist" aria-label="Admin sections" className="flex justify-around">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                aria-controls={`admin-panel-${tab.id}`}
+                id={`admin-mtab-${tab.id}`}
+                tabIndex={activeTab === tab.id ? 0 : -1}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex flex-col items-center gap-1 px-4 py-2 rounded-lg ${
+                className={`flex-1 min-w-0 flex flex-col items-center gap-1 px-2 sm:px-4 py-2 rounded-lg ${
                   activeTab === tab.id
                     ? 'text-primary'
                     : 'text-muted-foreground'
                 }`}
               >
-                <tab.icon className="h-5 w-5" />
-                <span className="text-xs">{tab.label}</span>
+                <tab.icon className="h-5 w-5 shrink-0" />
+                <span className="text-[10px] sm:text-xs truncate max-w-full">{tab.label}</span>
               </button>
             ))}
           </div>
         </div>
 
         {/* Main Content */}
-        <main className="flex-1 p-6 pb-24 md:pb-6">
+        <main className="flex-1 p-4 sm:p-6 pb-24 md:pb-6">
           <div className="max-w-7xl mx-auto space-y-6">
             
             {/* Overview Tab */}
             {activeTab === 'overview' && (
-              <>
+              <section role="tabpanel" id="admin-panel-overview" aria-labelledby="admin-tab-overview">
                 <div className="mb-6">
                   <h2 className="text-2xl font-bold">Dashboard Overview</h2>
                   <p className="text-muted-foreground">Monitor system activity and performance</p>
@@ -362,17 +374,17 @@ export default function AdminPage() {
                   <TopUsersTable data={topUsers} loading={dataLoading} />
                   <AuditLogs logs={auditLogs.slice(0, 10)} loading={dataLoading} />
                 </div>
-              </>
+              </section>
             )}
 
             {/* Users Tab */}
             {activeTab === 'users' && (
-              <>
+              <section role="tabpanel" id="admin-panel-users" aria-labelledby="admin-tab-users">
                 <div className="mb-6">
                   <h2 className="text-2xl font-bold">User Management</h2>
                   <p className="text-muted-foreground">Manage user accounts and permissions</p>
                 </div>
-                
+
                 <UserManagement
                   users={users}
                   loading={usersLoading}
@@ -380,18 +392,18 @@ export default function AdminPage() {
                   onSearch={(query) => loadUsers(query)}
                   onCreateUser={() => setCreateUserOpen(true)}
                 />
-                
+
                 <CreateUserDialog
                   isOpen={createUserOpen}
                   onClose={() => setCreateUserOpen(false)}
                   onSuccess={() => loadUsers()}
                 />
-              </>
+              </section>
             )}
 
             {/* Permits Tab */}
             {activeTab === 'permits' && (
-              <>
+              <section role="tabpanel" id="admin-panel-permits" aria-labelledby="admin-tab-permits">
                 <div className="mb-6">
                   <h2 className="text-2xl font-bold">Permit Applications</h2>
                   <p className="text-muted-foreground">Review and manage permit applications</p>
@@ -404,22 +416,26 @@ export default function AdminPage() {
                   onRefresh={() => loadPermits()}
                   onFilterStatus={(status) => loadPermits(status)}
                 />
-              </>
+              </section>
             )}
 
             {/* Documents Tab */}
-            {activeTab === 'documents' && <DocumentManagement />}
+            {activeTab === 'documents' && (
+              <section role="tabpanel" id="admin-panel-documents" aria-labelledby="admin-tab-documents">
+                <DocumentManagement />
+              </section>
+            )}
 
             {/* Audit Logs Tab */}
             {activeTab === 'logs' && (
-              <>
+              <section role="tabpanel" id="admin-panel-logs" aria-labelledby="admin-tab-logs">
                 <div className="mb-6">
                   <h2 className="text-2xl font-bold">Audit Logs</h2>
                   <p className="text-muted-foreground">View security events and admin actions</p>
                 </div>
-                
+
                 <AuditLogs logs={auditLogs} loading={dataLoading} />
-              </>
+              </section>
             )}
           </div>
         </main>
@@ -427,11 +443,21 @@ export default function AdminPage() {
 
       {/* Admin Profile Dialog */}
       {profileOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-          <div className="bg-card border border-border rounded-lg p-6 max-w-sm w-full mx-4 shadow-lg">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-profile-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) closeProfileDialog(); }}
+        >
+          <div className="bg-card border border-border rounded-lg p-6 max-w-sm w-full max-h-[90vh] overflow-y-auto shadow-lg">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Admin Profile</h3>
-              <button onClick={closeProfileDialog} className="text-muted-foreground hover:text-foreground">
+              <h3 id="admin-profile-title" className="text-lg font-semibold">Admin Profile</h3>
+              <button
+                onClick={closeProfileDialog}
+                aria-label="Close profile dialog"
+                className="text-muted-foreground hover:text-foreground"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
