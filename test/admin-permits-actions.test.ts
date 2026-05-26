@@ -228,6 +228,34 @@ describe('Admin Permits Server Actions', () => {
 
       expect(result.data).toEqual([]);
     });
+
+    // S-M-6 / v1.9.0 Part A: caller-supplied `limit` is capped server-side so a
+    // misbehaving admin client can't request 10k rows and exhaust memory.
+    it('caps the limit parameter at 100 server-side (S-M-6)', async () => {
+      mockRange.mockReturnValueOnce({ data: [], error: null });
+
+      await getAdminPermits(undefined, 10_000, 0);
+
+      // offset=0, capped limit=100 → range(0, 99)
+      expect(mockRange).toHaveBeenCalledWith(0, 99);
+    });
+
+    it('clamps a negative limit up to 1', async () => {
+      mockRange.mockReturnValueOnce({ data: [], error: null });
+
+      await getAdminPermits(undefined, -5, 0);
+
+      // negative limit → 1; range(0, 0)
+      expect(mockRange).toHaveBeenCalledWith(0, 0);
+    });
+
+    it('clamps a negative offset to 0', async () => {
+      mockRange.mockReturnValueOnce({ data: [], error: null });
+
+      await getAdminPermits(undefined, 20, -10);
+
+      expect(mockRange).toHaveBeenCalledWith(0, 19);
+    });
   });
 
   // ---------------------------------------------------------------------------

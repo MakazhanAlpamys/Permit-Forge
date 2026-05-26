@@ -18,6 +18,11 @@ export type { ReviewPermitInput };
 // Get All Permits (Admin)
 // -----------------------------------------------------------------------------
 
+// S-M-6 / v1.9.0 Part A: server-side cap so a misbehaving admin client can't
+// request 10k rows and exhaust memory on the join. Admin UI sends sensible
+// limits, but the action shouldn't rely on the caller for that.
+const ADMIN_PERMITS_MAX_LIMIT = 100;
+
 export async function getAdminPermits(
   status?: string,
   limit: number = 50,
@@ -29,12 +34,15 @@ export async function getAdminPermits(
       return { data: [], error: authCheck.error };
     }
 
+    const safeLimit = Math.min(Math.max(Math.floor(limit), 1), ADMIN_PERMITS_MAX_LIMIT);
+    const safeOffset = Math.max(Math.floor(offset), 0);
+
     const supabase = createAdminClient();
     let query = supabase
       .from('permit_applications')
       .select('*, users!permit_applications_user_id_fkey(username)')
       .order('updated_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+      .range(safeOffset, safeOffset + safeLimit - 1);
 
     if (status && status !== 'all') {
       query = query.eq('status', status);

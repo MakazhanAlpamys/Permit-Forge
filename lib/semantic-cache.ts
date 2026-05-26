@@ -12,6 +12,20 @@ import {
 import { debugLog } from '@/lib/debug-log';
 import type { Citation, SemanticCacheResult } from '@/types';
 
+// S-M-7 / v1.9.0 Part A: defense-in-depth against persisted prompt injection.
+// MessageBubble already filters javascript:-style URLs at render time, but a
+// poisoned cache row stays for the full TTL and gets served to many users.
+// Sanitizing before storage means the bad payload never persists. Strip the
+// dangerous protocol *scheme* (the rest of the URL is left intact so the
+// surrounding markdown still parses) and drop any <script> tag entirely.
+function sanitizeCachedResponse(response: string): string {
+  return response
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
+    .replace(/<\/?script\b[^>]*>/gi, '')
+    .replace(/javascript:/gi, 'about:blank#')
+    .replace(/vbscript:/gi, 'about:blank#');
+}
+
 // -----------------------------------------------------------------------------
 // Cache Lookup
 // -----------------------------------------------------------------------------
@@ -84,7 +98,7 @@ export async function storeInCache(
     const { error } = await supabase.rpc('insert_semantic_cache', {
       p_query_text: queryText,
       p_query_embedding: queryEmbedding,
-      p_response: response,
+      p_response: sanitizeCachedResponse(response),
       p_citations: JSON.parse(JSON.stringify(citations)),
       p_ttl_seconds: CACHE_TTL_SECONDS,
     });

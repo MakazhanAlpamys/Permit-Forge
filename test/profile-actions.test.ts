@@ -53,6 +53,19 @@ vi.mock('@/lib/email', () => ({
   sendPasswordChangeCodeEmail: (...args: unknown[]) => mockSendPasswordChangeCodeEmail(...args),
 }));
 
+// Mock code verification — S-M-8 / v1.9.0 Part A: confirmPasswordChangeAction
+// now goes through the dedicated checkCodeAttempts/resetCodeAttempts pair so
+// the attempt counter is reset after a successful verification (matches the
+// pattern used by verifyEmailAction + resetPasswordAction).
+const mockSafeEqual = vi.fn();
+const mockCheckCodeAttempts = vi.fn();
+const mockResetCodeAttempts = vi.fn();
+vi.mock('@/lib/code-verification', () => ({
+  safeEqual: (...args: unknown[]) => mockSafeEqual(...args),
+  checkCodeAttempts: (...args: unknown[]) => mockCheckCodeAttempts(...args),
+  resetCodeAttempts: (...args: unknown[]) => mockResetCodeAttempts(...args),
+}));
+
 // Mock supabase with chainable query builder
 const mockSingle = vi.fn();
 const mockEq = vi.fn();
@@ -118,6 +131,9 @@ describe('Profile Server Actions', () => {
     mockGenerateSixDigitCode.mockReturnValue('123456');
     mockSendPasswordChangeCodeEmail.mockResolvedValue(true);
     mockGetQuickSession.mockResolvedValue(testUser);
+    mockSafeEqual.mockImplementation((a: string, b: string) => a === b);
+    mockCheckCodeAttempts.mockResolvedValue(true);
+    mockResetCodeAttempts.mockResolvedValue(undefined);
   });
 
   // ---------------------------------------------------------------------------
@@ -349,6 +365,43 @@ describe('Profile Server Actions', () => {
       const result = await confirmPasswordChangeAction('123456', 'NewPassword1!', 'csrf-token');
 
       expect(result.error).toBe('Not authenticated');
+    });
+
+    // S-M-8 / v1.9.0 Part A: confirmPasswordChangeAction now uses the same
+    // checkCodeAttempts / resetCodeAttempts pair that verifyEmailAction +
+    // resetPasswordAction use, with a per-user attempt key. The counter must
+    // be cleared on success so the next time the user requests a code their
+    // first attempt isn't already blocked.
+    it('resets the code-attempt counter on success (S-M-8)', async () => {
+      const futureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      mockSingle.mockResolvedValueOnce({
+        data: { reset_code: '123456', reset_code_expires_at: futureDate },
+        error: null,
+      });
+
+      const result = await confirmPasswordChangeAction('123456', 'NewPassword1!', 'csrf-token');
+
+      expect(result.success).toBe(true);
+      expect(mockCheckCodeAttempts).toHaveBeenCalledWith(`password-change:${testUser.id}`);
+      expect(mockResetCodeAttempts).toHaveBeenCalledWith(`password-change:${testUser.id}`);
+    });
+
+    it('rejects when checkCodeAttempts returns false and clears the stored code', async () => {
+      const futureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      mockSingle.mockResolvedValueOnce({
+        data: { reset_code: '123456', reset_code_expires_at: futureDate },
+        error: null,
+      });
+      mockCheckCodeAttempts.mockResolvedValueOnce(false);
+
+      const result = await confirmPasswordChangeAction('123456', 'NewPassword1!', 'csrf-token');
+
+      expect(result.error).toMatch(/Too many failed attempts/);
+      // Stored code is invalidated so an attacker can't keep trying.
+      expect(mockUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ reset_code: null, reset_code_expires_at: null }),
+      );
+      expect(mockResetCodeAttempts).not.toHaveBeenCalled();
     });
   });
 

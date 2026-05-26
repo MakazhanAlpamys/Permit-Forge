@@ -161,6 +161,47 @@ describe('storeInCache', () => {
     ).resolves.toBeUndefined();
   });
 
+  // S-M-7 / v1.9.0 Part A: defense-in-depth against persisted prompt injection.
+  // Even though MessageBubble + ReactMarkdown filter `javascript:` URLs at
+  // render time, the cache row sticks around for the full TTL (1hr) and could
+  // be served to many users; we sanitize before storing so the bad payload
+  // never persists.
+  it('sanitizes javascript:-style URLs out of the response before storing (S-M-7)', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    withRpc(rpc);
+
+    const malicious =
+      'Check [this](javascript:alert(1)) link and [data exfil](vbscript:msgbox).';
+    await storeInCache('q', SAMPLE_EMBEDDING, malicious, []);
+
+    const payload = rpc.mock.calls[0][1];
+    expect(payload.p_response).not.toMatch(/javascript:/i);
+    expect(payload.p_response).not.toMatch(/vbscript:/i);
+  });
+
+  it('strips <script> tags from the cached response (S-M-7)', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    withRpc(rpc);
+
+    const malicious = 'Hello<script>alert(1)</script> world';
+    await storeInCache('q', SAMPLE_EMBEDDING, malicious, []);
+
+    const payload = rpc.mock.calls[0][1];
+    expect(payload.p_response).not.toMatch(/<script/i);
+    expect(payload.p_response).not.toMatch(/<\/script>/i);
+  });
+
+  it('leaves benign markdown alone', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
+    withRpc(rpc);
+
+    const benign = 'See [page 5](https://example.com/doc#page=5) for **details**.';
+    await storeInCache('q', SAMPLE_EMBEDDING, benign, []);
+
+    const payload = rpc.mock.calls[0][1];
+    expect(payload.p_response).toBe(benign);
+  });
+
   it('JSON-serializes citations to drop functions / undefined / symbols', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: null, error: null });
     withRpc(rpc);

@@ -9,7 +9,7 @@ import { requireAuth, requireAdmin, requireCSRF } from '@/lib/security';
 import { hashPassword, verifyPassword, logAuditWithMeta, createSession } from '@/lib/auth';
 import { updateProfileSchema, validatePassword } from '@/lib/validations';
 import { generateSixDigitCode, sendPasswordChangeCodeEmail } from '@/lib/email';
-import { safeEqual } from '@/lib/code-verification';
+import { safeEqual, checkCodeAttempts, resetCodeAttempts } from '@/lib/code-verification';
 
 const CODE_EXPIRY_MINUTES = 15;
 
@@ -172,14 +172,14 @@ export async function confirmPasswordChangeAction(
     return { error: 'Code has expired. Please request a new one.' };
   }
 
-  // Brute-force protection: max 5 attempts within the code TTL window
-  const { data: rlData, error: rlError } = await supabase.rpc('check_rate_limit', {
-    p_user_id: auth.user.id,
-    p_window_seconds: 15 * 60,
-    p_max_requests: 5,
-    p_min_interval_ms: 0,
-  });
-  if (!rlError && rlData?.[0]?.allowed === false) {
+  // S-M-8 / v1.9.0 Part A: switched from the shared `default` rate-limit bucket
+  // to the dedicated checkCodeAttempts/resetCodeAttempts pair used by
+  // verifyEmailAction + resetPasswordAction. The old path counted attempts
+  // against the same bucket as unrelated user actions and never cleared on
+  // success, so a user could exhaust the bucket with a couple of typos and
+  // then be locked out of *requesting another code* until the window expired.
+  const attemptKey = `password-change:${auth.user.id}`;
+  if (!(await checkCodeAttempts(attemptKey))) {
     await supabase
       .from('users')
       .update({ reset_code: null, reset_code_expires_at: null })
@@ -215,6 +215,10 @@ export async function confirmPasswordChangeAction(
     role: auth.user.role,
     tokenVersion: newTv,
   });
+
+  // S-M-8: clear the attempt counter so the next legitimate request_code
+  // attempt isn't already blocked by typos the user made this round.
+  await resetCodeAttempts(attemptKey);
 
   await logAuditWithMeta(auth.user.id, 'password_changed', {
     metadata: { method: 'email_code' },
