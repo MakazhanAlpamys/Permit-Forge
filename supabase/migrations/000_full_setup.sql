@@ -123,8 +123,11 @@ CREATE TABLE dubai_code_chunks (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- DB-M-8 / v1.9.0 Part B: ef_construction bumped 64 → 128 so multi-document
+-- corpora (10k–40k vectors per ingested PDF) keep HNSW recall above ~95 %.
+-- Slower ingest, same query latency.
 CREATE INDEX dubai_code_chunks_embedding_idx
-  ON dubai_code_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+  ON dubai_code_chunks USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 128);
 CREATE INDEX dubai_code_chunks_fts_idx
   ON dubai_code_chunks USING gin(fts);
 CREATE INDEX dubai_code_chunks_metadata_idx
@@ -369,8 +372,10 @@ CREATE TABLE semantic_cache (
   ttl_seconds INT NOT NULL DEFAULT 3600  -- 1 hour default
 );
 
+-- DB-M-8 / v1.9.0 Part B: ef_construction bumped 64 → 128 to match the
+-- chunks-table index — same recall justification.
 CREATE INDEX semantic_cache_embedding_idx
-  ON semantic_cache USING hnsw (query_embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+  ON semantic_cache USING hnsw (query_embedding vector_cosine_ops) WITH (m = 16, ef_construction = 128);
 CREATE INDEX semantic_cache_created_at_idx ON semantic_cache(created_at DESC);
 
 -- ---------------------------------------------------------------------------
@@ -4511,6 +4516,178 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION start_review_permit_atomic(UUID, UUID) FROM anon, authenticated, PUBLIC;
 GRANT EXECUTE ON FUNCTION start_review_permit_atomic(UUID, UUID) TO service_role;
+
+
+-- ============================================================================
+-- v1.9.0 "Medium Wave" Part B — Database Mediums
+-- ----------------------------------------------------------------------------
+-- DB-M-2: column-level grants on users — direct PostgREST UPDATE can no
+--         longer touch role/blocked/password_hash even if RLS passes.
+-- DB-M-6: cap p_offset in get_all_users_admin so deep OFFSET pagination
+--         can't force a sequential scan on a 10k+ users table.
+-- DB-M-7: refuse pathologically large tree_data blobs in save_document_tree
+--         so a malformed PDF outline can't bloat document_trees.
+-- DB-M-8: ef_construction 64 → 128 applied to both HNSW indexes upstream
+--         (lines 127 + 376). Re-creating the index in this block would be
+--         a multi-minute REINDEX on every migration run; the LiveSQL block
+--         below leaves the existing index in place and only takes effect on
+--         a fresh DB. Operators wanting the rebuild run REINDEX CONCURRENTLY
+--         out-of-band — documented in plan.md v1.9.0 verification block.
+-- ============================================================================
+
+-- DB-M-2 / v1.9.0 Part B: revoke the unconstrained UPDATE that lets a
+-- logged-in user reach a direct PostgREST endpoint and self-escalate to
+-- admin if RLS lets the row through. The RLS policy checks the row (id =
+-- auth.uid()) but does NOT check which columns are touched. Postgres
+-- column-level GRANTs are the only way to prevent that without rewriting
+-- every action through a SECURITY DEFINER RPC.
+--
+-- We re-grant only the columns the profile UI legitimately touches. Email
+-- verification fields (email_verified, verification_code, code_expires_at,
+-- reset_code, reset_code_expires_at) stay service-role-only because they
+-- gate auth flows. token_version stays service-role-only because it
+-- back-stops session revocation.
+REVOKE UPDATE ON users FROM authenticated;
+GRANT UPDATE (full_name, username, email) ON users TO authenticated;
+
+-- DB-M-6 / v1.9.0 Part B: get_all_users_admin OFFSET cap. Past 1000 the
+-- admin UI is expected to use the keyset cursor path (already implemented
+-- in actions/admin.ts). The cap keeps a buggy direct caller from triggering
+-- a sequential scan over the whole users+session_stats join.
+--
+-- The v1.5.0 lockdown re-declared the 6-arg keyset signature; v1.9.0
+-- re-declares it again with the same body PLUS the LEAST(p_offset, 1000)
+-- guard. PostgREST resolves to whichever signature matches the call site,
+-- so we must keep the 6-arg variant since actions/admin.ts:142 calls it.
+DROP FUNCTION IF EXISTS get_all_users_admin(UUID, INT, INT, TEXT, TIMESTAMPTZ, UUID);
+CREATE OR REPLACE FUNCTION get_all_users_admin(
+  p_caller_id UUID,
+  p_limit INT DEFAULT 50,
+  p_offset INT DEFAULT 0,
+  p_search TEXT DEFAULT NULL,
+  p_after_created_at TIMESTAMPTZ DEFAULT NULL,
+  p_after_id UUID DEFAULT NULL
+)
+RETURNS TABLE (
+  id UUID,
+  username TEXT,
+  email TEXT,
+  email_verified BOOLEAN,
+  full_name TEXT,
+  role TEXT,
+  blocked BOOLEAN,
+  blocked_reason TEXT,
+  blocked_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ,
+  total_sessions BIGINT,
+  total_messages BIGINT,
+  last_active_at TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_is_admin BOOLEAN;
+  v_use_keyset BOOLEAN;
+  v_capped_offset INT;
+BEGIN
+  -- Admin guard inside the function body (defense-in-depth on top of REVOKE).
+  SELECT (u.role = 'admin') INTO v_is_admin FROM users u WHERE u.id = p_caller_id;
+  IF NOT COALESCE(v_is_admin, FALSE) THEN
+    RAISE EXCEPTION 'PERMISSION_DENIED: admin role required';
+  END IF;
+
+  v_use_keyset := p_after_created_at IS NOT NULL AND p_after_id IS NOT NULL;
+  v_capped_offset := LEAST(GREATEST(p_offset, 0), 1000);
+
+  -- DB-H-3 / v1.5.0 push-down: filter users BEFORE aggregating session_stats.
+  RETURN QUERY
+  WITH filtered_users AS (
+    SELECT u.*
+    FROM users u
+    WHERE (p_search IS NULL OR p_search = ''
+           OR u.username ILIKE '%' || p_search || '%'
+           OR u.full_name ILIKE '%' || p_search || '%'
+           OR u.email    ILIKE '%' || p_search || '%')
+      AND (NOT v_use_keyset
+           OR (u.created_at, u.id) < (p_after_created_at, p_after_id))
+    ORDER BY u.created_at DESC, u.id DESC
+    LIMIT LEAST(GREATEST(p_limit, 1), 100)
+    OFFSET CASE WHEN v_use_keyset THEN 0 ELSE v_capped_offset END
+  ),
+  session_stats AS (
+    SELECT
+      cs.user_id,
+      COUNT(DISTINCT cs.id) AS session_count,
+      COUNT(cm.id) AS message_count,
+      MAX(cm.created_at) AS last_active
+    FROM chat_sessions cs
+    LEFT JOIN chat_messages cm ON cm.session_id = cs.id
+    WHERE cs.user_id IN (SELECT fu.id FROM filtered_users fu)
+    GROUP BY cs.user_id
+  )
+  SELECT
+    fu.id,
+    fu.username::TEXT,
+    fu.email::TEXT,
+    fu.email_verified,
+    fu.full_name::TEXT,
+    fu.role::TEXT,
+    fu.blocked,
+    fu.blocked_reason::TEXT,
+    fu.blocked_at,
+    fu.created_at,
+    COALESCE(ss.session_count, 0) AS total_sessions,
+    COALESCE(ss.message_count, 0) AS total_messages,
+    ss.last_active
+  FROM filtered_users fu
+  LEFT JOIN session_stats ss ON ss.user_id = fu.id
+  ORDER BY fu.created_at DESC, fu.id DESC;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION get_all_users_admin(UUID, INT, INT, TEXT, TIMESTAMPTZ, UUID) FROM anon, authenticated, PUBLIC;
+GRANT EXECUTE ON FUNCTION get_all_users_admin(UUID, INT, INT, TEXT, TIMESTAMPTZ, UUID) TO service_role;
+
+-- DB-M-7 / v1.9.0 Part B: save_document_tree refuses tree blobs over 1 MB
+-- so a malformed PDF outline can't bloat document_trees or repeatedly hit
+-- the TOAST threshold. pg_column_size measures the on-disk encoded size
+-- (including the implicit JSONB compression), which is the size that
+-- actually matters for storage and read latency.
+CREATE OR REPLACE FUNCTION save_document_tree(
+  p_document_name VARCHAR(64),
+  p_total_pages INT,
+  p_tree_data JSONB
+)
+RETURNS BIGINT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_id BIGINT;
+  v_size INT;
+BEGIN
+  v_size := pg_column_size(p_tree_data);
+  IF v_size > 1048576 THEN
+    RAISE EXCEPTION 'TREE_TOO_LARGE: document tree % bytes exceeds 1 MB cap', v_size;
+  END IF;
+
+  INSERT INTO document_trees (document_name, total_pages, tree_data, updated_at)
+  VALUES (p_document_name, p_total_pages, p_tree_data, NOW())
+  ON CONFLICT (document_name)
+  DO UPDATE SET
+    total_pages = EXCLUDED.total_pages,
+    tree_data = EXCLUDED.tree_data,
+    updated_at = NOW()
+  RETURNING id INTO v_id;
+  RETURN v_id;
+END;
+$$;
+
+REVOKE EXECUTE ON FUNCTION save_document_tree(VARCHAR, INT, JSONB) FROM anon, authenticated, PUBLIC;
+GRANT EXECUTE ON FUNCTION save_document_tree(VARCHAR, INT, JSONB) TO service_role;
 
 
 -- ============================================================================

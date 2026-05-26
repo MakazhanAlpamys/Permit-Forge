@@ -424,3 +424,90 @@ describe('v1.5.0 Part E — DB High Cleanup', () => {
     );
   });
 });
+
+// ============================================================================
+// v1.9.0 Part B — Database Mediums
+// ============================================================================
+
+describe('v1.9.0 Part B — Database Mediums', () => {
+  // DB-M-2: an authenticated user must NOT be able to update their own role,
+  // blocked flag, or password_hash via a direct PostgREST UPDATE that passes
+  // the row-level "id = auth.uid()" RLS check. The fix is column-level grants
+  // that restrict authenticated to the columns the profile UI legitimately
+  // touches (full_name, username, email — verification fields are bumped via
+  // service_role server actions).
+  it('grants UPDATE on users to authenticated only on safe columns (DB-M-2)', () => {
+    // The unconstrained `GRANT SELECT, UPDATE ON users TO authenticated` is
+    // gone (or has been explicitly narrowed); the lockdown block must list
+    // explicit columns. We assert there's a column-scoped UPDATE grant for
+    // authenticated and there's no unscoped one in the *winning* lockdown.
+    expect(sql).toMatch(
+      /GRANT\s+UPDATE\s*\(\s*[^)]*\bfull_name\b[^)]*\)\s+ON\s+users\s+TO\s+authenticated/i,
+    );
+    expect(sql).toMatch(
+      /GRANT\s+UPDATE\s*\(\s*[^)]*\busername\b[^)]*\)\s+ON\s+users\s+TO\s+authenticated/i,
+    );
+    // role / blocked / password_hash must NEVER appear inside the
+    // authenticated-scoped UPDATE column list.
+    const authUpdate = sql.match(
+      /GRANT\s+UPDATE\s*\(([^)]*)\)\s+ON\s+users\s+TO\s+authenticated/gi,
+    );
+    expect(authUpdate).toBeTruthy();
+    for (const grant of authUpdate!) {
+      expect(grant).not.toMatch(/\brole\b/);
+      expect(grant).not.toMatch(/\bblocked\b/);
+      expect(grant).not.toMatch(/\bpassword_hash\b/);
+      expect(grant).not.toMatch(/\btoken_version\b/);
+    }
+  });
+
+  it('revokes the legacy unconstrained UPDATE on users from authenticated (DB-M-2)', () => {
+    // Defense in depth: the lockdown block must explicitly REVOKE UPDATE ON
+    // users so even if a future migration accidentally re-GRANTs it, the
+    // revoke runs *after* and wins. The column-level grant then re-enables
+    // only the safe columns.
+    expect(sql).toMatch(
+      /REVOKE\s+UPDATE\s+ON\s+users\s+FROM\s+[^;]*\bauthenticated\b[^;]*;/i,
+    );
+  });
+
+  // DB-M-6: get_all_users_admin's OFFSET path must be capped so a caller
+  // passing p_offset=10000 doesn't force a sequential scan of the entire
+  // join. We cap at 1000 — past that the caller should be using the keyset
+  // cursor path (admin UI already does).
+  it('get_all_users_admin caps p_offset at 1000 (DB-M-6)', () => {
+    const matches = [
+      ...sql.matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+get_all_users_admin[\s\S]*?\$\$\s*;/gi),
+    ];
+    expect(matches.length).toBeGreaterThan(0);
+    const lastBody = matches[matches.length - 1][0];
+    // Cap can be either LEAST(p_offset, 1000) or LEAST(GREATEST(p_offset, 0), 1000).
+    expect(lastBody).toMatch(/LEAST\s*\([\s\S]*?p_offset[\s\S]*?,\s*1000\s*\)/i);
+  });
+
+  // DB-M-7: save_document_tree must reject pathologically large tree_data
+  // blobs so a malformed PDF outline can't bloat document_trees.
+  it('save_document_tree raises on tree_data > 1MB (DB-M-7)', () => {
+    const matches = [
+      ...sql.matchAll(/CREATE\s+OR\s+REPLACE\s+FUNCTION\s+save_document_tree[\s\S]*?\$\$\s*;/gi),
+    ];
+    expect(matches.length).toBeGreaterThan(0);
+    const lastBody = matches[matches.length - 1][0];
+    expect(lastBody).toMatch(/pg_column_size\s*\(\s*p_tree_data\s*\)/i);
+    expect(lastBody).toMatch(/RAISE\s+EXCEPTION[^;]*TREE_TOO_LARGE/i);
+  });
+
+  // DB-M-8: HNSW ef_construction = 128 (was 64). Better recall on multi-doc
+  // corpora at the cost of slightly slower index builds during ingestion.
+  // Both indexes need to be re-declared with the new value.
+  it('HNSW indexes use ef_construction = 128 (DB-M-8)', () => {
+    // Find every USING hnsw(...) cosine_ops definition.
+    const hnswMatches = [
+      ...sql.matchAll(/USING\s+hnsw[\s\S]*?ef_construction\s*=\s*(\d+)/gi),
+    ];
+    expect(hnswMatches.length).toBeGreaterThan(0);
+    for (const m of hnswMatches) {
+      expect(Number(m[1])).toBeGreaterThanOrEqual(128);
+    }
+  });
+});
