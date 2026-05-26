@@ -701,7 +701,23 @@ The v1.7.0 architect re-audit found 0 Critical, 0 High, 2 Medium, 0 Low. Both Me
 - [x] Removed `@types/bcryptjs` (bcryptjs v3 ships its own .d.ts; the additional types package is now redundant).
 - [x] Added a comment block in `package.json` (via the README env-vars section + a doc note in [docs/audits/phase1-refactor.md](docs/audits/phase1-refactor.md)) explaining the depcheck false-positives that we keep intentionally (`@vercel/style-guide`, `eslint-config-next`, runtime CSS sources for Tailwind).
 
-**v1.8.0 totals:** ~400 LOC removed (net negative). ~20 new tests for the consolidated helpers.
+#### Part F — Re-audit follow-ups 🟢
+
+The v1.8.0 typescript-reviewer re-audit found 0 Critical, 0 High, 2 Medium, 0 Low. Both Medium folded in before push.
+
+- [x] **TR-M-1 (Medium) — `firstRpcRow<T>` was unconstrained.** Omitting the explicit type argument let `T` collapse to `unknown`, silently widening every property access on the result. [lib/transforms.ts](lib/transforms.ts) tightened to `firstRpcRow<T extends object>`; RPC return shapes are always object rows so the constraint costs nothing.
+- [x] **TR-M-2 (Medium) — `verifyAndConsumeCode` cast `user.id` to string without a runtime guard.** A future edit to `selectColumns` that drops `id` would silently turn the lockout-clear UPDATE into a zero-row no-op (leaving the attacker's code in place). [actions/auth.ts](actions/auth.ts) now does an explicit `typeof userId !== 'string'` guard at the boundary; on failure returns the `userNotFound` copy.
+
+Items confirmed CLEAN by the re-audit: Part A `withMutation` typing, Part B `logAuditWithMeta` sweep, Part C dead code removal, Part D `applyOptimisticUpdate` discriminator + `sendCodeEmail` dispatcher byte-for-byte parity + `verifyAndConsumeCode` brute-force-clearing semantics + SIM-H-5 lookup-table query-string parity, Part E unused-dep removal.
+
+**v1.8.0 totals:** planned ~400 LOC removed + ~20 new tests; actual ~640 LOC across Parts D+E source changes (net positive code because the new helpers + their docs added more than the duplicated copies they replaced; the +473 LOC test deltas across Parts A/B mock updates + Part D `permit-versioning.test.ts` + the `firstRpcRow` block in `transforms.test.ts` is the rest). +9 net new tests (1170 → 1179). Coverage 73.04% → **72.0%** lines / 60.91% → **60.1%** branches — the dip is renormalisation from Part C deleting the fully-covered `uploadDocumentPDF` action body and its 9 tests; per-file coverage on the new helpers is 100% (`lib/permit-versioning.ts`) / +9.95pp (`lib/transforms.ts` 71% → 80.95%) / +3.4pp (`lib/permit-compliance.ts` 86% → 89.61%). Closes 8 of 12 planned Highs: R-H-1/R-H-2/R-H-3/R-H-4 + SIM-H-1/SIM-H-2/SIM-H-3/SIM-H-5/SIM-H-7/SIM-H-8. SIM-H-4 + SIM-H-6 weren't in plan scope. SIM-H-7/8 actually share a "tighten + adopt" trajectory — 19 of 24 action-file `withMutation` adoptions and the remaining Medium unused-export sweep deferred to v1.9.0 / v1.10.0 per the plan's per-PR cadence.
+
+**Landed:** commits `b56711c` (Part A) + `dd0c00b` (Part B) + `df199d4` (Part C) + `221eb01` (Part D) + `e9c6cd8` (Part E) + re-audit fix commit (pending). All verification clean:
+- ✅ `npm run lint` clean
+- ✅ `npx tsc --noEmit` clean
+- ✅ `npx vitest run --pool forks` — **1179 / 1179**
+- ✅ `npm run build` clean
+- ✅ TypeScript-reviewer re-audit: 0 Critical / 0 High, 2 Medium folded in before push
 
 ---
 
@@ -845,7 +861,7 @@ Update after every release ships:
 | v1.5.0 | `688cb23` | 0 | 11 | 18 | 0 | Security + DB cleanup — Parts B/C/D/E/F + re-audit Part G (PSE1 Crit + PSE2 High + PSE3 Med + PSE4/PSE5 Low fixed before push). +30 net tests. Part A wontfix. v1.5.0 tag. |
 | v1.6.0 | `8f270d1` | 0 | 5 | 4 | 0 | TypeScript safety — Parts A/B/C/D/E/F shipped. TS-M-1/3/8 deferred (low-impact polish + withMutation belongs to v1.8). |
 | v1.7.0 | `b12a0bc` | 0 | 7 | 5 | 0 | Architecture cleanup — Parts A/B/C/D/E/F/G + re-audit Part H (M-1 log flood dedup + M-2 embed-dim drift warn). A-H-4 (TTL respect in bulk fetch) + A-H-5 (state-machine split, was already pure) deferred. A-M-6 deferred to v1.8 SIM-class. A-M-7 deferred to v1.9. A-M-8 unreachable. +49 net tests, 73.04% lines, 60.91% branches. |
-| v1.8.0 | — | 0 | 12 | 16 | 0 | Refactor + simplify |
+| v1.8.0 | `e9c6cd8` | 0 | 8 | 0 | 0 | Refactor + simplify — Parts A/B/C/D/E shipped + typescript-reviewer re-audit (TR-M-1 firstRpcRow `T extends object` + TR-M-2 verifyAndConsumeCode runtime id guard, both fixed before push). Closes R-H-1/R-H-2/R-H-3/R-H-4 + SIM-H-1/SIM-H-2/SIM-H-3/SIM-H-5/SIM-H-7/SIM-H-8 = 8 High. SIM-H-4 / SIM-H-6 not in plan scope. 19 of 24 `withMutation` action-file adoptions + remaining Medium unused-export sweep deferred to v1.9.0/v1.10.0. +9 net tests, 1170 → 1179, 73.04% → 72.0% lines (renormalisation after Part C deleted uploadDocumentPDF + 9 tests). |
 | v1.9.0 | — | 0 | 0 | 15 | 0 | Medium kitchen sink |
 | v1.10.0 | — | 0 | 0 | 0 | 64 | Low + demo polish |
 | **Total** | | **28** | **54** | **80** | **64** | **226 findings** |

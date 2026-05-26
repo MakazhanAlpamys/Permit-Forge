@@ -31,8 +31,16 @@ export function numOrZero(v: unknown): number {
  * to the `data` field but the runtime shape differs. Six call sites were
  * repeating `Array.isArray(rows) ? rows[0] : (rows as ... | null)` with
  * subtly different type casts. This helper centralises the pick + cast.
+ *
+ * `T extends object` is required per the v1.8.0 typescript-reviewer
+ * re-audit (Medium-1): without the constraint, omitting the explicit type
+ * argument lets `T` collapse to `unknown`, widening every property access
+ * on the result. RPC return shapes are always object rows in this codebase
+ * so the constraint costs nothing.
  */
-export function firstRpcRow<T>(data: T | T[] | null | undefined): T | null {
+export function firstRpcRow<T extends object>(
+  data: T | T[] | null | undefined,
+): T | null {
   if (data == null) return null;
   if (Array.isArray(data)) return (data[0] as T | undefined) ?? null;
   return data;

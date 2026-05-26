@@ -419,7 +419,14 @@ async function verifyAndConsumeCode(
 
   // Brute-force protection: max 5 attempts per email within the code TTL window.
   const attemptKey = `${opts.attemptKeyPrefix}:${email}`;
-  const userId = user.id as string;
+  // v1.8.0 re-audit Medium-2: a future edit to `selectColumns` that drops
+  // `id` would silently turn `.eq('id', undefined)` into a zero-row UPDATE
+  // and leave the attacker's code in place. Hard fail at the boundary
+  // instead of trusting the dynamic select.
+  const userId = user.id;
+  if (typeof userId !== 'string' || userId.length === 0) {
+    return { success: false, error: opts.errorCopy.userNotFound };
+  }
   if (!(await checkCodeAttempts(attemptKey))) {
     // Invalidate the code so the attacker must trigger a new one.
     await supabase
