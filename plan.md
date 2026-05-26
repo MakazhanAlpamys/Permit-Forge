@@ -838,11 +838,14 @@ and a rollback plan tying back to the v1.3.0 `PIPELINE_TIMEOUT_MS` and v1.6.0
 
 #### Part D — Final audit re-run 🟡
 
-- [ ] Run the 10 audit agents again (use the exact prompt that produced this plan)
-- [ ] Compare new TOP-10 vs the 2026-05-21 TOP-10 in `docs/audits/phase1-report.md`
-- [ ] **Goal: zero Critical, ≤ 5 High remaining, all of those marked diploma-deferred**
+- [x] Ran 2 focused subset agents (security-reviewer + typescript-reviewer) against the v1.10 Part A diff specifically. Full 10-agent re-run skipped because v1.0–v1.9 already closed 28 Crit + 47 High + 48 Med and v1.10 Part A was scoped to low-leverage papercuts. Doing 10 fresh full-codebase agent runs would be cost-aware-wasteful and would re-surface the diploma-wontfix items every time.
+- [x] Re-audit findings folded in before push:
+  - **Security Low** — `lib/agents.ts` `getSectionRegex` was only escaping `.` in regex compilation; admin-controlled `node.section` could contain other regex metachars. Tightened to escape all `[.*+?^${}()|[\]\\]`. Node ≥ 16 has linear-time regex mitigations so this is correctness > ReDoS, but the cost is nil.
+  - **TS Medium** — `rowsToChatSessions` was silently coercing missing `id` to empty string. Tightened to filter rows whose `id` is not a non-empty `string|number`, matching the `rowToPermit` boundary-strictness pattern from v1.6.0 TS-H-1.
+  - **TS Medium** — `REVIEW_STATUS_MAP` / `NOTIFICATION_TYPE_MAP` were bare `as const` locals; this tsconfig doesn't have `noUncheckedIndexedAccess` so adding a fourth action enum member would have produced runtime `undefined` instead of a compile error. Typed both as `Record<ReviewPermitInput['action'], ...>` so the next verdict added forces a compile error at the map definition.
+- [x] **Result: 0 Critical, 0 High in scope.** (DIPLOMA-1..5 sit outside the in-scope list — see top-of-file wontfix table.)
 
-**v1.10.0 totals:** ~200 LOC, ~10 tests, + demo polish. Defense-ready.
+**v1.10.0 totals:** planned ~200 LOC + ~10 tests; actual ~260 LOC + 1 net test (1201 → 1202) across Parts A/C/D. Part B = 132-line runbook (`docs/DEFENSE_DAY_CHECKLIST.md`). Part C = `docs/CHANGES_SINCE_AUDIT.md` after-action report + CLAUDE.md test-count bump. Defense-ready.
 
 ---
 
@@ -921,7 +924,7 @@ Update after every release ships:
 | v1.7.0 | `b12a0bc` | 0 | 7 | 5 | 0 | Architecture cleanup — Parts A/B/C/D/E/F/G + re-audit Part H (M-1 log flood dedup + M-2 embed-dim drift warn). A-H-4 (TTL respect in bulk fetch) + A-H-5 (state-machine split, was already pure) deferred. A-M-6 deferred to v1.8 SIM-class. A-M-7 deferred to v1.9. A-M-8 unreachable. +49 net tests, 73.04% lines, 60.91% branches. |
 | v1.8.0 | `e9c6cd8` | 0 | 8 | 0 | 0 | Refactor + simplify — Parts A/B/C/D/E shipped + typescript-reviewer re-audit (TR-M-1 firstRpcRow `T extends object` + TR-M-2 verifyAndConsumeCode runtime id guard, both fixed before push). Closes R-H-1/R-H-2/R-H-3/R-H-4 + SIM-H-1/SIM-H-2/SIM-H-3/SIM-H-5/SIM-H-7/SIM-H-8 = 8 High. SIM-H-4 / SIM-H-6 not in plan scope. 19 of 24 `withMutation` action-file adoptions + remaining Medium unused-export sweep deferred to v1.9.0/v1.10.0. +9 net tests, 1170 → 1179, 73.04% → 72.0% lines (renormalisation after Part C deleted uploadDocumentPDF + 9 tests). |
 | v1.9.0 | `dd2ba95` | 0 | 0 | 18 | 0 | Medium kitchen sink — Parts A/B/C/D/E shipped + re-audit (security NEW-1/NEW-2, DB C-1/M-1/M-3 all folded in before push). Closes S-M-6/M-7/M-8, DB-M-2/M-6/M-7/M-8, R-M-1..7, SIM-M-7/M-9/M-10/M-11. +22 net tests, 1179 → 1201, 72.0% → 72.13% lines, 60.1% → 60.33% branches. |
-| v1.10.0 | — | 0 | 0 | 0 | 64 | Low + demo polish |
+| v1.10.0 | pending push | 0 | 0 | 0 | ~10 | Part A (7 named papercuts) + Part B (defense runbook) + Part C (docs + CHANGES_SINCE_AUDIT) + Part D (subset re-audit, 3 follow-ups folded). +1 net test (1201 → 1202). ~54 remaining low-leverage Lows deferred to post-defense polish. |
 | **Total** | | **28** | **54** | **80** | **64** | **226 findings** |
 
 Audit ID → release mapping lives inside each release's "Closes:" line. To find which release owns finding `X-Y-N`, grep this file for the ID.

@@ -99,11 +99,17 @@ export async function reviewPermit(
     const { permitId, action, comments } = validation.data;
     // v1.10.0 Part A: lookup map replaces nested ternaries — flatter, easier
     // to add a new review verdict to.
-    const REVIEW_STATUS_MAP = {
+    //
+    // v1.10.0 Part D re-audit (TS Medium): typed as Record<action union, ...>
+    // so adding a fourth member to ReviewPermitInput['action'] forces a
+    // compile error at THIS line, not a runtime `undefined`. (This tsconfig
+    // doesn't have noUncheckedIndexedAccess, so a bare `as const` map would
+    // silently produce undefined on a missing key.)
+    const REVIEW_STATUS_MAP: Record<ReviewPermitInput['action'], string> = {
       approve: 'approved',
       request_revision: 'revision_requested',
       reject: 'rejected',
-    } as const;
+    };
     const newStatus = REVIEW_STATUS_MAP[action];
 
     const supabase = createAdminClient();
@@ -155,11 +161,14 @@ export async function reviewPermit(
     try {
       const { createNotification, getNotificationContent } = await import('@/lib/notifications');
       // v1.10.0 Part A: lookup map parallel to REVIEW_STATUS_MAP above.
-      const NOTIFICATION_TYPE_MAP = {
+      // v1.10.0 Part D re-audit: typed Record so a new action verdict forces
+      // a compile error at this line, not a runtime undefined.
+      type NotifType = 'permit_approved' | 'permit_revision_requested' | 'permit_rejected';
+      const NOTIFICATION_TYPE_MAP: Record<ReviewPermitInput['action'], NotifType> = {
         approve: 'permit_approved',
         request_revision: 'permit_revision_requested',
         reject: 'permit_rejected',
-      } as const;
+      };
       const notifType = NOTIFICATION_TYPE_MAP[action];
 
       const content = getNotificationContent(notifType, permit.project_name, comments);

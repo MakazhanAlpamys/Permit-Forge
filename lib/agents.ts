@@ -207,7 +207,14 @@ const SECTION_REGEX_CACHE_MAX = 1000;
 function getSectionRegex(section: string): RegExp {
   const cached = sectionRegexCache.get(section);
   if (cached) return cached;
-  const compiled = new RegExp(`\\b${section.replace(/\./g, '\\.')}\\b`);
+  // v1.10.0 Part D re-audit (security Low): escape ALL regex special chars,
+  // not just `.`. `node.section` is admin-controlled (sourced from
+  // document_trees.tree_data JSONB written during PDF ingestion). A crafted
+  // value like `1.(+.*)` would otherwise compile to an ambiguous regex.
+  // Node ≥ 16 has linear-time regex engine mitigations so this is more of a
+  // correctness fix than a ReDoS gate, but the cost of escaping is nil.
+  const escaped = section.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const compiled = new RegExp(`\\b${escaped}\\b`);
   if (sectionRegexCache.size >= SECTION_REGEX_CACHE_MAX) {
     const firstKey = sectionRegexCache.keys().next().value;
     if (firstKey !== undefined) sectionRegexCache.delete(firstKey);

@@ -29,13 +29,26 @@ import { paginateByCursor } from '@/lib/paginate';
 // ChatSession[]` double-cast that papered over the cursor-paginator's
 // Record<string, unknown> return shape. Fields not present in the row default
 // to safe values so downstream code can rely on the shape.
+//
+// v1.10.0 Part D re-audit (TS Medium): filter rows with a missing id rather
+// than silently producing an empty-string id that would reach the client as a
+// broken session entry. Matches the rowToPermit boundary-strictness pattern
+// from lib/transforms.ts.
 function rowsToChatSessions(rows: Array<Record<string, unknown>>): ChatSession[] {
-  return rows.map((row) => ({
-    id: String(row.id ?? ''),
-    title: typeof row.title === 'string' ? row.title : 'Untitled',
-    created_at: String(row.created_at ?? ''),
-    updated_at: String(row.updated_at ?? ''),
-  }));
+  const sessions: ChatSession[] = [];
+  for (const row of rows) {
+    const id = row.id;
+    if (typeof id !== 'string' && typeof id !== 'number') continue;
+    const idStr = String(id);
+    if (!idStr) continue;
+    sessions.push({
+      id: idStr,
+      title: typeof row.title === 'string' ? row.title : 'Untitled',
+      created_at: typeof row.created_at === 'string' ? row.created_at : '',
+      updated_at: typeof row.updated_at === 'string' ? row.updated_at : '',
+    });
+  }
+  return sessions;
 }
 
 // -----------------------------------------------------------------------------
