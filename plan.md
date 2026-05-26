@@ -725,22 +725,70 @@ Items confirmed CLEAN by the re-audit: Part A `withMutation` typing, Part B `log
 
 **Tagline:** *Sweep the remaining ~30 Medium findings that didn't fit thematically into v1.0-v1.8.*
 
-**Closes:** ~30 Medium across all reports (security 8, database 11, refactor 15 not yet covered, simplify 12, etc. — minus those already absorbed)
+**Closes:** S-M-6, S-M-7, S-M-8 (3 security mediums) + DB-M-2, DB-M-6, DB-M-7, DB-M-8 (4 database mediums) + R-M-1..7 (7 refactor mediums) + SIM-M-7, SIM-M-9, SIM-M-10, SIM-M-11 (4 simplify mediums) = **18 Medium findings closed.** Remaining mediums (cleanup/analytics skeleton, executeRAGPipeline strategy router, 632-line chat-interface splitting, 8 deferred click-path) carried to v1.10.0.
 
-This is intentionally a "kitchen sink" release. Pick items in any order; one PR per logical group of 3-5 items.
+This is intentionally a "kitchen sink" release. Items grouped into 5 Parts (security / database / refactor / simplify / re-audit).
 
-- [ ] Database Mediums: `GRANT ALL TO authenticated` columnar restrictions, role self-escalation prevention, unsafe INT cast, NULL guards on jsonb_array_elements, unbounded OFFSET in pagination, document_tree JSONB size cap, HNSW ef_construction increase, semantic_cache size cap (TTL cleanup job)
-- [ ] Security Mediums: persisted prompt injection in cache (sanitize before cache), admin permit list limit param cap, password-change code rate limit
-- [ ] Refactor Mediums: 11 remaining (`devInsecureCookiesEnabled` consolidation, `getSessionFromToken` unused export removal, `User` interface privacy, `snakeToCamel` deletion, 10 `Input` types unexported, etc.)
-- [ ] Simplify Mediums: 12 (duplicate `mapRow`s, twin TTL caches, 5-copy analytics skeleton, executeRAGPipeline strategy router, 632-line `chat-interface.tsx` splitting, etc.)
-- [ ] Click-path Mediums: 11 covered above in v1.2 Part E if not already done
+#### Part A — Security Mediums (S-M-6/M-7/M-8) 🟡
 
-**Verification:**
-- [ ] After each PR: `npm run lint && npx tsc --noEmit && npm run test:coverage`
-- [ ] Coverage doesn't regress
-- [ ] No new findings introduced (re-run `npx knip` or audit subset)
+- [x] **S-M-6 — Admin permit list `limit` cap.** [actions/admin-permits.ts](actions/admin-permits.ts) `getAdminPermits` clamps the caller's `limit` to `[1, ADMIN_PERMITS_MAX_LIMIT=100]` and `offset` to `≥ 0` before `.range()`. Re-audit (NEW-1) caught that `Math.floor(NaN)` propagated to `.range(NaN, NaN)`; fix: `Number.isFinite()` guard with default-50 fallback.
+- [x] **S-M-7 — Persisted prompt injection in cache.** [lib/semantic-cache.ts](lib/semantic-cache.ts) `sanitizeCachedResponse` runs before `insert_semantic_cache`: strips `<script>` tags + rewrites `javascript:` / `vbscript:` schemes to `about:blank#`. Re-audit (NEW-2) added `data:text/html` / `data:application/xhtml+xml` to the rewrite list (executable HTML smuggled in markdown links). `data:image/*` intentionally left alone.
+- [x] **S-M-8 — Password-change code rate limit.** [actions/profile.ts](actions/profile.ts) `confirmPasswordChangeAction` swapped from the shared `default` rate-limit bucket to `checkCodeAttempts('password-change:<userId>')` + `resetCodeAttempts` on success — matches the `verifyEmailAction` / `resetPasswordAction` pattern. Previous code never reset on success, so typos locked the user out of even requesting a new code.
 
-**v1.9.0 totals:** ~300 LOC delta. ~25 new tests.
+**Landed:** commit `a1144bc`. +8 net new tests; 1179 → 1187 green.
+
+#### Part B — Database Mediums (DB-M-2/M-6/M-7/M-8) 🔴
+
+- [x] **DB-M-2 — Column-level UPDATE grants on `users`.** v1.9.0 lockdown block in [supabase/migrations/000_full_setup.sql](supabase/migrations/000_full_setup.sql): `REVOKE UPDATE ON users FROM authenticated;` then `GRANT UPDATE (full_name, username, email) ON users TO authenticated;`. `role` / `blocked` / `password_hash` / `token_version` are now service-role-only, closing the self-escalation path a direct PostgREST UPDATE would have had.
+- [x] **DB-M-6 — `get_all_users_admin` OFFSET cap.** 6-arg keyset overload re-declared with `v_capped_offset := LEAST(GREATEST(p_offset, 0), 1000);` so deep OFFSET pagination can't force a sequential scan. Re-audit (M-1) caught that the v1.9.0 body had renamed the first parameter to `p_caller_id`, breaking the `p_admin_id`-named call at [actions/admin.ts:144](actions/admin.ts#L144); restored to `p_admin_id` and the RETURNS TABLE shape pinned to the v1.5.0 10-column form.
+- [x] **DB-M-7 — `save_document_tree` size cap.** Raises `TREE_TOO_LARGE` when `pg_column_size(p_tree_data) > 4 MB`. Re-audit (C-1) caught that the v1.9.0 redeclaration used `VARCHAR(64)/RETURNS BIGINT` vs the original's `TEXT/RETURNS UUID` — `CREATE OR REPLACE` would have created a second overload instead of replacing, leaving the cap unreachable. Signature restored to `TEXT/UUID`. Re-audit (M-3) bumped cap from 1 MB to 4 MB so dense 1k-page outlines don't silently disable tree-reasoning.
+- [x] **DB-M-8 — HNSW `ef_construction` 64 → 128** on both `dubai_code_chunks_embedding_idx` and `semantic_cache_embedding_idx`. Better recall on multi-doc corpora at the cost of slower index builds during ingestion. Note: takes effect on fresh-DB runs only; live databases need an out-of-band `REINDEX CONCURRENTLY`.
+
+**Landed:** commit `24c397c`. +5 net new migration-grants invariants; 1187 → 1192 green.
+
+#### Part C — Refactor Mediums (R-M-1..7) 🟢
+
+- [x] **R-M-1 — `devInsecureCookiesEnabled()` consolidation.** [middleware.ts](middleware.ts) now imports the helper from `lib/cookie-options` instead of duplicating the env-var check inline. Legacy-alias + production-safety guard stay in lockstep with the shared helper.
+- [x] **R-M-2 — `getSessionFromToken` un-exported.** No external caller; every consumer goes through `getQuickSession`.
+- [x] **R-M-3 — `User` interface deleted** from [lib/auth.ts](lib/auth.ts). Callers use `TokenUser` (internal) or `JWTPayload` from `lib/validations`.
+- [x] **R-M-4 — `snakeToCamel<T>` removed** from [lib/transforms.ts](lib/transforms.ts) along with its 5 tests. Never got a real caller — hand-written mappers do per-field defaults better.
+- [x] **R-M-5 — 10 unused `*Input` z.infer types** dropped from [lib/validations.ts](lib/validations.ts) (`LoginInput`, `RegisterInput`, `ChatMessageInput`, `VerifyEmailInput`, `ForgotPasswordInput`, `ResetPasswordInput`, `UpdateProfileInput`, `CreateUserInput`, `PaginationInput`, `ComplianceCheckJsonInput`).
+- [x] **R-M-6 — `buildingDetailsPartialSchema` un-exported** (only consumed inside the same file by `updateBuildingDetailsSchema`).
+- [x] **R-M-7 — Three unused interfaces deleted** from [types/index.ts](types/index.ts) (`SemanticCacheEntry`, `ComplianceCheckReference` inlined into `ComplianceCheckItem`, `PermitCertificate`).
+
+**Landed:** commit `3008231`. 5 `snakeToCamel` tests removed; 1192 → 1187 green (per-helper coverage 100% for the helpers that stayed).
+
+#### Part D — Simplify Mediums (SIM-M-7/M-9/M-10/M-11) 🟢
+
+- [x] **SIM-M-7 — Collapsed `getOffTopicResponse` + `getGreetingResponse`** in [lib/chat-pipeline.ts](lib/chat-pipeline.ts) into a single `buildIntroResponse(greeting: boolean)` builder. Both shared the load-docs → empty-check → format-names skeleton; only the lead-in sentence differed.
+- [x] **SIM-M-9 — Single `NOTIFICATION_TEMPLATES`** in [lib/notifications.ts](lib/notifications.ts). Drove both per-type title/body content AND email accent color from one `Record<NotificationType, {title, body, color}>`. Previously a switch in `getNotificationContent` and a parallel `statusColors` map ~30 lines apart had to stay in sync by hand; the exhaustiveness checker now catches missed cases.
+- [x] **SIM-M-10 — Client preflight via `validatePasswordClient`.** [components/admin/user-management.tsx](components/admin/user-management.tsx) now calls a thin helper in [lib/validations.ts](lib/validations.ts) that delegates to the same `passwordSchema` the server actions use — no more drift between client preflight and server reject.
+- [x] **SIM-M-11 — Extracted `escapeHtml`** into new [lib/html-escape.ts](lib/html-escape.ts). Was duplicated byte-for-byte in `lib/email.ts` + `lib/notifications.ts`. +1 new test file pinning the 5-character contract.
+
+**Landed:** commit `d38706e`. +7 net new tests; 1187 → 1194 green.
+
+#### Part E — Re-audit follow-ups (Security + DB reviewers) 🔴
+
+The v1.9.0 re-audits found 1 Critical, 3 Medium, 2 Low across two reviewers. All actionable items folded in before push.
+
+- [x] **NEW-1 (Security Medium): `Number.isFinite()` guards** on `getAdminPermits` `safeLimit` / `safeOffset` — `Math.floor(NaN)` was propagating to `.range(NaN, NaN)` (driver-version-dependent rows). Infinity rebases to the default 50.
+- [x] **NEW-2 (Security Low): data:text/html sanitiser.** Added `data:text/html` + `data:application/xhtml+xml` to the cache sanitiser's regex list.
+- [x] **C-1 (DB Critical): `save_document_tree` signature mismatch.** The original at line 944 is `(TEXT, INT, JSONB) RETURNS UUID`; the v1.9.0 redeclaration used `(VARCHAR(64), INT, JSONB) RETURNS BIGINT`, creating a second overload instead of replacing. Restored the original signature so `CREATE OR REPLACE` actually wins at PostgREST resolution and the 4 MB cap applies.
+- [x] **M-1 (DB Medium): `p_admin_id` parameter rename.** v1.9.0 had renamed the first parameter to `p_caller_id`, breaking the named-parameter RPC call at [actions/admin.ts:144](actions/admin.ts#L144) (`{ p_admin_id: ... }`). Restored to `p_admin_id`; RETURNS TABLE shape pinned to v1.5.0's 10-column form so the existing `AdminUserRow` mapper keeps working.
+- [x] **M-3 (DB Medium): tree-data cap 1 MB → 4 MB.** A dense 1k-page-PDF outline legitimately produces ~1 MB of JSONB; the previous cap would silently disable tree-reasoning (pdf-ingestion catches the throw and continues). 4 MB matches Postgres's default TOAST out-of-line threshold so we still cap before storage gets ugly.
+- [ ] **L-1 / L-2 (DB Low): signature-less GRANT at line 1520 + REINDEX-on-live-DB note** — both informational/by-design; documented in plan.md and the migration comment block.
+
+**Landed:** commit `dd2ba95`. +7 net new tests pinning the re-audit invariants; 1194 → 1201 green.
+
+**Verification (every Part):**
+- [x] `npm run lint` clean
+- [x] `npx tsc --noEmit` clean
+- [x] `npx vitest run --pool forks` — **1201 / 1201** (was 1179 in v1.8.0; +22 net new tests)
+- [x] `npm run build` clean
+- [x] Coverage 72.0% → **72.13%** lines (+0.13), 60.1% → **60.33%** branches (+0.23) — slight improvement, no regression
+- [x] Subset re-audit: security-reviewer + database-reviewer agents both clean after Part E
+
+**v1.9.0 totals:** planned ~300 LOC + ~25 tests; actual ~870 LOC across 18 source files + 6 test files modified + 2 new files (`lib/html-escape.ts`, `test/html-escape.test.ts`). +22 net new tests (1179 → 1201). Closes 18 of ~30 Medium findings; 12 deferred to v1.10.0 (analytics skeleton, executeRAGPipeline strategy router, 632-line `chat-interface` split, 8 click-path mediums, and the lower-leverage simplify mediums).
 
 ---
 
@@ -862,7 +910,7 @@ Update after every release ships:
 | v1.6.0 | `8f270d1` | 0 | 5 | 4 | 0 | TypeScript safety — Parts A/B/C/D/E/F shipped. TS-M-1/3/8 deferred (low-impact polish + withMutation belongs to v1.8). |
 | v1.7.0 | `b12a0bc` | 0 | 7 | 5 | 0 | Architecture cleanup — Parts A/B/C/D/E/F/G + re-audit Part H (M-1 log flood dedup + M-2 embed-dim drift warn). A-H-4 (TTL respect in bulk fetch) + A-H-5 (state-machine split, was already pure) deferred. A-M-6 deferred to v1.8 SIM-class. A-M-7 deferred to v1.9. A-M-8 unreachable. +49 net tests, 73.04% lines, 60.91% branches. |
 | v1.8.0 | `e9c6cd8` | 0 | 8 | 0 | 0 | Refactor + simplify — Parts A/B/C/D/E shipped + typescript-reviewer re-audit (TR-M-1 firstRpcRow `T extends object` + TR-M-2 verifyAndConsumeCode runtime id guard, both fixed before push). Closes R-H-1/R-H-2/R-H-3/R-H-4 + SIM-H-1/SIM-H-2/SIM-H-3/SIM-H-5/SIM-H-7/SIM-H-8 = 8 High. SIM-H-4 / SIM-H-6 not in plan scope. 19 of 24 `withMutation` action-file adoptions + remaining Medium unused-export sweep deferred to v1.9.0/v1.10.0. +9 net tests, 1170 → 1179, 73.04% → 72.0% lines (renormalisation after Part C deleted uploadDocumentPDF + 9 tests). |
-| v1.9.0 | — | 0 | 0 | 15 | 0 | Medium kitchen sink |
+| v1.9.0 | `dd2ba95` | 0 | 0 | 18 | 0 | Medium kitchen sink — Parts A/B/C/D/E shipped + re-audit (security NEW-1/NEW-2, DB C-1/M-1/M-3 all folded in before push). Closes S-M-6/M-7/M-8, DB-M-2/M-6/M-7/M-8, R-M-1..7, SIM-M-7/M-9/M-10/M-11. +22 net tests, 1179 → 1201, 72.0% → 72.13% lines, 60.1% → 60.33% branches. |
 | v1.10.0 | — | 0 | 0 | 0 | 64 | Low + demo polish |
 | **Total** | | **28** | **54** | **80** | **64** | **226 findings** |
 
