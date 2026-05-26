@@ -8,7 +8,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   numOrZero,
-  snakeToCamel,
   transformPermit,
   firstRpcRow,
   type PermitRow,
@@ -42,41 +41,8 @@ describe('numOrZero', () => {
   });
 });
 
-describe('snakeToCamel', () => {
-  it('maps a flat snake_case object to camelCase', () => {
-    const row = { user_id: 'u1', total_users: 42, last_active_at: '2026-01-01' };
-    const out = snakeToCamel<{ userId: string; totalUsers: number; lastActiveAt: string }>(row);
-    expect(out).toEqual({
-      userId: 'u1',
-      totalUsers: 42,
-      lastActiveAt: '2026-01-01',
-    });
-  });
-
-  it('preserves values without any coercion (combine with numOrZero for counts)', () => {
-    const row = { count_str: '42', count_null: null };
-    const out = snakeToCamel<{ countStr: string; countNull: null }>(row);
-    expect(out.countStr).toBe('42'); // not 42 — caller is expected to numOrZero
-    expect(out.countNull).toBeNull();
-  });
-
-  it('leaves already-camel keys alone (no underscores → no replacements)', () => {
-    const row = { alreadyCamel: 1, somethingElse: 'x' };
-    const out = snakeToCamel<{ alreadyCamel: number; somethingElse: string }>(row);
-    expect(out).toEqual(row);
-  });
-
-  it('handles numeric suffix segments (foo_1 → foo1)', () => {
-    const row = { audit_log_1: 'a', step_2: 'b' };
-    const out = snakeToCamel<Record<string, unknown>>(row);
-    expect(out.auditLog1).toBe('a');
-    expect(out.step2).toBe('b');
-  });
-
-  it('returns an empty object for an empty input', () => {
-    expect(snakeToCamel({})).toEqual({});
-  });
-});
+// R-M-4 / v1.9.0 Part C: `snakeToCamel` deleted (never had a production
+// caller). Its tests removed alongside the implementation.
 
 describe('transformPermit (golden-file)', () => {
   // Fully populated row → fully populated PermitApplication. This is the

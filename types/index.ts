@@ -89,16 +89,9 @@ export interface HybridSearchResult {
 // -----------------------------------------------------------------------------
 // Semantic Cache Types
 // -----------------------------------------------------------------------------
-
-export interface SemanticCacheEntry {
-  id: string;
-  queryEmbedding: number[];
-  queryText: string;
-  response: string;
-  citations: Citation[];
-  createdAt: string;
-  ttlSeconds: number;
-}
+// R-M-7 / v1.9.0 Part C: removed `SemanticCacheEntry` — lib/semantic-cache.ts
+// works directly off `SemanticCacheResult` (the cache RPC return shape) and
+// no other module ever read the entry row type.
 
 export interface SemanticCacheResult {
   hit: boolean;
@@ -267,17 +260,16 @@ export interface ComplianceRequirements {
   additionalNotes?: string;
 }
 
-export interface ComplianceCheckReference {
-  page: number;
-  section: string;
-  excerpt: string;
-}
-
+// R-M-7 / v1.9.0 Part C: `ComplianceCheckReference` was only referenced by
+// `ComplianceCheckItem` below; nothing outside this file imported it. Inlined
+// to drop an unused public type. The Zod equivalent
+// `complianceCheckReferenceObjectSchema` in lib/validations.ts is the runtime
+// source of truth.
 export interface ComplianceCheckItem {
   category: string;
   status: 'compliant' | 'non_compliant' | 'requires_review';
   details: string;
-  codeReferences: ComplianceCheckReference[];
+  codeReferences: { page: number; section: string; excerpt: string }[];
 }
 
 export interface ComplianceCheckResult {
@@ -384,13 +376,8 @@ export interface Notification {
 // -----------------------------------------------------------------------------
 // Permit Certificate Types
 // -----------------------------------------------------------------------------
-
-export interface PermitCertificate {
-  id: string;
-  permitId: string;
-  certificateNumber: string;
-  generatedBy: string;
-  storagePath?: string;
-  generatedAt: string;
-}
+// R-M-7 / v1.9.0 Part C: removed `PermitCertificate` — the certificate API
+// route (app/api/permits/[id]/certificate/route.ts) and PDFKit generator
+// (lib/permit-certificate.ts) reach into the DB row directly. The interface
+// never had an external consumer.
 

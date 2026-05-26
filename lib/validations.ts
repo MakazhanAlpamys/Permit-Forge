@@ -1,6 +1,12 @@
 // ============================================================================
 // Zod Validation Schemas (Security-First)
 // ============================================================================
+// R-M-5 / v1.9.0 Part C: previously this file exported 10 `*Input` types
+// (LoginInput, RegisterInput, ChatMessageInput, …) that no action, component,
+// or test ever imported — actions parse with the schema and inline the result
+// type. Removed to shrink the module's public API. The schemas themselves are
+// kept exported; callers reach for `z.infer<typeof X>` inline if they need it.
+// ============================================================================
 
 import { z } from 'zod';
 
@@ -67,8 +73,6 @@ export const chatMessageSchema = z.object({
   sessionId: z.string().uuid().optional().nullable(),
 });
 
-export type ChatMessageInput = z.infer<typeof chatMessageSchema>;
-
 // -----------------------------------------------------------------------------
 // User Input Validation (Strict)
 // -----------------------------------------------------------------------------
@@ -83,8 +87,6 @@ export const loginSchema = z.object({
     .min(8, 'Password must be at least 8 characters')
     .max(100, 'Password must be 100 characters or less'),
 });
-
-export type LoginInput = z.infer<typeof loginSchema>;
 
 // -----------------------------------------------------------------------------
 // Registration Schema (with email)
@@ -103,8 +105,6 @@ export const registerSchema = z.object({
   password: passwordSchema,
 });
 
-export type RegisterInput = z.infer<typeof registerSchema>;
-
 // -----------------------------------------------------------------------------
 // Email Verification Schema
 // -----------------------------------------------------------------------------
@@ -114,8 +114,6 @@ export const verifyEmailSchema = z.object({
   code: z.string().length(6, 'Verification code must be 6 digits').regex(/^\d{6}$/, 'Code must be 6 digits'),
 });
 
-export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
-
 // -----------------------------------------------------------------------------
 // Forgot Password Schema
 // -----------------------------------------------------------------------------
@@ -123,8 +121,6 @@ export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
 export const forgotPasswordSchema = z.object({
   email: z.string().email('Invalid email address').transform(s => s.toLowerCase().trim()),
 });
-
-export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 
 // -----------------------------------------------------------------------------
 // Reset Password Schema
@@ -135,8 +131,6 @@ export const resetPasswordSchema = z.object({
   code: z.string().length(6, 'Reset code must be 6 digits').regex(/^\d{6}$/, 'Code must be 6 digits'),
   newPassword: passwordSchema,
 });
-
-export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 
 // -----------------------------------------------------------------------------
 // Update Profile Schema
@@ -152,8 +146,6 @@ export const updateProfileSchema = z.object({
     .optional(),
 });
 
-export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
-
 export const createUserSchema = z.object({
   username: z.string()
     .min(3, 'Username must be at least 3 characters')
@@ -167,8 +159,6 @@ export const createUserSchema = z.object({
     .optional(),
   role: z.enum(['admin', 'user']).default('user'),
 });
-
-export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 // -----------------------------------------------------------------------------
 // Change Password Schema
@@ -202,8 +192,6 @@ export const paginationSchema = z.object({
   limit: z.number().int().min(1).max(100).default(20),
 });
 
-export type PaginationInput = z.infer<typeof paginationSchema>;
-
 // -----------------------------------------------------------------------------
 // Permit Application Schemas
 // -----------------------------------------------------------------------------
@@ -226,7 +214,8 @@ export const buildingDetailsSchema = z.object({
 // C24H/M23: drafts can be saved incrementally — the user types one field
 // and clicks Next. Submit-time guard (submit_permit_atomic RPC) enforces
 // the actually-required fields.
-export const buildingDetailsPartialSchema = z.object({
+// R-M-6 / v1.9.0 Part C: non-exported — only used by updateBuildingDetailsSchema below.
+const buildingDetailsPartialSchema = z.object({
   numberOfFloors: z.number().int().min(0).max(200).optional(),
   totalBuiltUpArea: z.number().min(0).max(1000000).optional(),
   plotArea: z.number().min(0).max(1000000).optional(),
@@ -340,8 +329,6 @@ export const complianceCheckJsonSchema = z.object({
   checks: z.array(complianceCheckItemSchema).max(30),
   summary: z.string().max(4000),
 });
-
-export type ComplianceCheckJsonInput = z.infer<typeof complianceCheckJsonSchema>;
 
 export const jwtPayloadSchema = z.object({
   sub: z.string().uuid(),

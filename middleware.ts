@@ -4,6 +4,11 @@ import { jwtVerify } from 'jose';
 import { jwtPayloadSchema } from '@/lib/validations';
 import { SESSION_COOKIE_NAME, getJWTSecret } from '@/lib/constants';
 import { blockStatusCache } from '@/lib/block-status-cache';
+// R-M-1 / v1.9.0 Part C: previously this file duplicated the
+// DEV_INSECURE_COOKIES env check inline, which would drift the moment
+// lib/cookie-options gained a new alias or a production-safety guard. We now
+// share the helper so both callsites stay in lockstep.
+import { devInsecureCookiesEnabled } from '@/lib/cookie-options';
 
 // v1.1.0 Part C (A-C-4 / A-M-3): block-status / token_version cache TTL.
 // This is the FLOOR on staleness: between two middleware hops within this
@@ -70,11 +75,9 @@ function clearSessionAndRedirect(request: NextRequest, nonce: string, reason?: s
     // C13H/M2: harden the blocked-reason cookie (used to display the
     // "your account was blocked" message on /login). Same secure + strict
     // defaults as the session/CSRF cookies; DEV_INSECURE_COOKIES=1 is the dev
-    // escape hatch. v1.5.0 Part D renamed from NEXT_PUBLIC_DEV_INSECURE_COOKIES
-    // — the legacy name is still honored at runtime (see lib/cookie-options).
-    const devInsecure =
-      process.env.DEV_INSECURE_COOKIES === '1' ||
-      process.env.NEXT_PUBLIC_DEV_INSECURE_COOKIES === '1';
+    // escape hatch. R-M-1 / v1.9.0 Part C: routed through the shared helper
+    // so the legacy alias + production safety guard live in one place.
+    const devInsecure = devInsecureCookiesEnabled();
     response.cookies.set('ef_blocked_reason', safeReason, {
       httpOnly: false,
       secure: !devInsecure,

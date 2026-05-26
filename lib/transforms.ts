@@ -46,25 +46,11 @@ export function firstRpcRow<T extends object>(
   return data;
 }
 
-/**
- * Shallow snake_case → camelCase mapper for flat DB rows. Intended for the
- * 80% case (audit log, analytics rows, document registry). Deeply nested or
- * computed-field shapes (permits) should keep their hand-written mapper.
- *
- * `T` is the camelCase output shape — the caller asserts the row's keys
- * line up with `T`'s keys via the generic. Values are passed through as-is
- * with no coercion; combine with `numOrZero` for count fields.
- */
-export function snakeToCamel<T extends Record<string, unknown>>(
-  row: Record<string, unknown>,
-): T {
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(row)) {
-    const camel = key.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
-    out[camel] = row[key];
-  }
-  return out as T;
-}
+// R-M-4 / v1.9.0 Part C: removed `snakeToCamel<T>` — the "80% case" generic
+// mapper never got a real caller. Hand-written mappers (`rowToPermit`,
+// audit/analytics adapters) handle their own shape coercion because they need
+// per-field defaults (numOrZero, JSONB → object, etc.) that a blind key
+// rename wouldn't provide. Tests for it were removed at the same time.
 
 /**
  * Shape of a permit_applications row as returned by Supabase. Snake_case to

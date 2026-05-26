@@ -34,12 +34,10 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 // JWT Token Management
 // -----------------------------------------------------------------------------
 
-export interface User {
-  id: string;
-  username: string;
-  full_name?: string;
-  role: 'admin' | 'user';
-}
+// R-M-3 / v1.9.0 Part C: removed the unused `User` interface. No file outside
+// lib/auth.ts imported it; callers either use `TokenUser` (below) or `JWTPayload`
+// from lib/validations. Keeping a third near-identical shape was pure surface
+// noise — and a footgun if a future contributor picked the wrong one.
 
 interface TokenUser {
   id: string;
@@ -126,9 +124,12 @@ export async function destroySession(): Promise<void> {
 
 /**
  * Get current session from JWT token (NO DATABASE CALL)
- * This is used for fast authentication checks
+ * This is used for fast authentication checks.
+ *
+ * R-M-2 / v1.9.0 Part C: no longer exported — every external caller uses
+ * `getQuickSession` (which already wraps this with the shape they want).
  */
-export async function getSessionFromToken(): Promise<JWTPayload | null> {
+async function getSessionFromToken(): Promise<JWTPayload | null> {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
