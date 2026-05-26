@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase-server';
 import { embeddingsModel } from '@/lib/gemini';
 import { getDocumentByIdSync } from '@/lib/document-registry';
-import { KEYWORD_WEIGHT, VECTOR_WEIGHT } from '@/lib/constants';
+import { KEYWORD_WEIGHT, VECTOR_WEIGHT, HYBRID_SEARCH_RRF_K } from '@/lib/constants';
 import { EXACT_REFERENCE_REGEX } from '@/lib/agents';
 import { CHAT_PIPELINE_CONFIG } from '@/lib/chat-pipeline-config';
 import type { MatchedChunk, RAGQuery, RAGResult, ChunkMetadata, HybridSearchResult } from '@/types';
@@ -185,7 +185,7 @@ export async function hybridSearch(
     match_count: matchCount,
     keyword_weight: KEYWORD_WEIGHT,
     vector_weight: VECTOR_WEIGHT,
-    rrf_k: 60,
+    rrf_k: HYBRID_SEARCH_RRF_K,
     filter_document: filterDocument,
   });
 
@@ -439,7 +439,7 @@ export async function filteredHybridSearch(
     match_count: matchCount,
     keyword_weight: KEYWORD_WEIGHT,
     vector_weight: VECTOR_WEIGHT,
-    rrf_k: 60,
+    rrf_k: HYBRID_SEARCH_RRF_K,
     filter_document: null,
   });
 

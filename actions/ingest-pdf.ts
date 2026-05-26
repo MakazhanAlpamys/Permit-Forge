@@ -14,6 +14,7 @@ import { requireAdmin, requireCSRF } from '@/lib/security';
 import { clearDocumentTreeCache } from '@/lib/tree-cache';
 import { logAuditWithMeta } from '@/lib/auth';
 import { userFacingError } from '@/lib/user-facing-error';
+import { HYBRID_SEARCH_RRF_K, KEYWORD_WEIGHT, VECTOR_WEIGHT } from '@/lib/constants';
 import type { ChunkMetadata } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -241,9 +242,9 @@ export async function testRAGQuery(): Promise<{
       query_text: 'test',
       query_embedding: new Array(768).fill(0),
       match_count: 1,
-      keyword_weight: 0.3,
-      vector_weight: 0.7,
-      rrf_k: 60,
+      keyword_weight: KEYWORD_WEIGHT,
+      vector_weight: VECTOR_WEIGHT,
+      rrf_k: HYBRID_SEARCH_RRF_K,
       filter_document: null,
     });
 

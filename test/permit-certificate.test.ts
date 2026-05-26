@@ -60,9 +60,11 @@ describe('generateCertificateNumber', () => {
     expect(out.endsWith('-550E8400')).toBe(true);
   });
 
-  it('encodes the current year', () => {
+  it('encodes the current UTC year', () => {
+    // v1.10.0 Part A: uses UTC year so a permit issued seconds before midnight
+    // UTC doesn't produce a different cert number depending on Lambda region.
     const out = generateCertificateNumber('550e8400-e29b-41d4-a716-446655440000');
-    const expectedYear = new Date().getFullYear();
+    const expectedYear = new Date().getUTCFullYear();
     expect(out).toContain(`-${expectedYear}-`);
   });
 

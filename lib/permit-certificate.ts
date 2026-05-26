@@ -26,7 +26,10 @@ export interface CertificateData {
 // -----------------------------------------------------------------------------
 
 export function generateCertificateNumber(permitId: string): string {
-  const year = new Date().getFullYear();
+  // v1.10.0 Part A: use UTC year so a permit issued seconds before midnight
+  // UTC doesn't generate a different certificate number depending on which
+  // Lambda region serves the request.
+  const year = new Date().getUTCFullYear();
   const shortId = permitId.replace(/-/g, '').substring(0, 8).toUpperCase();
   return `PF-CERT-${year}-${shortId}`;
 }

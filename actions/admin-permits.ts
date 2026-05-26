@@ -97,11 +97,14 @@ export async function reviewPermit(
     }
 
     const { permitId, action, comments } = validation.data;
-    const newStatus = action === 'approve'
-      ? 'approved'
-      : action === 'request_revision'
-        ? 'revision_requested'
-        : 'rejected';
+    // v1.10.0 Part A: lookup map replaces nested ternaries — flatter, easier
+    // to add a new review verdict to.
+    const REVIEW_STATUS_MAP = {
+      approve: 'approved',
+      request_revision: 'revision_requested',
+      reject: 'rejected',
+    } as const;
+    const newStatus = REVIEW_STATUS_MAP[action];
 
     const supabase = createAdminClient();
 
@@ -151,11 +154,13 @@ export async function reviewPermit(
     let notificationWarning: string | undefined;
     try {
       const { createNotification, getNotificationContent } = await import('@/lib/notifications');
-      const notifType = action === 'approve'
-        ? 'permit_approved' as const
-        : action === 'request_revision'
-          ? 'permit_revision_requested' as const
-          : 'permit_rejected' as const;
+      // v1.10.0 Part A: lookup map parallel to REVIEW_STATUS_MAP above.
+      const NOTIFICATION_TYPE_MAP = {
+        approve: 'permit_approved',
+        request_revision: 'permit_revision_requested',
+        reject: 'permit_rejected',
+      } as const;
+      const notifType = NOTIFICATION_TYPE_MAP[action];
 
       const content = getNotificationContent(notifType, permit.project_name, comments);
       await createNotification({

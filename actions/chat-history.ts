@@ -25,6 +25,19 @@ import type { ChatSession, ChatMessage, Citation } from '@/types';
 import { signCursor, verifyCursor } from '@/lib/signed-cursor';
 import { paginateByCursor } from '@/lib/paginate';
 
+// v1.10.0 Part A: typed boundary helper — replaces the `rows as unknown as
+// ChatSession[]` double-cast that papered over the cursor-paginator's
+// Record<string, unknown> return shape. Fields not present in the row default
+// to safe values so downstream code can rely on the shape.
+function rowsToChatSessions(rows: Array<Record<string, unknown>>): ChatSession[] {
+  return rows.map((row) => ({
+    id: String(row.id ?? ''),
+    title: typeof row.title === 'string' ? row.title : 'Untitled',
+    created_at: String(row.created_at ?? ''),
+    updated_at: String(row.updated_at ?? ''),
+  }));
+}
+
 // -----------------------------------------------------------------------------
 // Helper: Verify Session Ownership — wraps the generic helper (F6).
 // -----------------------------------------------------------------------------
@@ -208,7 +221,7 @@ export async function getChatSessions(
     );
 
     return {
-      sessions: rows as unknown as ChatSession[],
+      sessions: rowsToChatSessions(rows),
       nextCursor,
       hasMore,
     };

@@ -194,6 +194,29 @@ export function classifyQueryStructure(query: string): QueryClassification {
 }
 
 /**
+ * v1.10.0 Part A — module-level cache for section→regex compilation. A 1k-node
+ * document tree was recompiling the same section regex on every call to
+ * treeReasoner (which fires per chat query when classifyQueryStructure picks
+ * the 'tree' path). Sections are stable identifiers so memoizing across calls
+ * is safe. Bounded at 1000 entries with insertion-order eviction so a
+ * pathological tree can't grow the cache unbounded.
+ */
+const sectionRegexCache = new Map<string, RegExp>();
+const SECTION_REGEX_CACHE_MAX = 1000;
+
+function getSectionRegex(section: string): RegExp {
+  const cached = sectionRegexCache.get(section);
+  if (cached) return cached;
+  const compiled = new RegExp(`\\b${section.replace(/\./g, '\\.')}\\b`);
+  if (sectionRegexCache.size >= SECTION_REGEX_CACHE_MAX) {
+    const firstKey = sectionRegexCache.keys().next().value;
+    if (firstKey !== undefined) sectionRegexCache.delete(firstKey);
+  }
+  sectionRegexCache.set(section, compiled);
+  return compiled;
+}
+
+/**
  * Tree Reasoner - Deterministic scoring algorithm (NO LLM call)
  */
 export function treeReasoner(
@@ -218,8 +241,7 @@ export function treeReasoner(
     let score = 0;
 
     if (node.section) {
-      const sectionPattern = new RegExp(`\\b${node.section.replace(/\./g, '\\.')}\\b`);
-      if (sectionPattern.test(query)) {
+      if (getSectionRegex(node.section).test(query)) {
         score += 50;
       }
     }

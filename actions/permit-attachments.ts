@@ -9,7 +9,7 @@ import { getQuickSession, logAuditWithMeta } from '@/lib/auth';
 import { requireAuth, requireCSRF } from '@/lib/security';
 import { uuidSchema } from '@/lib/validations';
 import { validateFile, generateStoragePath } from '@/lib/file-upload';
-import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
+import { FILE_UPLOAD_LIMITS, PERMIT_ATTACHMENT_SIGNED_URL_TTL_SECONDS } from '@/lib/constants';
 import { canPerformOperation, type PermitStatus } from '@/lib/permit-state-machine';
 import { firstRpcRow } from '@/lib/transforms';
 import type { PermitAttachment } from '@/types';
@@ -290,27 +290,28 @@ export async function getPermitAttachments(
 
     if (error) throw error;
 
-    // OPTIMIZATION NOTE: Signed URLs cannot be batched via Supabase API,
-    // so we must call createSignedUrl for each attachment.
-    // This is a known limitation of the Supabase Storage API.
-    // In production, consider: (1) serving through a proxy endpoint that generates
-    // signed URLs on-the-fly, or (2) pre-generating signed URLs with longer TTLs
-    // and caching them with the attachment record.
+    // v1.10.0 Part A: Supabase Storage doesn't expose a batch createSignedUrl
+    // endpoint, but the per-row calls are independent — Promise.all parallelises
+    // the network latency so a 10-attachment permit fans out into one round-trip
+    // window instead of 10 sequential round trips.
     const adminClient = createAdminClient();
-    const attachments: PermitAttachment[] = [];
+    const rows = data || [];
+    const signedResults = await Promise.all(
+      rows.map((row) =>
+        adminClient.storage
+          .from(FILE_UPLOAD_LIMITS.storageBucket)
+          .createSignedUrl(row.storage_path, PERMIT_ATTACHMENT_SIGNED_URL_TTL_SECONDS),
+      ),
+    );
 
-    for (const row of data || []) {
-      const { data: signedData, error: signedError } = await adminClient.storage
-        .from(FILE_UPLOAD_LIMITS.storageBucket)
-        .createSignedUrl(row.storage_path, 3600); // 1 hour
-
+    const attachments: PermitAttachment[] = rows.map((row, i) => {
+      const { data: signedData, error: signedError } = signedResults[i];
       if (signedError) console.warn('Failed to generate signed URL:', signedError.message);
-
-      attachments.push({
+      return {
         ...transformAttachment(row),
         signedUrl: signedData?.signedUrl,
-      });
-    }
+      };
+    });
 
     return { data: attachments };
   } catch (error) {

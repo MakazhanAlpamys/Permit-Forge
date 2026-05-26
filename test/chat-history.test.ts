@@ -269,6 +269,25 @@ describe('Chat History Server Actions', () => {
       expect(result.sessions).toHaveLength(20);
       expect(result.nextCursor).toBeDefined();
     });
+
+    // v1.10.0 Part A: pin the new rowsToChatSessions boundary helper. A row
+    // missing `title` (driver quirk / column rename) must default to
+    // 'Untitled' rather than surface `undefined` to the sidebar.
+    it('should default missing title to Untitled and stringify ids', async () => {
+      mockLimit.mockReturnValueOnce({
+        data: [
+          { id: 123, created_at: '2024-01-01', updated_at: '2024-01-02' },
+          { id: validUUID, title: null, created_at: '2024-01-01', updated_at: '2024-01-02' },
+        ],
+        error: null,
+      });
+
+      const result = await getChatSessions();
+
+      expect(result.sessions[0].id).toBe('123');
+      expect(result.sessions[0].title).toBe('Untitled');
+      expect(result.sessions[1].title).toBe('Untitled');
+    });
   });
 
   // ---------------------------------------------------------------------------

@@ -84,6 +84,17 @@ export const KEYWORD_WEIGHT = 0.3;
 /** Vector weight for hybrid search RRF */
 export const VECTOR_WEIGHT = 0.7;
 
+/**
+ * v1.10.0 Part A — RRF (Reciprocal Rank Fusion) smoothing constant. Higher
+ * values flatten the score curve so top-ranked hits don't dominate; lower
+ * values steepen it. 60 is the canonical default (matches the SQL RPC
+ * `rrf_k INT DEFAULT 60` so the JS call site and the DB stay in lockstep).
+ */
+export const HYBRID_SEARCH_RRF_K = 60;
+
+/** v1.10.0 Part A — Signed-URL TTL for permit attachments (1 hour). */
+export const PERMIT_ATTACHMENT_SIGNED_URL_TTL_SECONDS = 3600;
+
 // ============================================================================
 // Rate Limiting Configuration
 // ============================================================================
