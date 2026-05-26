@@ -207,6 +207,15 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/http-headers.ts` | `contentDispositionAttachment(filename)` (v1.5.0 S-H-4) — RFC 5987 helper used by chat/export + certificate download routes. |
 | `lib/user-facing-error.ts` | `userFacingError(err, fallback)` (v1.5.0 SECRET-M1/M3) — drops raw Postgres / driver detail before echoing to clients. Recognises a `UF:` sentinel prefix for caller-controlled pass-through. |
 | `lib/notifications.ts` | In-app + email (Nodemailer SMTP) notifications, failure-silent. v1.9.0 Part D / SIM-M-9 collapsed the per-type switch (`getNotificationContent`) and the separate `statusColors` map into a single `NOTIFICATION_TEMPLATES: Record<NotificationType, {title, body, color}>` so the exhaustiveness checker catches missed types when a new notification kind is added. |
+| `lib/permit-state-machine.ts` | Pure permit-status transition table (`canPerformOperation(status, op)` + `describeBlocked`). Single source of truth used by every server action that mutates a permit + the admin/user UIs that gate buttons. Client-safe (no DB imports). |
+| `lib/block-status-cache.ts` | Edge-runtime in-memory cache for `users.blocked` + `token_version` lookups in `middleware.ts`. 30 s TTL (cut from 5 min in v1.1.0 Part C), fail-closed on Supabase REST errors. `invalidateBlockStatus(userId)` is best-effort cross-runtime — diploma scope acceptable; production needs Redis. |
+| `lib/login-lockout.ts` | In-memory per-account lockout (5 failures → 15 min). Diploma wontfix: serverless multi-instance would need a DB-backed lockout. |
+| `lib/code-verification.ts` | `verifyAndConsumeCode({email, code, kind})` (v1.8.0 Part D / SIM-H-8) — shared 6-digit code verification used by `verifyEmailAction` + `resetPasswordAction`. Includes `checkCodeAttempts` rate limit + `clearCodeAttempts` on success. |
+| `lib/signed-cursor.ts` | HMAC-signed pagination cursors (`createCursor`/`verifyCursor`) backing chat-history pagination. Prevents cursor tampering when cursors travel through query strings. |
+| `lib/paginate.ts` | `paginateByCursor` helper that wraps signed-cursor + Supabase `.range()` into a single typed call returning `{rows, nextCursor}`. |
+| `lib/cookie-options.ts` | Cookie attribute builder. Reads `DEV_INSECURE_COOKIES=1` to drop `Secure` + relax `SameSite` for plain-HTTP localhost. Legacy `NEXT_PUBLIC_DEV_INSECURE_COOKIES` still honoured with a deprecation warning. |
+| `lib/file-magic.ts` | Magic-byte sniffer for PDF/PNG/JPG/DWG/DXF uploads (defense-in-depth on top of extension + MIME check in `lib/file-upload.ts`). |
+| `lib/api-security-headers.ts` | Per-route security header builder (`X-Content-Type-Options`, `Cache-Control: no-store` for SSE, etc.). Used by API routes that need stricter headers than the middleware default. |
 
 ### Middleware (`middleware.ts`)
 
@@ -303,3 +312,10 @@ Optional:
 ## Debugging Production
 
 `npx vercel logs permit-forge.vercel.app --limit 20 --json` is the fastest way to surface the real error behind a Server Components 500 (the browser only ever shows the `digest` hash). This is how the `ERR_REQUIRE_ESM` from `isomorphic-dompurify`/`@exodus/bytes` was found.
+
+## Project Docs
+
+- `README.md` — public-facing project description with architecture diagrams and quick-start guide.
+- [`LOCAL_NOTES.md`](LOCAL_NOTES.md) — trust-boundary detail intentionally kept out of `README.md` (gitignored upstream; tracked locally for diploma scope).
+
+Earlier working notes (`plan.md` roadmap, `docs/audits/*` phase reports, `docs/CHANGES_SINCE_AUDIT.md`, `docs/DEFENSE_DAY_CHECKLIST.md`) were dropped after defense prep. Release archaeology lives in git: `git log --grep "v1.X.0"` for release commits or `git log --grep "<audit-id>"` for individual findings.

@@ -15,7 +15,7 @@
 [![React](https://img.shields.io/badge/React-18.3-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
 [![Tailwind](https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![Zod](https://img.shields.io/badge/Zod-4-3E67B1?style=flat-square&logo=zod&logoColor=white)](https://zod.dev/)
-[![Tests](https://img.shields.io/badge/Tests-566_passing-22c55e?style=flat-square)](./test)
+[![Tests](https://img.shields.io/badge/Tests-1202_passing-22c55e?style=flat-square)](./test)
 [![License](https://img.shields.io/badge/License-MIT-eab308?style=flat-square)](./LICENSE)
 
 <br />
@@ -679,7 +679,7 @@ Generated for approved permits via `GET /api/permits/[id]/certificate`:
 
 ## Testing
 
-**1201 tests** across **73 test suites** with ~72.1% line / ~60.3% branch coverage of `lib/`, `actions/`, `components/`, and `app/api/` (v1.9.0).
+**1202 tests** across **73 test suites** with ~72.1% line / ~60.3% branch coverage of `lib/`, `actions/`, `components/`, and `app/api/` (v1.10.0).
 
 ```bash
 npm test              # Run all tests (watch mode)
