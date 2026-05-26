@@ -4,8 +4,61 @@
 
 import { createAdminClient } from './supabase-server';
 import { getTransporter } from './email';
+import { escapeHtml } from './html-escape';
 
 import type { NotificationType } from '@/types';
+
+// SIM-M-9 / v1.9.0 Part D: previously this module had a `switch (type)` and a
+// separate `statusColors: Record<NotificationType, string>` map ~30 lines
+// apart. Two parallel lookups keyed on the same union type — easy to add a
+// new NotificationType and forget the color, drift silently. Collapsed into a
+// single Record<NotificationType, NotificationTemplate> so the compiler flags
+// any missing case.
+interface NotificationTemplate {
+  title: string;
+  /** Body builder. Receives the permit's project name and optional admin comments. */
+  body: (permitName: string, comments?: string) => string;
+  color: string;
+}
+
+const NOTIFICATION_TEMPLATES: Record<NotificationType, NotificationTemplate> = {
+  permit_submitted: {
+    title: 'Permit Submitted',
+    body: (name) =>
+      `Your permit application "${name}" has been submitted successfully and is awaiting review.`,
+    color: '#3b82f6',
+  },
+  permit_under_review: {
+    title: 'Permit Under Review',
+    body: (name) =>
+      `Your permit application "${name}" is now being reviewed by an administrator.`,
+    color: '#eab308',
+  },
+  permit_approved: {
+    title: 'Permit Approved',
+    body: (name, comments) =>
+      `Your permit application "${name}" has been approved.${comments ? ` Comments: ${comments}` : ''}`,
+    color: '#7c3aed',
+  },
+  permit_rejected: {
+    title: 'Permit Rejected',
+    body: (name, comments) =>
+      `Your permit application "${name}" has been rejected.${comments ? ` Reason: ${comments}` : ''}`,
+    color: '#ef4444',
+  },
+  permit_revision_requested: {
+    title: 'Revision Requested',
+    body: (name, comments) =>
+      `Your permit application "${name}" requires revisions.${comments ? ` Details: ${comments}` : ''}`,
+    color: '#f97316',
+  },
+};
+
+const FALLBACK_TEMPLATE: NotificationTemplate = {
+  title: 'Permit Update',
+  body: (name) => `Your permit application "${name}" has been updated.`,
+  color: '#6b7280',
+};
 
 function getFromEmail(): string {
   return `PermitForge <${process.env.SMTP_USER}>`;
@@ -76,75 +129,34 @@ export async function createNotification(params: CreateNotificationParams): Prom
 }
 
 /**
- * Get notification content based on type
+ * Get notification content based on type.
+ *
+ * SIM-M-9: now reads from the shared NOTIFICATION_TEMPLATES record so the
+ * exhaustiveness checker catches missing cases when a new NotificationType
+ * is added.
  */
 export function getNotificationContent(
   type: NotificationType,
   permitName: string,
   comments?: string
 ): { title: string; body: string } {
-  switch (type) {
-    case 'permit_submitted':
-      return {
-        title: 'Permit Submitted',
-        body: `Your permit application "${permitName}" has been submitted successfully and is awaiting review.`,
-      };
-    case 'permit_under_review':
-      return {
-        title: 'Permit Under Review',
-        body: `Your permit application "${permitName}" is now being reviewed by an administrator.`,
-      };
-    case 'permit_approved':
-      return {
-        title: 'Permit Approved',
-        body: `Your permit application "${permitName}" has been approved.${comments ? ` Comments: ${comments}` : ''}`,
-      };
-    case 'permit_rejected':
-      return {
-        title: 'Permit Rejected',
-        body: `Your permit application "${permitName}" has been rejected.${comments ? ` Reason: ${comments}` : ''}`,
-      };
-    case 'permit_revision_requested':
-      return {
-        title: 'Revision Requested',
-        body: `Your permit application "${permitName}" requires revisions.${comments ? ` Details: ${comments}` : ''}`,
-      };
-    default:
-      return {
-        title: 'Permit Update',
-        body: `Your permit application "${permitName}" has been updated.`,
-      };
-  }
+  const template = NOTIFICATION_TEMPLATES[type] ?? FALLBACK_TEMPLATE;
+  return { title: template.title, body: template.body(permitName, comments) };
 }
 
 /**
- * Generate email HTML for notification
+ * Generate email HTML for notification.
+ *
+ * SIM-M-11 / v1.9.0 Part D: escapeHtml now lives in lib/html-escape (was
+ * duplicated here and in lib/email.ts).
  */
-/** Escape HTML special characters to prevent injection in emails */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
-
 function getEmailHtml(
   type: NotificationType,
   title: string,
   body: string,
   data: Record<string, unknown>
 ): string {
-  const statusColors: Record<NotificationType, string> = {
-    permit_submitted: '#3b82f6',
-    permit_under_review: '#eab308',
-    permit_approved: '#7c3aed',
-    permit_rejected: '#ef4444',
-    permit_revision_requested: '#f97316',
-  };
-
-  const color = statusColors[type] || '#6b7280';
+  const color = (NOTIFICATION_TEMPLATES[type] ?? FALLBACK_TEMPLATE).color;
   // SECURITY: Escape all user-controlled values to prevent HTML injection in emails
   const safeTitle = escapeHtml(title);
   const safeBody = escapeHtml(body);

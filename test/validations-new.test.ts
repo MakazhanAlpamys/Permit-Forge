@@ -10,6 +10,8 @@ import {
   complianceRequirementsSchema,
   reviewPermitSchema,
   fileUploadSchema,
+  validatePassword,
+  validatePasswordClient,
 } from '@/lib/validations';
 
 // ============================================================================
@@ -529,5 +531,29 @@ describe('fileUploadSchema', () => {
   it('should reject non-integer fileSize', () => {
     const result = fileUploadSchema.safeParse({ ...valid, fileSize: 1024.5 });
     expect(result.success).toBe(false);
+  });
+});
+
+// ============================================================================
+// SIM-M-10 / v1.9.0 Part D — client-side password validator
+// ============================================================================
+describe('validatePasswordClient (SIM-M-10)', () => {
+  it('returns null for a password that satisfies every rule', () => {
+    expect(validatePasswordClient('Secure1!a')).toBeNull();
+  });
+
+  it('returns the same message as the server-side validatePassword on a bad input', () => {
+    const tooShort = 'aA1!';
+    const server = validatePassword(tooShort);
+    const client = validatePasswordClient(tooShort);
+    expect(server.valid).toBe(false);
+    expect(client).toBe(server.error);
+  });
+
+  it('returns a non-null string for each rule violation', () => {
+    expect(validatePasswordClient('alllowercase1!')).toMatch(/uppercase/i);
+    expect(validatePasswordClient('ALLUPPERCASE1!')).toMatch(/lowercase/i);
+    expect(validatePasswordClient('NoDigitsHere!')).toMatch(/digit/i);
+    expect(validatePasswordClient('NoSpecial1Char')).toMatch(/special/i);
   });
 });

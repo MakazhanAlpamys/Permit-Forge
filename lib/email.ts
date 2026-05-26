@@ -4,6 +4,7 @@
 
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import { escapeHtml } from './html-escape';
 
 // TS-M-6 / v1.6.0 Part E: email logs are intentionally KEPT as console.log
 // (audit signal — operators need "verification email to user X.X.X.X was
@@ -41,14 +42,8 @@ export function getTransporter(): nodemailer.Transporter {
   return _transporter;
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
-}
+// SIM-M-11 / v1.9.0 Part D: escapeHtml now lives in lib/html-escape (was
+// duplicated here and in lib/notifications.ts).
 
 function codeEmailHtml(title: string, code: string, message: string): string {
   const safeTitle = escapeHtml(title);

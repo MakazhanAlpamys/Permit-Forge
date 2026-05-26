@@ -50,6 +50,18 @@ export function validatePassword(password: string): { valid: boolean; error?: st
   return { valid: true };
 }
 
+/**
+ * SIM-M-10 / v1.9.0 Part D: client-side password validator. Returns the first
+ * rule violation as a string, or null on success. Reuses the same Zod schema
+ * as `validatePassword` (which server actions use) so a future tightening of
+ * the password rules lands in both places at once — no more silent drift
+ * between client preflight and server reject.
+ */
+export function validatePasswordClient(password: string): string | null {
+  const result = passwordSchema.safeParse(password);
+  return result.success ? null : (result.error.issues[0]?.message ?? 'Password invalid');
+}
+
 // -----------------------------------------------------------------------------
 // UUID Validation (Strict)
 // -----------------------------------------------------------------------------

@@ -30,6 +30,7 @@ import {
   type AdminUser 
 } from '@/actions/admin';
 import { getCSRFTokenAction } from '@/actions/auth';
+import { validatePasswordClient } from '@/lib/validations';
 
 // -----------------------------------------------------------------------------
 // Modal Types
@@ -174,21 +175,14 @@ export function UserManagement({
     setPasswordError('');
   };
 
-  const validatePassword = (password: string): string | null => {
-    if (password.length < 8) return 'Password must be at least 8 characters';
-    if (!/[A-Z]/.test(password)) return 'Password must contain an uppercase letter';
-    if (!/[a-z]/.test(password)) return 'Password must contain a lowercase letter';
-    if (!/[0-9]/.test(password)) return 'Password must contain a digit';
-    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password)) {
-      return 'Password must contain a special character';
-    }
-    return null;
-  };
+  // SIM-M-10 / v1.9.0 Part D: client-side preflight is now `validatePasswordClient`
+  // from lib/validations, which delegates to the same Zod schema the server
+  // actions use. The previous inline copy of the 5 rules was a drift hazard.
 
   const handlePasswordConfirm = async () => {
     if (!modal.user) return;
 
-    const error = validatePassword(newPassword);
+    const error = validatePasswordClient(newPassword);
     if (error) {
       setPasswordError(error);
       return;

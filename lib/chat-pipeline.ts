@@ -91,24 +91,34 @@ export const CRAG_FAIL_RESPONSE =
   "I could not find relevant information about this topic in the available documents. " +
   "Please try rephrasing your question or ask about a specific aspect of building regulations.";
 
-/** Build off-topic response dynamically from registered documents */
-export async function getOffTopicResponse(): Promise<string> {
+/**
+ * SIM-M-7 / v1.9.0 Part D: greeting and off-topic responses used to be two
+ * near-identical functions with the same 4 steps (load docs → empty check →
+ * format names → wrap in template string). Collapsed into one builder; the
+ * caller picks the lead-in.
+ */
+async function buildIntroResponse(greeting: boolean): Promise<string> {
   const docs = await getAllDocuments();
+  const leadIn = greeting ? "Hello! I'm" : "I'm";
   if (docs.length === 0) {
-    return "I'm PermitForge, your building code compliance assistant. No documents are currently loaded. Please ask an admin to add and ingest documents.";
+    return `${leadIn} PermitForge, your building code compliance assistant. No documents are currently loaded. Please ask an admin to add and ingest documents.`;
+  }
+  if (greeting) {
+    const docList = docs.map(d => `- **${d.displayName}** — ${d.description || d.shortName}`).join('\n');
+    return `${leadIn} PermitForge, your building code compliance assistant. I have access to official documents:\n\n${docList}\n\nI search across all documents to give you comprehensive answers with precise source citations!`;
   }
   const docNames = docs.map(d => d.displayName).join(', ');
-  return `I'm PermitForge, your building code compliance assistant. I can help with questions about ${docNames}. Ask me anything about building regulations!`;
+  return `${leadIn} PermitForge, your building code compliance assistant. I can help with questions about ${docNames}. Ask me anything about building regulations!`;
+}
+
+/** Build off-topic response dynamically from registered documents */
+export async function getOffTopicResponse(): Promise<string> {
+  return buildIntroResponse(false);
 }
 
 /** Build greeting response dynamically from registered documents */
 export async function getGreetingResponse(): Promise<string> {
-  const docs = await getAllDocuments();
-  if (docs.length === 0) {
-    return "Hello! I'm PermitForge, your building code compliance assistant. No documents are currently loaded. Please ask an admin to add and ingest documents.";
-  }
-  const docList = docs.map(d => `- **${d.displayName}** — ${d.description || d.shortName}`).join('\n');
-  return `Hello! I'm PermitForge, your building code compliance assistant. I have access to official documents:\n\n${docList}\n\nI search across all documents to give you comprehensive answers with precise source citations!`;
+  return buildIntroResponse(true);
 }
 
 // -----------------------------------------------------------------------------
