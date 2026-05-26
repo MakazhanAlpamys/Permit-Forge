@@ -10,7 +10,7 @@ import { logAuditWithMeta } from '@/lib/auth';
 import { requireAdmin, requireCSRF, requireActionRateLimit } from '@/lib/security';
 import { uuidSchema, reviewPermitSchema, type ReviewPermitInput } from '@/lib/validations';
 import type { PermitApplication, PermitStats } from '@/types';
-import { rowsToPermits } from '@/lib/transforms';
+import { rowsToPermits, firstRpcRow } from '@/lib/transforms';
 
 export type { ReviewPermitInput };
 
@@ -108,11 +108,11 @@ export async function reviewPermit(
       throw error;
     }
 
-    const rpcResult = Array.isArray(rpcRows) ? rpcRows[0] : (rpcRows as {
+    const rpcResult = firstRpcRow<{
       status_changed?: boolean;
       project_name?: string;
       permit_user_id?: string;
-    } | null);
+    }>(rpcRows);
 
     if (!rpcResult?.status_changed) {
       return { success: false, error: 'Permit status has changed. Please refresh and try again.' };
@@ -216,12 +216,12 @@ export async function setPermitUnderReview(
       throw error;
     }
 
-    const rpcResult = Array.isArray(rpcRows) ? rpcRows[0] : (rpcRows as {
+    const rpcResult = firstRpcRow<{
       status_changed?: boolean;
       project_name?: string;
       permit_user_id?: string;
       prev_status?: string;
-    } | null);
+    }>(rpcRows);
 
     if (!rpcResult?.status_changed) {
       return { success: false, error: 'Permit status has changed. Please refresh and try again.' };

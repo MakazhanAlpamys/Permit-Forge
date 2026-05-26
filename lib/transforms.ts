@@ -24,6 +24,21 @@ export function numOrZero(v: unknown): number {
 }
 
 /**
+ * SIM-H-3 / v1.8.0 Part D — collapse the "RPC row → first element" shim.
+ *
+ * Postgres SECURITY DEFINER functions return either RETURNS TABLE (array of
+ * rows) or RETURNS RECORD (scalar). The supabase-js client normalises both
+ * to the `data` field but the runtime shape differs. Six call sites were
+ * repeating `Array.isArray(rows) ? rows[0] : (rows as ... | null)` with
+ * subtly different type casts. This helper centralises the pick + cast.
+ */
+export function firstRpcRow<T>(data: T | T[] | null | undefined): T | null {
+  if (data == null) return null;
+  if (Array.isArray(data)) return (data[0] as T | undefined) ?? null;
+  return data;
+}
+
+/**
  * Shallow snake_case → camelCase mapper for flat DB rows. Intended for the
  * 80% case (audit log, analytics rows, document registry). Deeply nested or
  * computed-field shapes (permits) should keep their hand-written mapper.

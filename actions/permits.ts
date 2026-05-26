@@ -20,10 +20,13 @@ import type {
   PermitApplication,
   PermitStatusHistoryEntry,
 } from '@/types';
-import { rowToPermit, rowsToPermits } from '@/lib/transforms';
+import { rowToPermit, rowsToPermits, firstRpcRow } from '@/lib/transforms';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
 import { canPerformOperation, type PermitStatus } from '@/lib/permit-state-machine';
-import { logger } from '@/lib/logger';
+import {
+  applyOptimisticUpdate,
+  VERSION_CONFLICT_MESSAGE,
+} from '@/lib/permit-versioning';
 
 // Re-export input types for components
 export type { CreatePermitInput, UpdateBuildingDetailsInput, UpdateComplianceRequirementsInput };
@@ -74,7 +77,7 @@ export async function createPermit(
     });
 
     if (error) throw error;
-    const newId = Array.isArray(rpcRows) ? rpcRows[0]?.permit_id : (rpcRows as { permit_id?: string } | null)?.permit_id;
+    const newId = firstRpcRow<{ permit_id?: string }>(rpcRows)?.permit_id;
     if (!newId) throw new Error('create_permit_atomic returned no id');
 
     await logAuditWithMeta(authCheck.user.id, 'permit_created', {
@@ -143,44 +146,26 @@ export async function updatePermitBuildingDetails(
 
     // B16: any change to building_details invalidates the prior compliance
     // result (the AI evaluated the old shape).
-    // X17: optimistic-locking — when the client supplied an expectedVersion,
-    // include it in the WHERE clause and bump version on success. Zero rows
-    // affected → the row was edited in another tab.
-    const { expectedVersion } = validation.data;
-    let updateBuilder = supabase
-      .from('permit_applications')
-      .update({
+    // X17 / SIM-H-2 (v1.8.0 Part D): optimistic-locking lives in
+    // lib/permit-versioning.ts so the twin compliance-requirements path
+    // doesn't drift.
+    const result = await applyOptimisticUpdate({
+      client: supabase,
+      permitId: validation.data.permitId,
+      userId: authCheck.user.id,
+      expectedVersion: validation.data.expectedVersion,
+      op: 'updatePermitBuildingDetails',
+      patch: {
         building_details: validation.data.buildingDetails,
         compliance_check_result: null,
-        version: typeof expectedVersion === 'number' ? expectedVersion + 1 : undefined,
-      })
-      .eq('id', validation.data.permitId)
-      .eq('user_id', authCheck.user.id);
-    if (typeof expectedVersion === 'number') {
-      updateBuilder = updateBuilder.eq('version', expectedVersion);
-    }
-    const { data: updated, error } = await updateBuilder.select('id');
+      },
+    });
 
-    if (error) throw error;
-    if (typeof expectedVersion === 'number' && (!updated || updated.length === 0)) {
-      // A-M-1 / v1.7.0 Part G: count optimistic-lock collisions so we can
-      // track how often users get bounced. A high rate would suggest the
-      // form needs an auto-save indicator, or that the version check should
-      // diff fields instead of comparing the whole row.
-      logger.warn(
-        {
-          event: 'optimistic_lock_collision',
-          op: 'updatePermitBuildingDetails',
-          permitId: validation.data.permitId,
-          userId: authCheck.user.id,
-          expectedVersion,
-        },
-        'Optimistic lock collision — user edited in another tab',
-      );
-      return {
-        success: false,
-        error: 'This permit was changed in another tab. Reload the page to see the latest version.',
-      };
+    if (!result.ok) {
+      if (result.reason === 'version_conflict') {
+        return { success: false, error: VERSION_CONFLICT_MESSAGE };
+      }
+      throw result.error;
     }
 
     return { success: true };
@@ -241,39 +226,25 @@ export async function updatePermitComplianceRequirements(
     }
 
     // B16: compliance requirement changes also invalidate the prior result.
-    // X17: same optimistic-locking pattern as updatePermitBuildingDetails.
-    const { expectedVersion } = validation.data;
-    let updateBuilder = supabase
-      .from('permit_applications')
-      .update({
+    // X17 / SIM-H-2 (v1.8.0 Part D): shares the same helper as
+    // updatePermitBuildingDetails — see lib/permit-versioning.ts.
+    const result = await applyOptimisticUpdate({
+      client: supabase,
+      permitId: validation.data.permitId,
+      userId: authCheck.user.id,
+      expectedVersion: validation.data.expectedVersion,
+      op: 'updatePermitComplianceRequirements',
+      patch: {
         compliance_requirements: validation.data.complianceRequirements,
         compliance_check_result: null,
-        version: typeof expectedVersion === 'number' ? expectedVersion + 1 : undefined,
-      })
-      .eq('id', validation.data.permitId)
-      .eq('user_id', authCheck.user.id);
-    if (typeof expectedVersion === 'number') {
-      updateBuilder = updateBuilder.eq('version', expectedVersion);
-    }
-    const { data: updated, error } = await updateBuilder.select('id');
+      },
+    });
 
-    if (error) throw error;
-    if (typeof expectedVersion === 'number' && (!updated || updated.length === 0)) {
-      // A-M-1 / v1.7.0 Part G: same counter as updatePermitBuildingDetails.
-      logger.warn(
-        {
-          event: 'optimistic_lock_collision',
-          op: 'updatePermitComplianceRequirements',
-          permitId: validation.data.permitId,
-          userId: authCheck.user.id,
-          expectedVersion,
-        },
-        'Optimistic lock collision — user edited in another tab',
-      );
-      return {
-        success: false,
-        error: 'This permit was changed in another tab. Reload the page to see the latest version.',
-      };
+    if (!result.ok) {
+      if (result.reason === 'version_conflict') {
+        return { success: false, error: VERSION_CONFLICT_MESSAGE };
+      }
+      throw result.error;
     }
 
     return { success: true };
@@ -334,7 +305,11 @@ export async function submitPermit(
       return { success: false, error: 'Failed to submit permit' };
     }
 
-    const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    const row = firstRpcRow<{
+      status_changed?: boolean;
+      project_name?: string;
+      is_resubmission?: boolean;
+    }>(rpcRows);
     if (!row) {
       return { success: false, error: 'Failed to submit permit' };
     }
@@ -346,7 +321,7 @@ export async function submitPermit(
     }
 
     const isResubmission: boolean = !!row.is_resubmission;
-    const projectName: string = row.project_name;
+    const projectName: string = row.project_name ?? '';
 
     await logAuditWithMeta(authCheck.user.id, 'permit_submitted', {
       metadata: { permitId, isResubmission },
@@ -811,7 +786,10 @@ export async function revisePermit(
       return { success: false, error: 'Failed to start revision' };
     }
 
-    const row = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    const row = firstRpcRow<{
+      status_changed?: boolean;
+      prev_status?: string;
+    }>(rpcRows);
     if (!row) {
       return { success: false, error: 'Failed to start revision' };
     }

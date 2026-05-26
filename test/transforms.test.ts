@@ -6,7 +6,13 @@
 // suites mock it out and don't exercise its real branches.
 
 import { describe, it, expect } from 'vitest';
-import { numOrZero, snakeToCamel, transformPermit, type PermitRow } from '@/lib/transforms';
+import {
+  numOrZero,
+  snakeToCamel,
+  transformPermit,
+  firstRpcRow,
+  type PermitRow,
+} from '@/lib/transforms';
 import type { BuildingDetails, ComplianceRequirements } from '@/types';
 
 describe('numOrZero', () => {
@@ -195,5 +201,39 @@ describe('transformPermit (golden-file)', () => {
   it('returns username undefined when users join is present but username is empty', () => {
     const row: PermitRow = { ...fullRow, users: { username: '' } };
     expect(transformPermit(row).username).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// firstRpcRow (SIM-H-3 / v1.8.0 Part D)
+// ============================================================================
+// Centralised "supabase RPC returns either an array OR a scalar row" shim that
+// 6 callsites used to repeat. The helper must collapse both to a single row.
+
+describe('firstRpcRow', () => {
+  it('returns the first element when given an array', () => {
+    const rows = [{ id: 1 }, { id: 2 }];
+    expect(firstRpcRow(rows)).toEqual({ id: 1 });
+  });
+
+  it('returns the scalar row unchanged when not an array', () => {
+    const row = { status_changed: true, project_name: 'X' };
+    expect(firstRpcRow(row)).toEqual(row);
+  });
+
+  it('returns null for null/undefined/empty-array input', () => {
+    expect(firstRpcRow(null)).toBeNull();
+    expect(firstRpcRow(undefined)).toBeNull();
+    expect(firstRpcRow([])).toBeNull();
+  });
+
+  it('preserves the generic row type at the call site', () => {
+    type Row = { permit_id?: string };
+    const arr: Row[] = [{ permit_id: 'abc' }];
+    const scalar: Row = { permit_id: 'def' };
+    const fromArr = firstRpcRow<Row>(arr);
+    const fromScalar = firstRpcRow<Row>(scalar);
+    expect(fromArr?.permit_id).toBe('abc');
+    expect(fromScalar?.permit_id).toBe('def');
   });
 });

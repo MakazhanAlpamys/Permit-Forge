@@ -130,6 +130,11 @@ vi.mock('@/lib/transforms', () => {
     rowToPermit: (row: Record<string, unknown>) => transformPermit(row),
     rowsToPermits: (rows: Record<string, unknown>[] | null | undefined) =>
       (rows ?? []).map(transformPermit),
+    firstRpcRow: <T,>(data: T | T[] | null | undefined): T | null => {
+      if (data == null) return null;
+      if (Array.isArray(data)) return (data[0] as T | undefined) ?? null;
+      return data;
+    },
   };
 });
 

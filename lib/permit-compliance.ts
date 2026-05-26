@@ -24,73 +24,71 @@ const MAX_LLM_JSON_BYTES = 64 * 1024;
 // Query Generation
 // -----------------------------------------------------------------------------
 
+// SIM-H-5 / v1.8.0 Part D: query templates are a lookup table rather than a
+// conditional chain. Each entry has a `guard` that decides whether the area
+// applies to this permit, and a `format` that builds the search query. Adding
+// a new compliance area is now a one-row append.
+interface ComplianceQueryTemplate {
+  guard: (bd: BuildingDetails, cr: ComplianceRequirements) => boolean;
+  format: (bd: BuildingDetails, cr: ComplianceRequirements, typeLabel: string) => string;
+}
+
+const COMPLIANCE_QUERY_TEMPLATES: ComplianceQueryTemplate[] = [
+  {
+    guard: (bd) => !!bd.buildingHeight,
+    format: (bd, _cr, t) =>
+      `building height requirements ${t} ${bd.buildingHeight} meters ${bd.numberOfFloors} floors`,
+  },
+  {
+    guard: (bd, cr) => !!cr.parkingCompliance && bd.numberOfParkingSpaces !== undefined,
+    format: (bd, _cr, t) =>
+      `parking requirements ${t} ${bd.numberOfUnits} units ${bd.numberOfParkingSpaces} parking spaces`,
+  },
+  {
+    guard: (_bd, cr) => !!cr.fireSafety,
+    format: (bd, _cr, t) =>
+      `fire safety requirements ${bd.occupancyType || t} building height ${bd.buildingHeight} meters`,
+  },
+  {
+    guard: (_bd, cr) => !!cr.accessibility,
+    format: (bd, _cr, t) => `accessibility requirements ${t} ${bd.numberOfFloors} floors`,
+  },
+  {
+    guard: (_bd, cr) => !!cr.structuralSafety,
+    format: (bd, _cr, t) =>
+      `structural requirements ${bd.constructionType || ''} ${t} ${bd.numberOfFloors} floors`,
+  },
+  {
+    guard: (_bd, cr) => !!cr.mepSystems,
+    format: (bd, _cr, t) =>
+      `MEP mechanical electrical plumbing requirements ${t} ${bd.totalBuiltUpArea} sqm`,
+  },
+  {
+    guard: (_bd, cr) => !!cr.energyEfficiency,
+    format: (_bd, _cr, t) => `energy efficiency requirements ${t} glazing insulation`,
+  },
+  {
+    guard: (bd) => !!bd.plotArea && !!bd.totalBuiltUpArea,
+    format: (bd, _cr, t) =>
+      `plot coverage floor area ratio ${t} ${bd.plotArea} plot ${bd.totalBuiltUpArea} built area`,
+  },
+];
+
 function generateComplianceQueries(
   buildingDetails: BuildingDetails,
   complianceReqs: ComplianceRequirements,
   projectType: ProjectType
 ): string[] {
-  const queries: string[] = [];
   const typeLabel = projectType.replace('_', ' ');
 
-  // Always check building height requirements
-  if (buildingDetails.buildingHeight) {
-    queries.push(
-      `building height requirements ${typeLabel} ${buildingDetails.buildingHeight} meters ${buildingDetails.numberOfFloors} floors`
-    );
-  }
+  const queries = COMPLIANCE_QUERY_TEMPLATES
+    .filter((tmpl) => tmpl.guard(buildingDetails, complianceReqs))
+    .map((tmpl) => tmpl.format(buildingDetails, complianceReqs, typeLabel));
 
-  // Parking compliance
-  if (complianceReqs.parkingCompliance && buildingDetails.numberOfParkingSpaces !== undefined) {
-    queries.push(
-      `parking requirements ${typeLabel} ${buildingDetails.numberOfUnits} units ${buildingDetails.numberOfParkingSpaces} parking spaces`
-    );
-  }
-
-  // Fire safety
-  if (complianceReqs.fireSafety) {
-    queries.push(
-      `fire safety requirements ${buildingDetails.occupancyType || typeLabel} building height ${buildingDetails.buildingHeight} meters`
-    );
-  }
-
-  // Accessibility
-  if (complianceReqs.accessibility) {
-    queries.push(
-      `accessibility requirements ${typeLabel} ${buildingDetails.numberOfFloors} floors`
-    );
-  }
-
-  // Structural safety
-  if (complianceReqs.structuralSafety) {
-    queries.push(
-      `structural requirements ${buildingDetails.constructionType || ''} ${typeLabel} ${buildingDetails.numberOfFloors} floors`
-    );
-  }
-
-  // MEP systems
-  if (complianceReqs.mepSystems) {
-    queries.push(
-      `MEP mechanical electrical plumbing requirements ${typeLabel} ${buildingDetails.totalBuiltUpArea} sqm`
-    );
-  }
-
-  // Energy efficiency
-  if (complianceReqs.energyEfficiency) {
-    queries.push(
-      `energy efficiency requirements ${typeLabel} glazing insulation`
-    );
-  }
-
-  // Plot coverage / FAR
-  if (buildingDetails.plotArea && buildingDetails.totalBuiltUpArea) {
-    queries.push(
-      `plot coverage floor area ratio ${typeLabel} ${buildingDetails.plotArea} plot ${buildingDetails.totalBuiltUpArea} built area`
-    );
-  }
-
-  // If no specific requirements selected, add general query
+  // If no specific requirements applied, fall back to a generic query so the
+  // pipeline still has something to search on.
   if (queries.length === 0) {
-    queries.push(`${typeLabel} building requirements building code`);
+    return [`${typeLabel} building requirements building code`];
   }
 
   return queries;

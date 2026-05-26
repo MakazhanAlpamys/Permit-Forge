@@ -341,6 +341,105 @@ export async function registerAction(formData: FormData): Promise<{ error?: stri
 }
 
 // -----------------------------------------------------------------------------
+// SIM-H-8 / v1.8.0 Part D — shared "verify a 6-digit code" pipeline.
+// -----------------------------------------------------------------------------
+// verifyEmailAction and resetPasswordAction had the same ~30-line block:
+// look up user → check the code column + expiry → run the brute-force
+// attempt limiter → constant-time compare → clear-on-too-many-attempts.
+// Only the column names + attempt-key prefix differed. This helper unifies
+// the pipeline so the two callers only own the "what to mutate on success"
+// part (email_verified=true vs password_hash=...).
+
+interface VerifyAndConsumeCodeOptions {
+  /** Column on `users` holding the bcrypt'd 6-digit code. */
+  codeColumn: 'verification_code' | 'reset_code';
+  /** Column on `users` holding the code's expiry timestamp. */
+  expiryColumn: 'code_expires_at' | 'reset_code_expires_at';
+  /** Prefix for the per-email attempt counter ('verify:' or 'reset:'). */
+  attemptKeyPrefix: 'verify' | 'reset';
+  /** Pre-baked user-facing error copy so each caller keeps its own phrasing. */
+  errorCopy: {
+    userNotFound: string;
+    noCode: string;
+    expired: string;
+    tooManyAttempts: string;
+    invalid: string;
+  };
+  /** Optional pre-check (e.g. "email already verified") run AFTER the user fetch. */
+  precheck?: (user: Record<string, unknown>) => string | undefined;
+}
+
+interface VerifyAndConsumeCodeSuccess {
+  user: { id: string; [k: string]: unknown };
+  attemptKey: string;
+}
+
+async function verifyAndConsumeCode(
+  email: string,
+  code: string,
+  opts: VerifyAndConsumeCodeOptions,
+): Promise<{ success: true; data: VerifyAndConsumeCodeSuccess } | { success: false; error: string }> {
+  const supabase = createAdminClient();
+
+  // Select id + email_verified (verifyEmail precheck reads it) + the two
+  // dynamic columns. PostgREST is happy with literal column names here.
+  const selectColumns = `id, email_verified, ${opts.codeColumn}, ${opts.expiryColumn}`;
+
+  const { data, error } = await supabase
+    .from('users')
+    .select(selectColumns)
+    .eq('email', email)
+    .single();
+
+  // The dynamic .select() loses PostgREST's static row typing, so we narrow
+  // back to a Record at the boundary.
+  const user = data as unknown as Record<string, unknown> | null;
+
+  if (error || !user) {
+    return { success: false, error: opts.errorCopy.userNotFound };
+  }
+
+  if (opts.precheck) {
+    const precheckErr = opts.precheck(user);
+    if (precheckErr) {
+      return { success: false, error: precheckErr };
+    }
+  }
+
+  const codeValue = user[opts.codeColumn] as string | null | undefined;
+  const expiryValue = user[opts.expiryColumn] as string | null | undefined;
+
+  if (!codeValue || !expiryValue) {
+    return { success: false, error: opts.errorCopy.noCode };
+  }
+
+  if (new Date(expiryValue) < new Date()) {
+    return { success: false, error: opts.errorCopy.expired };
+  }
+
+  // Brute-force protection: max 5 attempts per email within the code TTL window.
+  const attemptKey = `${opts.attemptKeyPrefix}:${email}`;
+  const userId = user.id as string;
+  if (!(await checkCodeAttempts(attemptKey))) {
+    // Invalidate the code so the attacker must trigger a new one.
+    await supabase
+      .from('users')
+      .update({ [opts.codeColumn]: null, [opts.expiryColumn]: null })
+      .eq('id', userId);
+    return { success: false, error: opts.errorCopy.tooManyAttempts };
+  }
+
+  if (!safeEqual(codeValue, code)) {
+    return { success: false, error: opts.errorCopy.invalid };
+  }
+
+  return {
+    success: true,
+    data: { user: { ...user, id: userId }, attemptKey },
+  };
+}
+
+// -----------------------------------------------------------------------------
 // Email Verification Action
 // -----------------------------------------------------------------------------
 
@@ -354,45 +453,29 @@ export async function verifyEmailAction(
       return { error: validation.error.issues[0].message };
     }
 
+    const verifyResult = await verifyAndConsumeCode(
+      validation.data.email,
+      validation.data.code,
+      {
+        codeColumn: 'verification_code',
+        expiryColumn: 'code_expires_at',
+        attemptKeyPrefix: 'verify',
+        errorCopy: {
+          userNotFound: 'User not found',
+          noCode: 'No verification code found. Please register again.',
+          expired: 'Verification code has expired. Please register again.',
+          tooManyAttempts: 'Too many failed attempts. Please request a new verification code.',
+          invalid: 'Invalid verification code',
+        },
+        precheck: (u) => (u.email_verified ? 'Email is already verified' : undefined),
+      },
+    );
+
+    if (!verifyResult.success) {
+      return { error: verifyResult.error };
+    }
+
     const supabase = createAdminClient();
-
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('id, verification_code, code_expires_at, email_verified')
-      .eq('email', validation.data.email)
-      .single();
-
-    if (error || !user) {
-      return { error: 'User not found' };
-    }
-
-    if (user.email_verified) {
-      return { error: 'Email is already verified' };
-    }
-
-    if (!user.verification_code || !user.code_expires_at) {
-      return { error: 'No verification code found. Please register again.' };
-    }
-
-    if (new Date(user.code_expires_at) < new Date()) {
-      return { error: 'Verification code has expired. Please register again.' };
-    }
-
-    // Brute-force protection: max 5 attempts per email within the code TTL window
-    const attemptKey = `verify:${validation.data.email}`;
-    if (!(await checkCodeAttempts(attemptKey))) {
-      // Invalidate the code so attacker must trigger a new one
-      await supabase
-        .from('users')
-        .update({ verification_code: null, code_expires_at: null })
-        .eq('id', user.id);
-      return { error: 'Too many failed attempts. Please request a new verification code.' };
-    }
-
-    if (!safeEqual(user.verification_code, validation.data.code)) {
-      return { error: 'Invalid verification code' };
-    }
-
     const { error: updateError } = await supabase
       .from('users')
       .update({
@@ -400,13 +483,13 @@ export async function verifyEmailAction(
         verification_code: null,
         code_expires_at: null,
       })
-      .eq('id', user.id);
+      .eq('id', verifyResult.data.user.id);
 
     if (updateError) {
       return { error: 'Verification failed. Please try again.' };
     }
 
-    await resetCodeAttempts(attemptKey);
+    await resetCodeAttempts(verifyResult.data.attemptKey);
     return { success: true };
   } catch (error) {
     console.error('Email verification error:', error);
@@ -563,43 +646,31 @@ export async function resetPasswordAction(
       return { error: validation.error.issues[0].message };
     }
 
-    const supabase = createAdminClient();
+    const verifyResult = await verifyAndConsumeCode(
+      validation.data.email,
+      validation.data.code,
+      {
+        codeColumn: 'reset_code',
+        expiryColumn: 'reset_code_expires_at',
+        attemptKeyPrefix: 'reset',
+        errorCopy: {
+          userNotFound: 'Invalid request',
+          noCode: 'No reset code found. Please request a new one.',
+          expired: 'Reset code has expired. Please request a new one.',
+          tooManyAttempts: 'Too many failed attempts. Please request a new reset code.',
+          invalid: 'Invalid reset code',
+        },
+      },
+    );
 
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('id, reset_code, reset_code_expires_at')
-      .eq('email', validation.data.email)
-      .single();
-
-    if (error || !user) {
-      return { error: 'Invalid request' };
+    if (!verifyResult.success) {
+      return { error: verifyResult.error };
     }
 
-    if (!user.reset_code || !user.reset_code_expires_at) {
-      return { error: 'No reset code found. Please request a new one.' };
-    }
-
-    if (new Date(user.reset_code_expires_at) < new Date()) {
-      return { error: 'Reset code has expired. Please request a new one.' };
-    }
-
-    // Brute-force protection: max 5 attempts per email within the code TTL window
-    const resetAttemptKey = `reset:${validation.data.email}`;
-    if (!(await checkCodeAttempts(resetAttemptKey))) {
-      // Invalidate the reset code so attacker must request a new one
-      await supabase
-        .from('users')
-        .update({ reset_code: null, reset_code_expires_at: null })
-        .eq('id', user.id);
-      return { error: 'Too many failed attempts. Please request a new reset code.' };
-    }
-
-    if (!safeEqual(user.reset_code, validation.data.code)) {
-      return { error: 'Invalid reset code' };
-    }
-
+    const userId = verifyResult.data.user.id;
     const password_hash = await hashPassword(validation.data.newPassword);
 
+    const supabase = createAdminClient();
     const { error: updateError } = await supabase
       .from('users')
       .update({
@@ -607,7 +678,7 @@ export async function resetPasswordAction(
         reset_code: null,
         reset_code_expires_at: null,
       })
-      .eq('id', user.id);
+      .eq('id', userId);
 
     if (updateError) {
       return { error: 'Password reset failed. Please try again.' };
@@ -615,11 +686,11 @@ export async function resetPasswordAction(
 
     // C14H: bump token_version so any device still holding the old JWT is
     // logged out at its next middleware hop.
-    await supabase.rpc('bump_user_token_version', { p_user_id: user.id });
+    await supabase.rpc('bump_user_token_version', { p_user_id: userId });
 
-    await resetCodeAttempts(resetAttemptKey);
+    await resetCodeAttempts(verifyResult.data.attemptKey);
 
-    await logAuditWithMeta(user.id, 'password_reset', {
+    await logAuditWithMeta(userId, 'password_reset', {
       metadata: { method: 'email_code' },
     });
 

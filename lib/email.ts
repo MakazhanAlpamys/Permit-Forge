@@ -81,91 +81,86 @@ function codeEmailHtml(title: string, code: string, message: string): string {
   `;
 }
 
-export async function sendVerificationEmail(email: string, code: string): Promise<boolean> {
+// SIM-H-7 / v1.8.0 Part D: three separate sendXEmail copies collapsed into a
+// single sendCodeEmail dispatcher. The per-template differences (subject,
+// inner heading, body copy, log labels) live in this map so adding a new
+// code-email type is a one-row append. The original three exports stay as
+// thin wrappers for callsite stability.
+type CodeEmailTemplate = 'verification' | 'password_reset' | 'password_change';
+
+interface CodeEmailTemplateConfig {
+  subject: string;
+  htmlTitle: string;
+  htmlMessage: string;
+  /** Operator-facing label used in INFO logs (audit signal, no PII). */
+  logLabel: string;
+}
+
+const EMAIL_CODE_TEMPLATES: Record<CodeEmailTemplate, CodeEmailTemplateConfig> = {
+  verification: {
+    subject: 'Verify your email — PermitForge',
+    htmlTitle: 'Email Verification',
+    htmlMessage: 'Use the code below to verify your email address.',
+    logLabel: 'verification',
+  },
+  password_reset: {
+    subject: 'Password Reset — PermitForge',
+    htmlTitle: 'Password Reset',
+    htmlMessage: 'Use the code below to reset your password.',
+    logLabel: 'password reset',
+  },
+  password_change: {
+    subject: 'Password Change Code — PermitForge',
+    htmlTitle: 'Password Change',
+    htmlMessage: 'Use the code below to confirm your password change.',
+    logLabel: 'password change',
+  },
+};
+
+async function sendCodeEmail(
+  email: string,
+  code: string,
+  template: CodeEmailTemplate,
+): Promise<boolean> {
+  const cfg = EMAIL_CODE_TEMPLATES[template];
+
   if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn('SMTP_USER/SMTP_PASS not set — skipping verification email');
+    console.warn(`SMTP_USER/SMTP_PASS not set — skipping ${cfg.logLabel} email`);
     return false;
   }
 
   try {
     const fromEmail = getFromEmail();
-    console.log('[Email] Sending verification email recipient=%s', hashRecipient(email));
+    console.log('[Email] Sending %s email recipient=%s', cfg.logLabel, hashRecipient(email));
 
     await getTransporter().sendMail({
       from: fromEmail,
       to: email,
-      subject: 'Verify your email — PermitForge',
-      html: codeEmailHtml(
-        'Email Verification',
-        code,
-        'Use the code below to verify your email address.'
-      ),
+      subject: cfg.subject,
+      html: codeEmailHtml(cfg.htmlTitle, code, cfg.htmlMessage),
     });
 
-    console.log('[Email] Verification email sent successfully');
+    console.log('[Email] %s email sent successfully', cfg.logLabel);
     return true;
   } catch (error) {
-    console.error('Failed to send verification email:', error instanceof Error ? error.message : error);
+    console.error(
+      `Failed to send ${cfg.logLabel} email:`,
+      error instanceof Error ? error.message : error,
+    );
     return false;
   }
 }
 
-export async function sendPasswordResetEmail(email: string, code: string): Promise<boolean> {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn('SMTP_USER/SMTP_PASS not set — skipping password reset email');
-    return false;
-  }
-
-  try {
-    const fromEmail = getFromEmail();
-    console.log('[Email] Sending password reset email recipient=%s', hashRecipient(email));
-
-    await getTransporter().sendMail({
-      from: fromEmail,
-      to: email,
-      subject: 'Password Reset — PermitForge',
-      html: codeEmailHtml(
-        'Password Reset',
-        code,
-        'Use the code below to reset your password.'
-      ),
-    });
-
-    console.log('[Email] Password reset email sent successfully');
-    return true;
-  } catch (error) {
-    console.error('Failed to send password reset email:', error instanceof Error ? error.message : error);
-    return false;
-  }
+export function sendVerificationEmail(email: string, code: string): Promise<boolean> {
+  return sendCodeEmail(email, code, 'verification');
 }
 
-export async function sendPasswordChangeCodeEmail(email: string, code: string): Promise<boolean> {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn('SMTP_USER/SMTP_PASS not set — skipping password change email');
-    return false;
-  }
+export function sendPasswordResetEmail(email: string, code: string): Promise<boolean> {
+  return sendCodeEmail(email, code, 'password_reset');
+}
 
-  try {
-    const fromEmail = getFromEmail();
-    console.log('[Email] Sending password change email recipient=%s', hashRecipient(email));
-
-    await getTransporter().sendMail({
-      from: fromEmail,
-      to: email,
-      subject: 'Password Change Code — PermitForge',
-      html: codeEmailHtml(
-        'Password Change',
-        code,
-        'Use the code below to confirm your password change.'
-      ),
-    });
-
-    console.log('[Email] Password change email sent successfully');
-    return true;
-  } catch (error) {
-    console.error('Failed to send password change email:', error instanceof Error ? error.message : error);
-    return false;
-  }
+export function sendPasswordChangeCodeEmail(email: string, code: string): Promise<boolean> {
+  return sendCodeEmail(email, code, 'password_change');
 }
 
 /** Generate a cryptographically random 6-digit code */

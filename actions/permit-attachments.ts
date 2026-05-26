@@ -11,6 +11,7 @@ import { uuidSchema } from '@/lib/validations';
 import { validateFile, generateStoragePath } from '@/lib/file-upload';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
 import { canPerformOperation, type PermitStatus } from '@/lib/permit-state-machine';
+import { firstRpcRow } from '@/lib/transforms';
 import type { PermitAttachment } from '@/types';
 
 interface AttachmentRow {
@@ -152,7 +153,10 @@ export async function uploadPermitAttachment(
       throw rpcError ?? new Error('Attachment insert returned no rows');
     }
 
-    const attachment = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+    const attachment = firstRpcRow<AttachmentRow>(rpcRows);
+    if (!attachment) {
+      return { success: false, error: 'Failed to record attachment' };
+    }
 
     await logAuditWithMeta(authCheck.user.id, 'permit_attachment_uploaded', {
       metadata: { permitId, fileName: file.name, fileSize: file.size },
