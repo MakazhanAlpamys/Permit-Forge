@@ -802,29 +802,39 @@ The v1.9.0 re-audits found 1 Critical, 3 Medium, 2 Low across two reviewers. All
 
 Single PR per group of 5-10. All purely cosmetic / consistency.
 
-- [ ] `parseInt` radix arg in `lib/email.ts:26`
-- [ ] `new Date().getUTCFullYear()` in cert number gen
-- [ ] `rows as unknown as ChatSession[]` typed helper
-- [ ] `MatchedChunk.id` → `string | bigint`
-- [ ] Magic numbers → named constants (rrf_k=60, 3600, 60_000, etc.)
-- [ ] Nested ternaries in `actions/admin-permits.ts:84-88`
-- [ ] Regex compilation moved out of hot loop in `treeReasoner`
-- [ ] Sequential `createSignedUrl` → `Promise.all` in `getPermitAttachments`
-- [ ] (+ 56 more — see audits)
+- [x] `parseInt` radix arg in `lib/email.ts:34` — `parseInt(..., 10)` added.
+- [x] `new Date().getUTCFullYear()` in `generateCertificateNumber` so the year doesn't drift across Lambda regions for a permit issued near midnight UTC.
+- [x] `rows as unknown as ChatSession[]` replaced with a `rowsToChatSessions` boundary helper in [actions/chat-history.ts](actions/chat-history.ts) that defaults missing title to `'Untitled'` + stringifies ids. +1 test.
+- [ ] `MatchedChunk.id` → `string | bigint` — DEFERRED (ripples through 12+ test files + reranker + citation-parser; current `number` works for BIGSERIAL < 2^53). Low leverage vs blast radius.
+- [x] Magic numbers → named constants — new `HYBRID_SEARCH_RRF_K = 60` + `PERMIT_ATTACHMENT_SIGNED_URL_TTL_SECONDS = 3600` in [lib/constants.ts](lib/constants.ts), adopted at all 4 call sites (lib/rag.ts × 2, actions/ingest-pdf.ts, actions/permit-attachments.ts).
+- [x] Nested ternaries in `actions/admin-permits.ts` — both sites (`reviewPermit` newStatus + notifType) flattened into `REVIEW_STATUS_MAP` / `NOTIFICATION_TYPE_MAP` lookups.
+- [x] Regex compilation moved out of hot loop in `treeReasoner` — new module-level `sectionRegexCache` (LRU, cap 1000) memoizes section→RegExp compilation. A 1k-node tree no longer recompiles per-node-per-call.
+- [x] Sequential `createSignedUrl` → `Promise.all` in `getPermitAttachments` — 10-attachment permit now fans out into one round-trip window.
+- [ ] (+ 56 more — deferred to post-defense polish. Most are cosmetic; the audit's own TOP-10 already excluded them.)
 
 #### Part B — Demo data + defense-day smoke 🟡
 
-- [ ] Reset Supabase dev DB to a known seeded state with: 3 documents ingested, 5 example permits across statuses, 1 admin + 3 user accounts
-- [ ] Pre-warm semantic_cache with 10 expected demo queries
-- [ ] Verify all 11 defense-day click paths work: login, register-verify, chat with citations, create permit, run compliance, admin approve, download certificate, profile change, admin block user, admin add document, admin review queue
-- [ ] Backup the DB snapshot
+All four items are live-infrastructure work that cannot be exercised from the
+test harness. Captured the runbook as [docs/DEFENSE_DAY_CHECKLIST.md](docs/DEFENSE_DAY_CHECKLIST.md)
+so it lives in the repo and survives session boundaries. Section map:
+
+- [x] Section 1 — DB reset to known seed (single migration + admin verify)
+- [x] Section 2 — Document ingestion (3 PDFs, ~15-30 min)
+- [x] Section 3 — Permits seed (5 across statuses)
+- [x] Section 4 — Pre-warm semantic_cache (10 demo queries)
+- [x] Section 5 — 11 defense-day click paths
+- [x] Section 7 — Backup snapshot
+
+Plus sections 0 (env preflight), 6 (security spot-checks), 8 (final gates),
+and a rollback plan tying back to the v1.3.0 `PIPELINE_TIMEOUT_MS` and v1.6.0
+`error.tsx` boundaries. To be executed manually 24h before defense.
 
 #### Part C — Documentation pass 🟢
 
-- [ ] Update `CLAUDE.md` with any architecture changes from v1.0-v1.9
-- [ ] Update `README.md` env-var section with any new vars (`DEV_INSECURE_COOKIES`, etc.)
-- [ ] Update `README.md` if any user-facing flows changed
-- [ ] Generate a `CHANGES_SINCE_AUDIT.md` summarizing what shipped vs the audit findings
+- [x] Updated `CLAUDE.md` — `lib/constants.ts` row mentions the new `HYBRID_SEARCH_RRF_K` + `PERMIT_ATTACHMENT_SIGNED_URL_TTL_SECONDS` constants; test count bumped 1201 → 1202.
+- [x] `README.md` env-var section already current as of v1.5.0 Part D (`DEV_INSECURE_COOKIES` rename) — no v1.10 env additions to document.
+- [x] No user-facing flow changes in v1.10 (papercuts only) — README quick-start unchanged.
+- [x] New [docs/CHANGES_SINCE_AUDIT.md](docs/CHANGES_SINCE_AUDIT.md) — per-release summary of the audit-to-defense remediation arc with the headline numbers (28C/47H/48M/~10L closed of 226 baseline findings), wontfix table, and audit-ID → release map pointer.
 
 #### Part D — Final audit re-run 🟡
 
