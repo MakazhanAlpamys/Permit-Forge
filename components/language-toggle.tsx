@@ -68,12 +68,13 @@ export function LanguageToggle({ variant = 'icon', className }: LanguageTogglePr
   };
 
   return (
-    <div ref={wrapperRef} className={cn('relative', className)}>
+    <div ref={wrapperRef} className="relative">
       {variant === 'text' ? (
         <Button
           variant="ghost"
           size="sm"
           onClick={() => setOpen(o => !o)}
+          className={className}
           aria-haspopup="listbox"
           aria-expanded={open}
         >
@@ -85,7 +86,7 @@ export function LanguageToggle({ variant = 'icon', className }: LanguageTogglePr
           variant="ghost"
           size="icon"
           onClick={() => setOpen(o => !o)}
-          className="text-muted-foreground gap-1"
+          className={cn('text-muted-foreground gap-1', className)}
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-label={t('common.toggleLanguage')}
