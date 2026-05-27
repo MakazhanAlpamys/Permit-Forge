@@ -28,6 +28,7 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `lint` → `tsc -
 ## Tech Stack
 
 - **Frontend:** Next.js 15 (App Router), React 18, TypeScript, Tailwind CSS 4, shadcn/ui, Framer Motion (splash screen animations). MessageBubble passes assistant markdown directly to ReactMarkdown (no DOMPurify — applying it before parsing mangles valid markdown). Server-side title sanitization in `actions/chat-history.ts` uses a small regex helper, not jsdom-based DOMPurify, because pulling jsdom into a Lambda crashed prod with `ERR_REQUIRE_ESM` (`@exodus/bytes` is ESM-only).
+- **i18n:** `react-i18next` + `i18next` + `i18next-browser-languagedetector` (the detector is installed but **not wired into init** — see [Internationalization](#internationalization-i18n) for the hydration-safety reason). Three locales (EN/RU/KK), default EN, user preference persisted in `localStorage['pf-locale']`.
 - **AI:** Google Gemini 2.5 Flash via LangChain 0.3 (chat), gemini-embedding-001 via @google/genai SDK (embeddings, 768-dim vectors)
 - **Database:** Supabase (PostgreSQL) with pgvector (HNSW) + pg_trgm extensions, 30+ RPC functions
 - **Auth:** JWT (HS256, jose), bcrypt (12 rounds), CSRF tokens, HttpOnly cookies
@@ -169,6 +170,24 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 - PDF certificate generation (`lib/permit-certificate.ts`): PDFKit, certificate number format `PF-CERT-{YEAR}-{ID}`
 - Status timeline tracking with admin review interface
 
+### Internationalization (i18n)
+
+Client-side `react-i18next` with three bundled JSON dictionaries (`lib/i18n/locales/{en,ru,kk}.json`). All client components use `useTranslation()` and `t('section.key')`; server actions / API routes are not translated (they're system-of-record).
+
+**Hydration safety (React error #418 was a real prod bug):**
+`lib/i18n/client.ts` pins `lng: DEFAULT_LOCALE` on init — no `LanguageDetector` at startup. SSR and the first client render are byte-identical. `components/i18n-provider.tsx` then runs a **post-mount `useEffect`** that reads `localStorage['pf-locale']` (falling back to `navigator.language`, then `'en'`) and calls `i18n.changeLanguage(...)` once hydration has committed. The follow-up re-render is invisible to React's hydration validator. Visitors with a saved non-EN locale see a brief flash of EN before the switch — accepted compromise for diploma scope.
+
+**Adding a translation key:**
+1. Add to `lib/i18n/locales/en.json` first (tests assert on EN).
+2. Mirror in `ru.json` and `kk.json`. Keep the same key paths and interpolation tokens (`{{name}}`) so callers stay symmetric.
+3. Use `t('section.key', { defaultValue: ... })` when adding keys mid-refactor so unmigrated builds don't blank out.
+
+**Test setup ([test/setup.ts](test/setup.ts)) initializes i18next synchronously with the EN bundle** so component tests asserting on English copy (e.g. `getByText('Submit Application')`) see translated strings, not raw `t()` keys. Without this every component test would fail with raw key text.
+
+**LanguageToggle ([components/language-toggle.tsx](components/language-toggle.tsx))** lives next to `ThemeToggle` in every header (dashboard, all auth pages, admin). Same `variant: 'icon' | 'text'` API. The `className` prop is forwarded to the inner `Button` (not the wrapper `div`) so callers can re-style the icon — `app/login/page.tsx` uses this to apply `bg-accent text-accent-foreground` over the animated DitheringBackground.
+
+**Locale-aware formatting:** date/time helpers in `permit-card.tsx`, `permit-status-timeline.tsx`, `notification-bell.tsx`, `top-users-table.tsx`, `audit-logs.tsx` map the active locale to a BCP-47 tag (`en-US` / `ru-RU` / `kk-KZ`) and use `Intl.RelativeTimeFormat` / `Intl.DateTimeFormat`. **One exception:** `permit-card.tsx` hard-codes the terse `Xd ago` form for `locale === 'en'` because existing component tests assert on that pre-i18n format. RU/KK still go through `Intl.RelativeTimeFormat`.
+
 ### Key Modules
 
 | Module | Purpose |
@@ -216,6 +235,9 @@ Permit lifecycle: `draft → submitted → under_review → approved/rejected/re
 | `lib/cookie-options.ts` | Cookie attribute builder. Reads `DEV_INSECURE_COOKIES=1` to drop `Secure` + relax `SameSite` for plain-HTTP localhost. Legacy `NEXT_PUBLIC_DEV_INSECURE_COOKIES` still honoured with a deprecation warning. |
 | `lib/file-magic.ts` | Magic-byte sniffer for PDF/PNG/JPG/DWG/DXF uploads (defense-in-depth on top of extension + MIME check in `lib/file-upload.ts`). |
 | `lib/api-security-headers.ts` | Per-route security header builder (`X-Content-Type-Options`, `Cache-Control: no-store` for SSE, etc.). Used by API routes that need stricter headers than the middleware default. |
+| `lib/i18n/config.ts` | `SUPPORTED_LOCALES` (en/ru/kk), `DEFAULT_LOCALE`, `LOCALE_STORAGE_KEY = 'pf-locale'`, label / short-name maps, `isSupportedLocale()` type guard. |
+| `lib/i18n/client.ts` | i18next init pinned to `DEFAULT_LOCALE` on both SSR and first client render — no `LanguageDetector` at startup (see [Internationalization](#internationalization-i18n) for the hydration-safety rationale). Bundles EN/RU/KK JSON synchronously. |
+| `lib/i18n/locales/{en,ru,kk}.json` | Translation dictionaries. EN is the source of truth for tests; RU/KK must mirror its key paths. |
 
 ### Middleware (`middleware.ts`)
 
@@ -261,6 +283,8 @@ Schema in `supabase/migrations/000_full_setup.sql` (single idempotent migration 
 - `components/permits/` — Multi-step form (3 steps), permit list/card/detail, compliance panel, file upload, status timeline
 - `components/admin/` — UserManagement, CreateUserDialog, DocumentManagement, PdfIngestionTab, PermitManagement, AuditLogs, EnhancedStatsCards, Charts (message activity, document usage, permit status), TopUsersTable
 - `components/notifications/` — NotificationBell
+- `components/theme-provider.tsx` + `components/theme-toggle.tsx` — light/dark theme context (defaults to `dark`, persisted in `localStorage['theme']`). Mounted-guarded to avoid SSR/CSR theme mismatch.
+- `components/i18n-provider.tsx` + `components/language-toggle.tsx` — i18next Provider + post-mount locale sync + dropdown switcher (EN/RU/KK). The toggle sits next to `ThemeToggle` in every header.
 
 ### Types
 
@@ -276,6 +300,7 @@ Test setup (`test/setup.ts`) mocks:
 - `@/lib/supabase-server` — both `createServerClient` and `createAdminClient` with chainable query builder
 - `next/headers` — cookies and headers
 - 6 environment variables pre-set
+- **i18next synchronous init with the EN bundle** (no detector, `lng: 'en'`) so component tests asserting on English UI copy see translated strings instead of raw `t()` keys. If a test fails with raw keys like `permits.status.submitted` rendering, this init is missing or `useSuspense` got re-enabled.
 
 Coverage targets: `lib/**/*.ts`, `actions/**/*.ts`, `components/**/*.tsx`.
 

@@ -174,6 +174,19 @@
 
 </td>
 </tr>
+<tr>
+<td colspan="2">
+
+### Localization (i18n)
+- **3 languages** — English (default), Русский, Қазақша — `react-i18next` + bundled JSON dictionaries
+- **Language switcher** next to the theme toggle in every header (dashboard, auth pages, admin)
+- User preference persisted in `localStorage['pf-locale']`; first-time visitors auto-detected from `navigator.language`
+- **Hydration-safe init** — SSR + first client render pinned to English, locale switch fires post-mount so React's hydration validator never sees a mismatch (resolves React error #418)
+- Locale-aware date/time formatting via `Intl.RelativeTimeFormat` / `Intl.DateTimeFormat` (timestamps, "3 days ago" / "3 күн бұрын")
+- `<html lang="...">` kept in sync with the active locale for screen readers and search engines
+
+</td>
+</tr>
 </table>
 
 <br />
@@ -768,6 +781,8 @@ PermitForge/
 ├── components/
 │   ├── theme-provider.tsx             #   Dark/light theme context
 │   ├── theme-toggle.tsx               #   Theme switcher
+│   ├── i18n-provider.tsx              #   i18next provider + post-mount locale sync
+│   ├── language-toggle.tsx            #   Language switcher (EN/RU/KK) next to ThemeToggle
 │   ├── chat/                          #   ChatInterface, MessageBubble, SourceCitation
 │   ├── admin/                         #   UserManagement, CreateUserDialog, DocumentManagement,
 │   │                                  #   PdfIngestionTab, PermitManagement, AuditLogs,
@@ -808,10 +823,14 @@ PermitForge/
 │   ├── validations.ts                 #   Zod v4 schemas for all inputs
 │   ├── constants.ts                   #   App-wide constants & configuration
 │   ├── logger.ts                      #   Centralized logging (LOG_LEVEL support)
-│   └── utils.ts                       #   Utilities (cn, etc.)
+│   ├── utils.ts                       #   Utilities (cn, etc.)
+│   └── i18n/
+│       ├── config.ts                  #   Supported locales + storage key + label maps
+│       ├── client.ts                  #   i18next init pinned to DEFAULT_LOCALE (hydration-safe)
+│       └── locales/{en,ru,kk}.json    #   Bundled translation dictionaries
 │
 ├── types/index.ts                     # Shared TypeScript definitions
-├── test/                              # Vitest test suites (73 files, 1201 tests)
+├── test/                              # Vitest test suites (73 files, 1202 tests)
 ├── supabase/migrations/               # Database schema (single 000_full_setup.sql)
 ├── middleware.ts                       # Edge auth + block check + security headers
 └── public/                            # Static assets
@@ -887,6 +906,7 @@ Admin users are redirected away from user pages (`/`, `/permits`). Non-admins ar
 | **Animations** | [Framer Motion](https://www.framer.com/motion/) (splash screen) | — |
 | **Icons** | [Lucide React](https://lucide.dev/) | — |
 | **Markdown** | [react-markdown](https://github.com/remarkjs/react-markdown) | 10 |
+| **i18n** | [react-i18next](https://react.i18next.com/) + [i18next](https://www.i18next.com/) + [i18next-browser-languagedetector](https://github.com/i18next/i18next-browser-languageDetector) | — |
 | **Testing** | [Vitest](https://vitest.dev/) + [@testing-library/react](https://testing-library.com/react) + [jsdom](https://github.com/jsdom/jsdom) | 4 |
 
 <br />
