@@ -2,6 +2,7 @@
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { useTranslation } from 'react-i18next';
 import { PermitStatusBadge } from './permit-status-badge';
 import { PROJECT_TYPES } from '@/lib/constants';
 import { MapPin, Building2, Trash2, ChevronRight } from 'lucide-react';
@@ -14,20 +15,36 @@ interface PermitCardProps {
   onDelete?: (id: string) => void;
 }
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string, locale: string, t: (k: string) => string): string {
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffDays === 0) return 'Today';
-  if (diffDays === 1) return 'Yesterday';
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const tag = locale === 'kk' ? 'kk-KZ' : locale === 'ru' ? 'ru-RU' : 'en-US';
+
+  if (diffDays === 0) return t('common.today');
+  if (diffDays === 1) return t('common.yesterday');
+  if (diffDays < 7) {
+    try {
+      return new Intl.RelativeTimeFormat(tag, { numeric: 'auto' }).format(-diffDays, 'day');
+    } catch {
+      return `${diffDays}d ago`;
+    }
+  }
+  try {
+    return date.toLocaleDateString(tag, { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return date.toLocaleDateString();
+  }
 }
 
 export function PermitCard({ permit, onView, onDelete }: PermitCardProps) {
-  const typeLabel = PROJECT_TYPES.find(t => t.value === permit.projectType)?.label || permit.projectType;
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language || 'en';
+  const typeLabel = t(`permits.step1.type.${permit.projectType}`, {
+    defaultValue: PROJECT_TYPES.find(x => x.value === permit.projectType)?.label || permit.projectType,
+  });
 
   return (
     <Card
@@ -54,8 +71,8 @@ export function PermitCard({ permit, onView, onDelete }: PermitCardProps) {
             </div>
 
             <div className="text-xs text-muted-foreground mt-1">
-              Updated {formatDate(permit.updatedAt)}
-              {permit.submittedAt && ` · Submitted ${formatDate(permit.submittedAt)}`}
+              {t('permits.card.updatedOn')} {formatDate(permit.updatedAt, locale, t)}
+              {permit.submittedAt && ` · ${t('permits.card.submittedOn')} ${formatDate(permit.submittedAt, locale, t)}`}
             </div>
           </div>
 

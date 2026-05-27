@@ -7,6 +7,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Trophy, Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { TopActiveUser } from '@/actions/analytics';
 
 interface TopUsersTableProps {
@@ -14,28 +15,40 @@ interface TopUsersTableProps {
   loading?: boolean;
 }
 
-function formatTimeAgo(dateStr: string): string {
+function formatTimeAgo(dateStr: string, locale: string): string {
   const date = new Date(dateStr);
   const now = new Date();
   const diff = now.getTime() - date.getTime();
+  const tag = locale === 'kk' ? 'kk-KZ' : locale;
 
-  if (diff < 60000) return 'Just now';
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
-
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  let rtf: Intl.RelativeTimeFormat;
+  try {
+    rtf = new Intl.RelativeTimeFormat(tag, { numeric: 'auto' });
+  } catch {
+    rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  }
+  if (diff < 60000) return rtf.format(0, 'second');
+  if (diff < 3600000) return rtf.format(-Math.floor(diff / 60000), 'minute');
+  if (diff < 86400000) return rtf.format(-Math.floor(diff / 3600000), 'hour');
+  if (diff < 604800000) return rtf.format(-Math.floor(diff / 86400000), 'day');
+  try {
+    return date.toLocaleDateString(tag, { month: 'short', day: 'numeric' });
+  } catch {
+    return date.toLocaleDateString();
+  }
 }
 
 const RANK_COLORS = ['text-yellow-500', 'text-gray-400', 'text-amber-600'];
 
 export function TopUsersTable({ data, loading }: TopUsersTableProps) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language || 'en';
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Trophy className="h-5 w-5 text-yellow-500" />
-          Top Active Users (30d)
+          {t('admin.overview.topUsers')}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -45,7 +58,7 @@ export function TopUsersTable({ data, loading }: TopUsersTableProps) {
           </div>
         ) : data.length === 0 ? (
           <div className="h-[200px] flex items-center justify-center text-muted-foreground">
-            No user activity data
+            {t('common.none')}
           </div>
         ) : (
           <div className="space-y-3">
@@ -69,10 +82,10 @@ export function TopUsersTable({ data, loading }: TopUsersTableProps) {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary" className="text-xs">
-                    {user.messageCount} msgs
+                    {user.messageCount} {t('admin.overview.messages')}
                   </Badge>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {formatTimeAgo(user.lastActive)}
+                    {formatTimeAgo(user.lastActive, locale)}
                   </span>
                 </div>
               </div>

@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslation } from 'react-i18next';
 import { Header } from '@/components/dashboard';
 import { PermitList } from '@/components/permits';
 import { getMyPermits, deletePermit } from '@/actions/permits';
@@ -19,6 +20,7 @@ import type { PermitApplication } from '@/types';
 
 export default function PermitsPage() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [permits, setPermits] = useState<PermitApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -88,7 +90,7 @@ export default function PermitsPage() {
   // so a failed delete surfaces as an error dialog rather than silently
   // closing the confirm modal.
   const deleteAction = useServerAction(deletePermit, {
-    fallbackErrorMessage: 'Failed to delete permit',
+    fallbackErrorMessage: t('errors.generic'),
     onSuccess: () => {
       setPermits(prev => prev.filter(p => p.id !== permitToDelete));
       setDeleteDialogOpen(false);
@@ -114,15 +116,15 @@ export default function PermitsPage() {
           onClick={() => router.push('/')}
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Home
+          {t('common.back')}
         </Button>
 
         {/* Page header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold">Permit Applications</h1>
+            <h1 className="text-2xl font-bold">{t('permits.list.title')}</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Manage your building code permit applications
+              {t('permits.list.subtitle')}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -131,7 +133,7 @@ export default function PermitsPage() {
             </Button>
             <Button onClick={() => router.push('/permits/new')}>
               <Plus className="h-4 w-4 mr-2" />
-              New Application
+              {t('permits.list.newPermit')}
             </Button>
           </div>
         </div>
@@ -156,9 +158,9 @@ export default function PermitsPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Draft Permit</DialogTitle>
+            <DialogTitle>{t('permits.actions.deletePermit')}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete this draft permit? This action cannot be undone.
+              {t('permits.detail.deleteConfirm')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -167,7 +169,7 @@ export default function PermitsPage() {
               onClick={() => setDeleteDialogOpen(false)}
               disabled={deleteAction.isLoading}
             >
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant="destructive"
@@ -175,7 +177,7 @@ export default function PermitsPage() {
               disabled={deleteAction.isLoading}
             >
               {deleteAction.isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              Delete
+              {t('common.delete')}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -10,13 +10,16 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTheme } from '@/components/theme-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { LanguageToggle } from '@/components/language-toggle';
 import { DitheringBackground } from '@/components/login/dithering-background';
 import { SplashScreen } from '@/components/splash-screen';
 import Image from 'next/image';
 import Link from 'next/link';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export default function LoginPage() {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -36,7 +39,7 @@ export default function LoginPage() {
       }
       // On success loginAction redirects — no need to reset loading
     } catch {
-      setError('Login failed. Please try again.');
+      setError(t('auth.login.failed'));
       setLoading(false);
     }
   };
@@ -47,8 +50,9 @@ export default function LoginPage() {
       {/* Animated shader background */}
       <DitheringBackground />
 
-      {/* Theme Toggle - Top Right */}
-      <div className="absolute top-4 right-4 z-20">
+      {/* Language + Theme Toggle - Top Right */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        <LanguageToggle className="bg-accent text-accent-foreground rounded-md" />
         <ThemeToggle className="bg-accent text-accent-foreground" />
       </div>
 
@@ -66,9 +70,9 @@ export default function LoginPage() {
           </div>
           
           <div>
-            <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
+            <CardTitle className="text-2xl font-bold">{t('auth.login.title')}</CardTitle>
             <CardDescription>
-              Sign in to PermitForge
+              {t('auth.login.subtitle')}
             </CardDescription>
           </div>
         </CardHeader>
@@ -78,7 +82,7 @@ export default function LoginPage() {
             {/* Username */}
             <div className="space-y-2">
               <label htmlFor="username" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                Username
+                {t('auth.login.usernameLabel')}
               </label>
               <input
                 id="username"
@@ -88,14 +92,14 @@ export default function LoginPage() {
                 autoComplete="username"
                 disabled={loading}
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                placeholder="Enter your username"
+                placeholder={t('auth.login.usernamePlaceholder')}
               />
             </div>
 
             {/* Password */}
             <div className="space-y-2">
               <label htmlFor="password" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                Password
+                {t('auth.login.passwordLabel')}
               </label>
               <div className="relative">
                 <input
@@ -106,7 +110,7 @@ export default function LoginPage() {
                   autoComplete="current-password"
                   disabled={loading}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  placeholder="Enter your password"
+                  placeholder={t('auth.login.passwordPlaceholder')}
                 />
                 <button
                   type="button"
@@ -139,25 +143,25 @@ export default function LoginPage() {
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Signing in...
+                  {t('auth.login.submitting')}
                 </>
               ) : (
-                'Sign In'
+                t('auth.login.submit')
               )}
             </Button>
           </form>
 
           <div className="mt-4 text-center">
             <Link href="/forgot-password" className="text-sm text-primary hover:underline">
-              Forgot password?
+              {t('auth.login.forgotPassword')}
             </Link>
           </div>
 
           <div className="mt-4 text-center text-sm text-muted-foreground">
             <p>
-              Don&apos;t have an account?{' '}
+              {t('auth.login.noAccount')}{' '}
               <Link href="/register" className="text-primary hover:underline">
-                Create one
+                {t('auth.login.createOne')}
               </Link>
             </p>
           </div>

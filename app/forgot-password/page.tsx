@@ -6,15 +6,18 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTheme } from '@/components/theme-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { LanguageToggle } from '@/components/language-toggle';
 import { DitheringBackground } from '@/components/login/dithering-background';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Loader2, Eye, EyeOff, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 type Step = 'email' | 'code' | 'done';
 
 export default function ForgotPasswordPage() {
+  const { t } = useTranslation();
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -69,7 +72,8 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
       <DitheringBackground />
 
-      <div className="absolute top-4 right-4 z-20">
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        <LanguageToggle />
         <ThemeToggle />
       </div>
 
@@ -87,12 +91,12 @@ export default function ForgotPasswordPage() {
 
           <div>
             <CardTitle className="text-2xl font-bold">
-              {step === 'done' ? 'Password Reset!' : 'Forgot Password'}
+              {step === 'done' ? t('auth.forgotPassword.titleDone') : t('auth.forgotPassword.title')}
             </CardTitle>
             <CardDescription>
-              {step === 'email' && 'Enter your email to receive a reset code'}
-              {step === 'code' && `Enter the code sent to ${email}`}
-              {step === 'done' && 'Redirecting to login...'}
+              {step === 'email' && t('auth.forgotPassword.subtitleEmail')}
+              {step === 'code' && t('auth.forgotPassword.subtitleCode', { email })}
+              {step === 'done' && t('auth.forgotPassword.subtitleDone')}
             </CardDescription>
           </div>
         </CardHeader>
@@ -101,13 +105,13 @@ export default function ForgotPasswordPage() {
           {step === 'done' ? (
             <div className="flex flex-col items-center gap-4 py-4">
               <CheckCircle2 className="h-16 w-16 text-green-500" />
-              <p className="text-sm text-muted-foreground">Your password has been updated.</p>
+              <p className="text-sm text-muted-foreground">{t('auth.forgotPassword.successMessage')}</p>
             </div>
           ) : step === 'email' ? (
             <form onSubmit={handleEmailSubmit} className="space-y-4">
               <div className="space-y-2">
                 <label htmlFor="email" className="text-sm font-medium leading-none">
-                  Email
+                  {t('auth.forgotPassword.emailLabel')}
                 </label>
                 <input
                   id="email"
@@ -117,7 +121,7 @@ export default function ForgotPasswordPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={loading}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  placeholder="Enter your email"
+                  placeholder={t('auth.forgotPassword.emailPlaceholder')}
                 />
               </div>
 
@@ -131,10 +135,10 @@ export default function ForgotPasswordPage() {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Sending code...
+                    {t('auth.forgotPassword.sendingCode')}
                   </>
                 ) : (
-                  'Send Reset Code'
+                  t('auth.forgotPassword.sendCode')
                 )}
               </Button>
             </form>
@@ -144,13 +148,13 @@ export default function ForgotPasswordPage() {
                   invalidated whatever they got earlier. */}
               {resendBanner && (
                 <div className="p-3 text-sm text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-md">
-                  A new code was sent. Previous codes no longer work.
+                  {t('auth.forgotPassword.resendBanner')}
                 </div>
               )}
               {/* Code */}
               <div className="space-y-2">
                 <label htmlFor="code" className="text-sm font-medium leading-none">
-                  Reset Code
+                  {t('auth.forgotPassword.codeLabel')}
                 </label>
                 <input
                   id="code"
@@ -169,7 +173,7 @@ export default function ForgotPasswordPage() {
               {/* New Password */}
               <div className="space-y-2">
                 <label htmlFor="newPassword" className="text-sm font-medium leading-none">
-                  New Password
+                  {t('auth.forgotPassword.newPasswordLabel')}
                 </label>
                 <div className="relative">
                   <input
@@ -180,7 +184,7 @@ export default function ForgotPasswordPage() {
                     onChange={(e) => setNewPassword(e.target.value)}
                     disabled={loading}
                     className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    placeholder="Min 8 chars, uppercase, lowercase, digit, special"
+                    placeholder={t('auth.forgotPassword.newPasswordPlaceholder')}
                   />
                   <button
                     type="button"
@@ -203,10 +207,10 @@ export default function ForgotPasswordPage() {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Resetting password...
+                    {t('auth.forgotPassword.resetting')}
                   </>
                 ) : (
-                  'Reset Password'
+                  t('auth.forgotPassword.reset')
                 )}
               </Button>
 
@@ -216,14 +220,14 @@ export default function ForgotPasswordPage() {
                 className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mx-auto"
               >
                 <ArrowLeft className="h-3 w-3" />
-                Back
+                {t('common.back')}
               </button>
             </form>
           )}
 
           <div className="mt-6 text-center text-sm text-muted-foreground">
             <Link href="/login" className="text-primary hover:underline">
-              Back to login
+              {t('auth.forgotPassword.backToLogin')}
             </Link>
           </div>
         </CardContent>

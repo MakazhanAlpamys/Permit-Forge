@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useTranslation } from 'react-i18next';
 import type { BuildingDetails } from '@/types';
 
 interface PermitFormStep2Props {
@@ -14,6 +15,7 @@ interface PermitFormStep2Props {
 }
 
 export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error }: PermitFormStep2Props) {
+  const { t } = useTranslation();
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onNext();
@@ -23,16 +25,18 @@ export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error
     onChange({ ...data, [field]: value });
   };
 
+  // Technical occupancy / construction labels are kept as-is (industry terms);
+  // only field captions are localized.
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Building Details</CardTitle>
+        <CardTitle className="text-lg">{t('permits.step2.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Number of Floors *</label>
+              <label className="text-sm font-medium">{t('permits.step2.floors')} *</label>
               <input
                 type="number"
                 required
@@ -46,7 +50,7 @@ export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Building Height (meters) *</label>
+              <label className="text-sm font-medium">{t('permits.step2.height')} *</label>
               <input
                 type="number"
                 required
@@ -60,7 +64,7 @@ export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Total Built-Up Area (m²) *</label>
+              <label className="text-sm font-medium">{t('permits.step2.builtUpArea')} *</label>
               <input
                 type="number"
                 required
@@ -74,7 +78,7 @@ export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Plot Area (m²) *</label>
+              <label className="text-sm font-medium">{t('permits.step2.plotArea')} *</label>
               <input
                 type="number"
                 required
@@ -88,7 +92,7 @@ export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Number of Units</label>
+              <label className="text-sm font-medium">{t('permits.step2.units')}</label>
               <input
                 type="number"
                 min={0}
@@ -100,7 +104,7 @@ export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Number of Parking Spaces</label>
+              <label className="text-sm font-medium">{t('permits.step2.parkingSpaces')}</label>
               <input
                 type="number"
                 min={0}
@@ -114,7 +118,7 @@ export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Occupancy Type *</label>
+              <label className="text-sm font-medium">{t('permits.step2.occupancyType')} *</label>
               <select
                 required
                 value={data.occupancyType}
@@ -122,7 +126,7 @@ export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error
                 className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
                 disabled={loading}
               >
-                <option value="">Select occupancy type</option>
+                <option value="">{t('permits.step2.occupancyType')}</option>
                 <option value="Residential">Residential</option>
                 <option value="Commercial">Commercial</option>
                 <option value="Office">Office</option>
@@ -138,7 +142,7 @@ export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium">Construction Type *</label>
+              <label className="text-sm font-medium">{t('permits.step2.constructionType')} *</label>
               <select
                 required
                 value={data.constructionType}
@@ -146,7 +150,7 @@ export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error
                 className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
                 disabled={loading}
               >
-                <option value="">Select construction type</option>
+                <option value="">{t('permits.step2.constructionType')}</option>
                 <option value="Reinforced Concrete">Reinforced Concrete</option>
                 <option value="Steel Frame">Steel Frame</option>
                 <option value="Precast Concrete">Precast Concrete</option>
@@ -165,10 +169,10 @@ export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error
 
           <div className="flex justify-between">
             <Button type="button" variant="outline" onClick={onBack} disabled={loading}>
-              Back
+              {t('common.back')}
             </Button>
             <Button type="submit" disabled={loading}>
-              {loading ? 'Saving...' : 'Next'}
+              {loading ? t('common.saving') : t('common.next')}
             </Button>
           </div>
         </form>

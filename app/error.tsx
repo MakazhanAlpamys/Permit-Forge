@@ -10,6 +10,7 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { AlertTriangle, RotateCcw, Home } from 'lucide-react';
@@ -24,6 +25,7 @@ interface ErrorProps {
 // exports `GlobalError`. Next.js routes purely by default export so the names
 // are for React DevTools / stack traces only.
 export default function RouteError({ error, reset }: ErrorProps) {
+  const { t } = useTranslation();
   useEffect(() => {
     // Operator-visible: every error.tsx render gets a server log so we can
     // correlate the user-facing "Something went wrong" with the digest.
@@ -45,15 +47,14 @@ export default function RouteError({ error, reset }: ErrorProps) {
 
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold text-foreground">
-              Something went wrong
+              {t('errors.generic')}
             </h1>
             <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-              An unexpected error occurred while loading this page. The team
-              has been notified.
+              {t('errors.pageCrashed')}
             </p>
             {error.digest && (
               <p className="text-xs text-muted-foreground/70 font-mono pt-1">
-                ref: {error.digest}
+                {t('errors.errorDigest', { digest: error.digest })}
               </p>
             )}
           </div>
@@ -61,12 +62,12 @@ export default function RouteError({ error, reset }: ErrorProps) {
           <div className="flex items-center justify-center gap-3 pt-2">
             <Button onClick={reset}>
               <RotateCcw className="mr-2 h-4 w-4" />
-              Try again
+              {t('common.tryAgain')}
             </Button>
             <Button variant="outline" asChild>
               <Link href="/">
                 <Home className="mr-2 h-4 w-4" />
-                Go Home
+                {t('errors.goHome')}
               </Link>
             </Button>
           </div>

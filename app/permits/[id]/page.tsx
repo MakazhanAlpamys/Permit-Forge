@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useTranslation } from 'react-i18next';
 import { Header } from '@/components/dashboard';
 import {
   PermitDetailView,
@@ -24,6 +25,7 @@ import type { PermitApplication, PermitStatusHistoryEntry, PermitAttachment } fr
 import { isOperationAllowed, type PermitStatus } from '@/lib/permit-state-machine';
 
 export default function PermitDetailPage() {
+  const { t } = useTranslation();
   const params = useParams();
   const router = useRouter();
   const permitId = params.id as string;
@@ -66,13 +68,13 @@ export default function PermitDetailPage() {
     if (permitResult.data) {
       setPermit(permitResult.data);
     } else {
-      setError(permitResult.error || 'Permit not found');
+      setError(permitResult.error || t('errors.notFound'));
     }
 
     setHistory(historyResult.data);
     setAttachments(attachResult.data);
     setLoading(false);
-  }, [permitId]);
+  }, [permitId, t]);
 
   useEffect(() => {
     loadPermit();
@@ -91,7 +93,7 @@ export default function PermitDetailPage() {
     if (result.success) {
       await loadPermit();
     } else {
-      setError(result.error || 'Failed to run compliance check');
+      setError(result.error || t('errors.generic'));
     }
   };
 
@@ -118,7 +120,7 @@ export default function PermitDetailPage() {
         if (result.warning) flashWarning(result.warning);
         await loadPermit();
       } else {
-        setError(result.error || 'Failed to submit');
+        setError(result.error || t('errors.generic'));
       }
     } finally {
       setActionLoading(null);
@@ -134,7 +136,7 @@ export default function PermitDetailPage() {
       if (result.success) {
         router.push('/permits');
       } else {
-        setError(result.error || 'Failed to delete');
+        setError(result.error || t('errors.generic'));
       }
       setDeleteDialogOpen(false);
     } finally {
@@ -152,7 +154,7 @@ export default function PermitDetailPage() {
       if (result.success) {
         await loadPermit();
       } else {
-        setError(result.error || 'Failed to start revision');
+        setError(result.error || t('errors.generic'));
       }
     } finally {
       setActionLoading(null);
@@ -167,7 +169,7 @@ export default function PermitDetailPage() {
       const response = await fetch(`/api/permits/${permitId}/certificate`);
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to download certificate');
+        throw new Error(data.error || t('errors.generic'));
       }
 
       const blob = await response.blob();
@@ -187,7 +189,7 @@ export default function PermitDetailPage() {
         if (a.parentNode) document.body.removeChild(a);
       }, 0);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to download certificate');
+      setError(err instanceof Error ? err.message : t('errors.generic'));
     } finally {
       // X8: ensure the "Downloading..." spinner clears even if the fetch /
       // blob path threw mid-way. Previously the unconditional line below the
@@ -215,9 +217,9 @@ export default function PermitDetailPage() {
       <div className="min-h-screen bg-background">
         <Header />
         <main className="max-w-4xl mx-auto px-4 py-6">
-          <p className="text-muted-foreground">{error || 'Permit not found'}</p>
+          <p className="text-muted-foreground">{error || t('errors.notFound')}</p>
           <Button variant="outline" className="mt-4" onClick={() => router.push('/permits')}>
-            Back to Permits
+            {t('common.back')}
           </Button>
         </main>
       </div>
@@ -240,7 +242,7 @@ export default function PermitDetailPage() {
         <div className="flex items-center justify-between mb-6">
           <Button variant="ghost" size="sm" onClick={() => router.push('/permits')}>
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Permits
+            {t('common.back')}
           </Button>
 
           <div className="flex items-center gap-2">
@@ -258,7 +260,7 @@ export default function PermitDetailPage() {
                   ) : (
                     <ShieldCheck className="h-4 w-4 mr-2" />
                   )}
-                  AI Check
+                  {t('permits.actions.runCompliance')}
                 </Button>
                 <Button
                   size="sm"
@@ -270,7 +272,7 @@ export default function PermitDetailPage() {
                   ) : (
                     <Send className="h-4 w-4 mr-2" />
                   )}
-                  Submit
+                  {t('permits.actions.submit')}
                 </Button>
                 <Button
                   variant="destructive"
@@ -296,7 +298,7 @@ export default function PermitDetailPage() {
                 ) : (
                   <Download className="h-4 w-4 mr-2" />
                 )}
-                Download Certificate
+                {t('permits.detail.downloadCertificate')}
               </Button>
             )}
 
@@ -312,7 +314,7 @@ export default function PermitDetailPage() {
                 ) : (
                   <RotateCcw className="h-4 w-4 mr-2" />
                 )}
-                Revise & Resubmit
+                {t('permits.actions.revise')}
               </Button>
             )}
           </div>
@@ -321,7 +323,7 @@ export default function PermitDetailPage() {
         {/* Revision Notes Banner */}
         {permit.status === 'revision_requested' && permit.revisionNotes && (
           <div className="mb-4 p-4 rounded-lg bg-orange-500/10 border border-orange-500/30">
-            <h4 className="text-sm font-semibold text-orange-400 mb-1">Revision Required</h4>
+            <h4 className="text-sm font-semibold text-orange-400 mb-1">{t('permits.status.revision_requested')}</h4>
             <p className="text-sm text-orange-300/90">{permit.revisionNotes}</p>
           </div>
         )}
@@ -363,7 +365,7 @@ export default function PermitDetailPage() {
 
           {/* Sidebar — Timeline */}
           <div>
-            <h3 className="text-sm font-semibold mb-3">Status History</h3>
+            <h3 className="text-sm font-semibold mb-3">{t('permits.detail.statusTimeline')}</h3>
             <PermitStatusTimeline history={history} />
           </div>
         </div>
@@ -373,14 +375,14 @@ export default function PermitDetailPage() {
       <Dialog open={deleteDialogOpen} onOpenChange={(open) => !open && setDeleteDialogOpen(false)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Draft Permit</DialogTitle>
+            <DialogTitle>{t('permits.actions.deletePermit')}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete &quot;{permit.projectName}&quot;? This action cannot be undone.
+              {t('permits.detail.deleteConfirm')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>{t('common.cancel')}</Button>
+            <Button variant="destructive" onClick={handleDelete}>{t('common.delete')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

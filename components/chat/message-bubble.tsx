@@ -6,6 +6,7 @@
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { useTranslation } from 'react-i18next';
 import { CitationsList } from './source-citation';
 import { complianceStatusConfig } from '@/lib/constants';
 import { getStatusIcon } from '@/lib/status-icons';
@@ -25,6 +26,7 @@ interface MessageBubbleProps {
 }
 
 export function MessageBubble({ message }: MessageBubbleProps) {
+  const { t, i18n } = useTranslation();
   const isUser = message.role === 'user';
   const compliance = message.complianceStatus 
     ? complianceStatusConfig[message.complianceStatus] 
@@ -130,17 +132,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               <button
                 onClick={handleCopy}
                 className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded-md hover:bg-background/50"
-                title="Copy answer"
+                title={t('dashboard.chat.copy')}
               >
                 {copied ? (
                   <>
                     <Check className="h-3.5 w-3.5 text-violet-500" />
-                    <span className="text-violet-500">Copied!</span>
+                    <span className="text-violet-500">{t('dashboard.chat.copied')}</span>
                   </>
                 ) : (
                   <>
                     <Copy className="h-3.5 w-3.5" />
-                    <span>Copy answer</span>
+                    <span>{t('dashboard.chat.copy')}</span>
                   </>
                 )}
               </button>
@@ -155,7 +157,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
         {/* Timestamp */}
         <div className={`mt-1 text-xs text-muted-foreground ${isUser ? 'text-right' : 'text-left'}`}>
-          {formatTimestamp(message.timestamp)}
+          {formatTimestamp(message.timestamp, i18n.resolvedLanguage || i18n.language || 'en')}
         </div>
       </div>
     </div>
@@ -166,12 +168,20 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 // Helper Functions
 // ============================================================================
 
-function formatTimestamp(date: Date | string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: 'numeric',
-    hour12: true,
-  }).format(new Date(date));
+function formatTimestamp(date: Date | string, locale: string): string {
+  const tag = locale === 'kk' ? 'kk-KZ' : locale === 'ru' ? 'ru-RU' : 'en-US';
+  try {
+    return new Intl.DateTimeFormat(tag, {
+      hour: 'numeric',
+      minute: 'numeric',
+    }).format(new Date(date));
+  } catch {
+    return new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: true,
+    }).format(new Date(date));
+  }
 }
 
 // ============================================================================
@@ -179,6 +189,7 @@ function formatTimestamp(date: Date | string): string {
 // ============================================================================
 
 export function LoadingMessage() {
+  const { t } = useTranslation();
   return (
     <div className="flex gap-3">
       <Avatar className="h-8 w-8 shrink-0 bg-violet-600">
@@ -213,7 +224,7 @@ export function LoadingMessage() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
             </div>
-            <span className="text-xs text-muted-foreground">Analyzing building codes...</span>
+            <span className="text-xs text-muted-foreground">{t('dashboard.chat.thinking')}</span>
           </div>
         </div>
       </div>

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useTranslation } from 'react-i18next';
 
 const SIDE = 170;
 const GROUND_LEN = 160;
@@ -24,6 +25,7 @@ function shouldSkipSplash(): boolean {
 }
 
 export function SplashScreen({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const [showSplash, setShowSplash] = useState(true);
   const [phase, setPhase] = useState(0);
 
@@ -201,7 +203,7 @@ export function SplashScreen({ children }: { children: React.ReactNode }) {
                 delay: phase >= 4 && phase < 5 ? 0.3 : 0,
               }}
             >
-              AI-Powered Compliance
+              {t('splash.tagline')}
             </motion.p>
           </motion.div>
         )}

@@ -4,20 +4,22 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PermitStatusBadge } from './permit-status-badge';
 import { PROJECT_TYPES } from '@/lib/constants';
 import { Building2, MapPin, Ruler, ParkingSquare, Layers } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { PermitApplication } from '@/types';
 
-// TS-M-4 / v1.6.0 Part E: pinned-locale formatter (see compliance-check-panel).
-const REVIEWED_AT_FMT = new Intl.DateTimeFormat('en-US', {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-  hour12: true,
-});
-
-function formatReviewedAt(iso: string): string {
-  return REVIEWED_AT_FMT.format(new Date(iso));
+function formatReviewedAt(iso: string, locale: string): string {
+  const tag = locale === 'kk' ? 'kk-KZ' : locale === 'ru' ? 'ru-RU' : 'en-US';
+  try {
+    return new Intl.DateTimeFormat(tag, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(new Date(iso));
+  } catch {
+    return new Date(iso).toISOString();
+  }
 }
 
 interface PermitDetailViewProps {
@@ -25,7 +27,11 @@ interface PermitDetailViewProps {
 }
 
 export function PermitDetailView({ permit }: PermitDetailViewProps) {
-  const typeLabel = PROJECT_TYPES.find(t => t.value === permit.projectType)?.label || permit.projectType;
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language || 'en';
+  const typeLabel = t(`permits.step1.type.${permit.projectType}`, {
+    defaultValue: PROJECT_TYPES.find(x => x.value === permit.projectType)?.label || permit.projectType,
+  });
   const bd = permit.buildingDetails;
   const hasBuildingDetails = bd && bd.numberOfFloors;
 
@@ -48,7 +54,7 @@ export function PermitDetailView({ permit }: PermitDetailViewProps) {
                 </span>
               </div>
               {permit.plotNumber && (
-                <p className="text-sm text-muted-foreground mt-1">Plot: {permit.plotNumber}</p>
+                <p className="text-sm text-muted-foreground mt-1">{t('permits.step2.plotArea')}: {permit.plotNumber}</p>
               )}
               {permit.projectDescription && (
                 <p className="text-sm text-muted-foreground mt-2">{permit.projectDescription}</p>
@@ -65,23 +71,23 @@ export function PermitDetailView({ permit }: PermitDetailViewProps) {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Layers className="h-4 w-4" />
-              Building Details
+              {t('permits.detail.buildingDetails')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <DetailItem label="Floors" value={String(bd.numberOfFloors)} />
-              <DetailItem label="Height" value={`${bd.buildingHeight}m`} />
-              <DetailItem label="Built-Up Area" value={`${bd.totalBuiltUpArea} m²`} />
-              <DetailItem label="Plot Area" value={`${bd.plotArea} m²`} />
-              <DetailItem label="Units" value={String(bd.numberOfUnits || 0)} />
+              <DetailItem label={t('permits.step2.floors')} value={String(bd.numberOfFloors)} />
+              <DetailItem label={t('permits.step2.height')} value={`${bd.buildingHeight}m`} />
+              <DetailItem label={t('permits.step2.builtUpArea')} value={`${bd.totalBuiltUpArea} m²`} />
+              <DetailItem label={t('permits.step2.plotArea')} value={`${bd.plotArea} m²`} />
+              <DetailItem label={t('permits.step2.units')} value={String(bd.numberOfUnits || 0)} />
               <DetailItem
-                label="Parking"
+                label={t('permits.step2.parkingSpaces')}
                 value={String(bd.numberOfParkingSpaces || 0)}
                 icon={<ParkingSquare className="h-3 w-3" />}
               />
-              <DetailItem label="Occupancy" value={bd.occupancyType || 'N/A'} />
-              <DetailItem label="Construction" value={bd.constructionType || 'N/A'} />
+              <DetailItem label={t('permits.step2.occupancyType')} value={bd.occupancyType || t('common.notAvailable')} />
+              <DetailItem label={t('permits.step2.constructionType')} value={bd.constructionType || t('common.notAvailable')} />
             </div>
 
             {bd.plotArea && bd.totalBuiltUpArea && (
@@ -110,16 +116,16 @@ export function PermitDetailView({ permit }: PermitDetailViewProps) {
       {permit.complianceRequirements && Object.keys(permit.complianceRequirements).length > 0 && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Compliance Requirements</CardTitle>
+            <CardTitle className="text-base">{t('permits.detail.complianceRequirements')}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
-              {permit.complianceRequirements.fireSafety && <RequirementBadge label="Fire Safety" />}
-              {permit.complianceRequirements.accessibility && <RequirementBadge label="Accessibility" />}
-              {permit.complianceRequirements.parkingCompliance && <RequirementBadge label="Parking" />}
-              {permit.complianceRequirements.structuralSafety && <RequirementBadge label="Structural Safety" />}
-              {permit.complianceRequirements.mepSystems && <RequirementBadge label="MEP Systems" />}
-              {permit.complianceRequirements.energyEfficiency && <RequirementBadge label="Energy Efficiency" />}
+              {permit.complianceRequirements.fireSafety && <RequirementBadge label={t('permits.step3.fireSafety')} />}
+              {permit.complianceRequirements.accessibility && <RequirementBadge label={t('permits.step3.accessibility')} />}
+              {permit.complianceRequirements.parkingCompliance && <RequirementBadge label={t('permits.step3.parkingCompliance')} />}
+              {permit.complianceRequirements.structuralSafety && <RequirementBadge label={t('permits.step3.structuralSafety')} />}
+              {permit.complianceRequirements.mepSystems && <RequirementBadge label={t('permits.step3.mep')} />}
+              {permit.complianceRequirements.energyEfficiency && <RequirementBadge label={t('permits.step3.energyEfficiency')} />}
             </div>
             {permit.complianceRequirements.additionalNotes && (
               <p className="text-sm text-muted-foreground mt-3">
@@ -134,14 +140,13 @@ export function PermitDetailView({ permit }: PermitDetailViewProps) {
       {permit.reviewComments && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Review Comments</CardTitle>
+            <CardTitle className="text-base">{t('permits.detail.reviewComments')}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-sm">{permit.reviewComments}</p>
             {permit.reviewedAt && (
               <p className="text-xs text-muted-foreground mt-2">
-                {/* TS-M-4 / v1.6.0 Part E: pinned locale so SSR/CSR strings match. */}
-                Reviewed: {formatReviewedAt(permit.reviewedAt)}
+                {t('permits.detail.reviewedBy')}: {formatReviewedAt(permit.reviewedAt, locale)}
               </p>
             )}
           </CardContent>

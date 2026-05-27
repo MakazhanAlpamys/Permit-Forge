@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { 
@@ -24,6 +25,7 @@ interface CreateUserDialogProps {
 }
 
 export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialogProps) {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -65,7 +67,7 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
       setFormData({ username: '', password: '', full_name: '', role: 'user' });
       onSuccess();
     } else {
-      setError(result.error || 'Failed to create user');
+      setError(result.error || t('errors.generic'));
     }
   };
 
@@ -94,28 +96,28 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
           <div className="flex items-center justify-between gap-2">
             <CardTitle id="create-user-dialog-title" className="flex items-center gap-2 min-w-0">
               <UserPlus className="h-5 w-5 text-primary shrink-0" />
-              <span className="truncate">Create New User</span>
+              <span className="truncate">{t('admin.users.createDialog.title')}</span>
             </CardTitle>
             <Button
               variant="ghost"
               size="icon"
               onClick={safeClose}
               disabled={loading}
-              aria-label="Close create user dialog"
+              aria-label={t('common.close')}
               className="shrink-0"
             >
               <X className="h-4 w-4" />
             </Button>
           </div>
           <CardDescription>
-            Add a new user to the system
+            {t('admin.users.createUser')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Username */}
             <div className="space-y-2">
-              <label htmlFor="create-user-username" className="text-sm font-medium">Username *</label>
+              <label htmlFor="create-user-username" className="text-sm font-medium">{t('admin.users.createDialog.username')} *</label>
               <input
                 id="create-user-username"
                 type="text"
@@ -124,14 +126,14 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                 className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
-                placeholder="Enter username"
+                placeholder={t('admin.users.createDialog.username')}
                 disabled={loading}
               />
             </div>
 
             {/* Full Name */}
             <div className="space-y-2">
-              <label htmlFor="create-user-fullname" className="text-sm font-medium">Full Name</label>
+              <label htmlFor="create-user-fullname" className="text-sm font-medium">{t('admin.users.createDialog.fullName')}</label>
               <input
                 id="create-user-fullname"
                 type="text"
@@ -139,14 +141,14 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
                 value={formData.full_name}
                 onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
                 className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
-                placeholder="Enter full name (optional)"
+                placeholder={t('admin.users.createDialog.fullName')}
                 disabled={loading}
               />
             </div>
 
             {/* Password */}
             <div className="space-y-2">
-              <label htmlFor="create-user-password" className="text-sm font-medium">Password *</label>
+              <label htmlFor="create-user-password" className="text-sm font-medium">{t('admin.users.createDialog.password')} *</label>
               <div className="relative">
                 <input
                   id="create-user-password"
@@ -157,13 +159,13 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   className="w-full px-3 py-2 pr-10 rounded-md border border-input bg-background text-sm"
-                  placeholder="Minimum 8 characters"
+                  placeholder={t('auth.register.passwordPlaceholder')}
                   disabled={loading}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={t('common.toggleTheme')}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   tabIndex={-1}
                 >
@@ -174,7 +176,7 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
 
             {/* Role */}
             <div className="space-y-2">
-              <label htmlFor="create-user-role" className="text-sm font-medium">Role *</label>
+              <label htmlFor="create-user-role" className="text-sm font-medium">{t('admin.users.createDialog.role')} *</label>
               <select
                 id="create-user-role"
                 value={formData.role}
@@ -182,8 +184,8 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
                 className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
                 disabled={loading}
               >
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
+                <option value="user">{t('admin.users.roleUser')}</option>
+                <option value="admin">{t('admin.users.roleAdmin')}</option>
               </select>
             </div>
 
@@ -203,7 +205,7 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
                 disabled={loading}
                 className="flex-1"
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 type="submit"
@@ -213,12 +215,12 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Creating...
+                    {t('admin.users.createDialog.submitting')}
                   </>
                 ) : (
                   <>
                     <UserPlus className="h-4 w-4 mr-2" />
-                    Create User
+                    {t('admin.users.createDialog.submit')}
                   </>
                 )}
               </Button>

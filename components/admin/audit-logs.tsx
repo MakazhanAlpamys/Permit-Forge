@@ -6,6 +6,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { useTranslation } from 'react-i18next';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
   History,
@@ -70,21 +71,32 @@ const actionLabels: Record<string, string> = {
 };
 
 export function AuditLogs({ logs, loading }: AuditLogsProps) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language || 'en';
+  const tag = locale === 'kk' ? 'kk-KZ' : locale === 'ru' ? 'ru-RU' : 'en-US';
   const formatTime = (dateStr: string) => {
     const date = new Date(dateStr);
     const now = new Date();
     const diff = now.getTime() - date.getTime();
-    
-    if (diff < 60000) return 'Just now';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    let rtf: Intl.RelativeTimeFormat;
+    try {
+      rtf = new Intl.RelativeTimeFormat(tag, { numeric: 'auto' });
+    } catch {
+      rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+    }
+    if (diff < 60000) return t('common.today');
+    if (diff < 3600000) return rtf.format(-Math.floor(diff / 60000), 'minute');
+    if (diff < 86400000) return rtf.format(-Math.floor(diff / 3600000), 'hour');
+    try {
+      return date.toLocaleDateString(tag, {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch {
+      return date.toLocaleDateString();
+    }
   };
 
   return (
@@ -92,10 +104,10 @@ export function AuditLogs({ logs, loading }: AuditLogsProps) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <History className="h-5 w-5 text-primary" />
-          Recent Activity
+          {t('admin.audit.title')}
         </CardTitle>
         <CardDescription>
-          Audit log of security events and admin actions
+          {t('admin.tabs.audit')}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -105,7 +117,7 @@ export function AuditLogs({ logs, loading }: AuditLogsProps) {
           </div>
         ) : logs.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            No activity logs yet
+            {t('admin.audit.noLogs')}
           </div>
         ) : (
           <ScrollArea className="h-[400px] pr-4">
@@ -136,7 +148,7 @@ export function AuditLogs({ logs, loading }: AuditLogsProps) {
                         {log.username ? (
                           <span className="font-medium">{log.username}</span>
                         ) : (
-                          <span className="text-muted-foreground">Unknown user</span>
+                          <span className="text-muted-foreground">{t('common.notAvailable')}</span>
                         )}
                         {log.targetUsername && (
                           <>
@@ -152,7 +164,7 @@ export function AuditLogs({ logs, loading }: AuditLogsProps) {
                       )}
                       {log.ipAddress && (
                         <p className="text-xs text-muted-foreground mt-1 break-all">
-                          IP: {log.ipAddress}
+                          {t('admin.audit.ipAddress')}: {log.ipAddress}
                         </p>
                       )}
                     </div>

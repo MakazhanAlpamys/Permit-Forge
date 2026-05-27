@@ -6,13 +6,16 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTheme } from '@/components/theme-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { LanguageToggle } from '@/components/language-toggle';
 import { DitheringBackground } from '@/components/login/dithering-background';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export default function RegisterPage() {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -34,7 +37,7 @@ export default function RegisterPage() {
         router.push(`/verify-email?email=${encodeURIComponent(email)}`);
       }
     } catch {
-      setError('Registration failed. Please try again.');
+      setError(t('auth.register.failed'));
     } finally {
       setLoading(false);
     }
@@ -44,7 +47,8 @@ export default function RegisterPage() {
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
       <DitheringBackground />
 
-      <div className="absolute top-4 right-4 z-20">
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        <LanguageToggle />
         <ThemeToggle />
       </div>
 
@@ -61,9 +65,9 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <CardTitle className="text-2xl font-bold">Create Account</CardTitle>
+            <CardTitle className="text-2xl font-bold">{t('auth.register.title')}</CardTitle>
             <CardDescription>
-              Register for PermitForge
+              {t('auth.register.subtitle')}
             </CardDescription>
           </div>
         </CardHeader>
@@ -73,7 +77,7 @@ export default function RegisterPage() {
             {/* Username */}
             <div className="space-y-2">
               <label htmlFor="username" className="text-sm font-medium leading-none">
-                Username
+                {t('auth.register.usernameLabel')}
               </label>
               <input
                 id="username"
@@ -83,14 +87,14 @@ export default function RegisterPage() {
                 autoComplete="username"
                 disabled={loading}
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                placeholder="Enter username"
+                placeholder={t('auth.register.usernamePlaceholder')}
               />
             </div>
 
             {/* Email */}
             <div className="space-y-2">
               <label htmlFor="email" className="text-sm font-medium leading-none">
-                Email
+                {t('auth.register.emailLabel')}
               </label>
               <input
                 id="email"
@@ -100,14 +104,14 @@ export default function RegisterPage() {
                 autoComplete="email"
                 disabled={loading}
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                placeholder="Enter email"
+                placeholder={t('auth.register.emailPlaceholder')}
               />
             </div>
 
             {/* Password */}
             <div className="space-y-2">
               <label htmlFor="password" className="text-sm font-medium leading-none">
-                Password
+                {t('auth.register.passwordLabel')}
               </label>
               <div className="relative">
                 <input
@@ -118,7 +122,7 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                   disabled={loading}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  placeholder="Min 8 chars, uppercase, lowercase, digit, special"
+                  placeholder={t('auth.register.passwordPlaceholder')}
                 />
                 <button
                   type="button"
@@ -141,19 +145,19 @@ export default function RegisterPage() {
               {loading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating account...
+                  {t('auth.register.submitting')}
                 </>
               ) : (
-                'Create Account'
+                t('auth.register.submit')
               )}
             </Button>
           </form>
 
           <div className="mt-6 text-center text-sm text-muted-foreground">
             <p>
-              Already have an account?{' '}
+              {t('auth.register.haveAccount')}{' '}
               <Link href="/login" className="text-primary hover:underline">
-                Sign in
+                {t('auth.register.signIn')}
               </Link>
             </p>
           </div>

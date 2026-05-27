@@ -6,6 +6,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { BarChart3, Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import {
   AreaChart,
   Area,
@@ -23,17 +24,25 @@ interface MessageActivityChartProps {
   loading?: boolean;
 }
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string, locale: string): string {
   const date = new Date(dateStr);
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const tag = locale === 'kk' ? 'kk-KZ' : locale === 'ru' ? 'ru-RU' : 'en-US';
+  try {
+    return date.toLocaleDateString(tag, { month: 'short', day: 'numeric' });
+  } catch {
+    return date.toLocaleDateString();
+  }
 }
 
 export function MessageActivityChart({ data, loading }: MessageActivityChartProps) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language || 'en';
+  const userLabel = t('admin.overview.messages');
+  const aiLabel = t('dashboard.chat.thinking');
   const chartData = data.map((d) => ({
-    day: formatDate(d.day),
-    'User Messages': d.userCount,
-    'AI Responses': d.assistantCount,
-    'Active Users': d.activeUsers,
+    day: formatDate(d.day, locale),
+    [userLabel]: d.userCount,
+    [aiLabel]: d.assistantCount,
   }));
 
   return (
@@ -41,7 +50,7 @@ export function MessageActivityChart({ data, loading }: MessageActivityChartProp
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <BarChart3 className="h-5 w-5 text-primary" />
-          Message Activity (30 Days)
+          {t('admin.overview.messageActivity')}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -51,7 +60,7 @@ export function MessageActivityChart({ data, loading }: MessageActivityChartProp
           </div>
         ) : data.length === 0 ? (
           <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-            No message activity data
+            {t('common.none')}
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={300}>
@@ -89,14 +98,14 @@ export function MessageActivityChart({ data, loading }: MessageActivityChartProp
               <Legend wrapperStyle={{ fontSize: '12px' }} />
               <Area
                 type="monotone"
-                dataKey="User Messages"
+                dataKey={userLabel}
                 stroke="#3b82f6"
                 fill="url(#colorUser)"
                 strokeWidth={2}
               />
               <Area
                 type="monotone"
-                dataKey="AI Responses"
+                dataKey={aiLabel}
                 stroke="#7c3aed"
                 fill="url(#colorAI)"
                 strokeWidth={2}

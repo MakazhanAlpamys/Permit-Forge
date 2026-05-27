@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,9 +39,19 @@ interface PermitManagementProps {
 }
 
 export function PermitManagement({ permits, stats, loading, onRefresh, onFilterStatus }: PermitManagementProps) {
-  // X2: persist permit-status filter in the URL (?status=approved) so refresh
-  // / share-link / browser-back keeps the same view. Falls back to 'all' when
-  // the query param is absent.
+  const { t } = useTranslation();
+  const filterLabel = (value: string, fallback: string): string => {
+    const map: Record<string, string> = {
+      all: 'permits.list.filterAll',
+      draft: 'permits.list.filterDraft',
+      submitted: 'permits.list.filterSubmitted',
+      under_review: 'permits.list.filterUnderReview',
+      approved: 'permits.list.filterApproved',
+      rejected: 'permits.list.filterRejected',
+      revision_requested: 'permits.list.filterRevisionRequested',
+    };
+    return t(map[value] ?? '', { defaultValue: fallback });
+  };
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -113,7 +124,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
       if (result.warning) flashWarning(result.warning);
       onRefresh();
     } else {
-      setError(result.error || 'Failed to start review');
+      setError(result.error || t('errors.generic'));
     }
   };
 
@@ -138,7 +149,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
       if (result.warning) flashWarning(result.warning);
       onRefresh();
     } else {
-      setError(result.error || 'Failed to review permit');
+      setError(result.error || t('errors.generic'));
     }
   };
 
@@ -147,14 +158,14 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
       {/* Stats row */}
       {stats && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-8 gap-3">
-          <StatMini label="Total" value={stats.totalPermits} />
-          <StatMini label="Drafts" value={stats.draftCount} color="text-muted-foreground" />
-          <StatMini label="Submitted" value={stats.submittedCount} color="text-blue-600 dark:text-blue-400" />
-          <StatMini label="Under Review" value={stats.underReviewCount} color="text-yellow-600 dark:text-yellow-400" />
-          <StatMini label="Approved" value={stats.approvedCount} color="text-violet-600 dark:text-violet-400" />
-          <StatMini label="Rejected" value={stats.rejectedCount} color="text-red-600 dark:text-red-400" />
-          <StatMini label="Revision" value={stats.revisionRequestedCount} color="text-orange-600 dark:text-orange-400" />
-          <StatMini label="Today" value={stats.permitsToday} />
+          <StatMini label={t('admin.overview.totalPermits')} value={stats.totalPermits} />
+          <StatMini label={t('permits.status.draft')} value={stats.draftCount} color="text-muted-foreground" />
+          <StatMini label={t('permits.status.submitted')} value={stats.submittedCount} color="text-blue-600 dark:text-blue-400" />
+          <StatMini label={t('permits.status.under_review')} value={stats.underReviewCount} color="text-yellow-600 dark:text-yellow-400" />
+          <StatMini label={t('permits.status.approved')} value={stats.approvedCount} color="text-violet-600 dark:text-violet-400" />
+          <StatMini label={t('permits.status.rejected')} value={stats.rejectedCount} color="text-red-600 dark:text-red-400" />
+          <StatMini label={t('permits.status.revision_requested')} value={stats.revisionRequestedCount} color="text-orange-600 dark:text-orange-400" />
+          <StatMini label={t('common.today')} value={stats.permitsToday} />
         </div>
       )}
 
@@ -168,7 +179,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
             onClick={() => handleFilter(sf.value)}
             className="text-xs"
           >
-            {sf.label}
+            {filterLabel(sf.value, sf.label)}
           </Button>
         ))}
       </div>
@@ -195,13 +206,15 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
       ) : permits.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <ClipboardCheck className="h-12 w-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No permits found</p>
+          <p className="text-sm">{t('permits.list.empty')}</p>
         </div>
       ) : (
         <div className="space-y-2">
           {permits.map(permit => {
             const isExpanded = expandedPermit === permit.id;
-            const typeLabel = PROJECT_TYPES.find(t => t.value === permit.projectType)?.label || permit.projectType;
+            const typeLabel = t(`permits.step1.type.${permit.projectType}`, {
+              defaultValue: PROJECT_TYPES.find(x => x.value === permit.projectType)?.label || permit.projectType,
+            });
 
             return (
               <Card key={permit.id} className="overflow-hidden">
@@ -261,7 +274,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                           ) : (
                             <>
                               <Eye className="h-3 w-3 mr-1" />
-                              Start Review
+                              {t('admin.permits.review')}
                             </>
                           )}
                         </Button>
@@ -278,7 +291,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                             }}
                           >
                             <CheckCircle2 className="h-3 w-3 mr-1" />
-                            Approve
+                            {t('admin.permits.approve')}
                           </Button>
                           <Button
                             variant="outline"
@@ -290,7 +303,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                             }}
                           >
                             <RotateCcw className="h-3 w-3 mr-1" />
-                            Revise
+                            {t('admin.permits.requestRevision')}
                           </Button>
                           <Button
                             variant="outline"
@@ -302,7 +315,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                             }}
                           >
                             <XCircle className="h-3 w-3 mr-1" />
-                            Reject
+                            {t('admin.permits.reject')}
                           </Button>
                         </>
                       )}
@@ -320,19 +333,19 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                       {permit.buildingDetails?.numberOfFloors && (
                         <>
                           <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Floors</p>
+                            <p className="text-xs text-muted-foreground">{t('permits.step2.floors')}</p>
                             <p className="font-medium truncate">{permit.buildingDetails.numberOfFloors}</p>
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Height</p>
+                            <p className="text-xs text-muted-foreground">{t('permits.step2.height')}</p>
                             <p className="font-medium truncate">{permit.buildingDetails.buildingHeight}m</p>
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Built-Up Area</p>
+                            <p className="text-xs text-muted-foreground">{t('permits.step2.builtUpArea')}</p>
                             <p className="font-medium truncate">{permit.buildingDetails.totalBuiltUpArea} m²</p>
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">Parking</p>
+                            <p className="text-xs text-muted-foreground">{t('permits.step2.parkingSpaces')}</p>
                             <p className="font-medium truncate">{permit.buildingDetails.numberOfParkingSpaces}</p>
                           </div>
                         </>
@@ -340,13 +353,15 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                     </div>
                     {permit.complianceCheckResult && (
                       <div className="mt-3 p-3 rounded-lg bg-muted/50">
-                        <p className="text-xs font-medium">AI Compliance: {' '}
+                        <p className="text-xs font-medium">{t('permits.actions.runCompliance')}: {' '}
                           <span className={
                             permit.complianceCheckResult.overallStatus === 'compliant' ? 'text-violet-600 dark:text-violet-400' :
                             permit.complianceCheckResult.overallStatus === 'non_compliant' ? 'text-red-600 dark:text-red-400' :
                             'text-yellow-600 dark:text-yellow-400'
                           }>
-                            {permit.complianceCheckResult.overallStatus.replace('_', ' ')}
+                            {t(`permits.compliance.${permit.complianceCheckResult.overallStatus}`, {
+                              defaultValue: permit.complianceCheckResult.overallStatus.replace('_', ' '),
+                            })}
                           </span>
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">{permit.complianceCheckResult.summary}</p>
@@ -354,7 +369,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                     )}
                     {permit.reviewComments && (
                       <div className="mt-3 p-3 rounded-lg border border-border">
-                        <p className="text-xs font-medium">Review Comments:</p>
+                        <p className="text-xs font-medium">{t('permits.detail.reviewComments')}:</p>
                         <p className="text-sm mt-1">{permit.reviewComments}</p>
                       </div>
                     )}
@@ -380,29 +395,27 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {reviewDialog?.action === 'approve' ? 'Approve' : reviewDialog?.action === 'request_revision' ? 'Request Revision' : 'Reject'} Permit
+              {reviewDialog?.action === 'approve' ? t('admin.permits.approve') : reviewDialog?.action === 'request_revision' ? t('admin.permits.requestRevision') : t('admin.permits.reject')}
             </DialogTitle>
             <DialogDescription>
               {reviewDialog?.action === 'approve'
-                ? `Approve "${reviewDialog.permit.projectName}"?`
-                : reviewDialog?.action === 'request_revision'
-                  ? `Request revisions for "${reviewDialog?.permit.projectName}"?`
-                  : `Reject "${reviewDialog?.permit.projectName}"?`}
+                ? t('admin.permits.approveConfirm')
+                : t('admin.permits.rejectConfirm')}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <label className="text-sm font-medium">Review Comments *</label>
+            <label className="text-sm font-medium">{t('admin.permits.comment')} *</label>
             <textarea
               value={reviewComments}
               onChange={(e) => setReviewComments(e.target.value)}
               className="w-full mt-2 px-3 py-2 rounded-md border border-input bg-background text-sm min-h-[100px] resize-none"
-              placeholder="Enter your review comments..."
+              placeholder={t('admin.permits.comment')}
               required
             />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => { setReviewDialog(null); setReviewComments(''); }}>
-              Cancel
+              {t('common.cancel')}
             </Button>
             <Button
               variant={reviewDialog?.action === 'approve' ? 'default' : reviewDialog?.action === 'request_revision' ? 'outline' : 'destructive'}
@@ -412,7 +425,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
               {actionLoading ? (
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               ) : null}
-              {reviewDialog?.action === 'approve' ? 'Approve' : reviewDialog?.action === 'request_revision' ? 'Request Revision' : 'Reject'}
+              {reviewDialog?.action === 'approve' ? t('admin.permits.approve') : reviewDialog?.action === 'request_revision' ? t('admin.permits.requestRevision') : t('admin.permits.reject')}
             </Button>
           </DialogFooter>
         </DialogContent>

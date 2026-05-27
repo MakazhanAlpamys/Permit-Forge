@@ -5,7 +5,8 @@
 // ============================================================================
 
 import { useState, useEffect, useRef } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { useTranslation } from 'react-i18next';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -65,8 +66,9 @@ export function UserManagement({
   loading, 
   onRefresh, 
   onSearch,
-  onCreateUser 
+  onCreateUser
 }: UserManagementProps) {
+  const { t, i18n } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>({ type: null, user: null });
@@ -140,7 +142,7 @@ export function UserManagement({
       closeModal();
       onRefresh();
     } else {
-      setModal({ type: 'error', user: null, message: result.error || 'Failed to update user' });
+      setModal({ type: 'error', user: null, message: result.error || t('errors.generic') });
     }
   };
 
@@ -164,7 +166,7 @@ export function UserManagement({
       closeModal();
       onRefresh();
     } else {
-      setModal({ type: 'error', user: null, message: result.error || 'Failed to update role' });
+      setModal({ type: 'error', user: null, message: result.error || t('errors.generic') });
     }
   };
 
@@ -195,9 +197,9 @@ export function UserManagement({
     setActionLoading(null);
 
     if (result.success) {
-      setModal({ type: 'success', user: null, message: 'Password reset successfully' });
+      setModal({ type: 'success', user: null, message: t('profile.passwordChanged') });
     } else {
-      setModal({ type: 'error', user: null, message: result.error || 'Failed to reset password' });
+      setModal({ type: 'error', user: null, message: result.error || t('errors.generic') });
     }
   };
 
@@ -219,7 +221,7 @@ export function UserManagement({
       closeModal();
       onRefresh();
     } else {
-      setModal({ type: 'error', user: null, message: result.error || 'Failed to delete user' });
+      setModal({ type: 'error', user: null, message: result.error || t('errors.generic') });
     }
   };
 
@@ -228,12 +230,18 @@ export function UserManagement({
   // -----------------------------------------------------------------------------
 
   const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return 'Never';
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+    if (!dateStr) return t('admin.users.neverLoggedIn');
+    const locale = i18n.resolvedLanguage || i18n.language || 'en';
+    const tag = locale === 'kk' ? 'kk-KZ' : locale === 'ru' ? 'ru-RU' : 'en-US';
+    try {
+      return new Date(dateStr).toLocaleDateString(tag, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    } catch {
+      return new Date(dateStr).toLocaleDateString();
+    }
   };
 
   // -----------------------------------------------------------------------------
@@ -248,15 +256,12 @@ export function UserManagement({
             <div className="min-w-0">
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5 text-primary" />
-                User Management
+                {t('admin.users.title')}
               </CardTitle>
-              <CardDescription>
-                Manage user accounts, roles, and access
-              </CardDescription>
             </div>
             <Button onClick={onCreateUser} size="sm" className="shrink-0">
               <UserPlus className="h-4 w-4 mr-2" />
-              Add User
+              {t('admin.users.createUser')}
             </Button>
           </div>
 
@@ -264,18 +269,18 @@ export function UserManagement({
           <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2 mt-4">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <label htmlFor="user-search" className="sr-only">Search users</label>
+              <label htmlFor="user-search" className="sr-only">{t('common.search')}</label>
               <input
                 id="user-search"
                 type="text"
-                placeholder="Search users..."
+                placeholder={t('common.search')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 text-sm rounded-md border border-input bg-background"
               />
             </div>
             <Button type="submit" variant="secondary" size="sm">
-              Search
+              {t('common.search')}
             </Button>
           </form>
         </CardHeader>
@@ -287,19 +292,19 @@ export function UserManagement({
             </div>
           ) : users.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              No users found
+              {t('admin.users.title')} — {t('common.none')}
             </div>
           ) : (
             <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0">
               <table className="w-full min-w-[640px]">
                 <thead>
                   <tr className="border-b text-left">
-                    <th className="pb-3 font-medium text-sm text-muted-foreground">User</th>
-                    <th className="pb-3 font-medium text-sm text-muted-foreground hidden md:table-cell">Role</th>
-                    <th className="pb-3 font-medium text-sm text-muted-foreground">Status</th>
-                    <th className="pb-3 font-medium text-sm text-muted-foreground hidden lg:table-cell">Activity</th>
-                    <th className="pb-3 font-medium text-sm text-muted-foreground hidden lg:table-cell">Last Login</th>
-                    <th className="pb-3 font-medium text-sm text-muted-foreground text-right">Actions</th>
+                    <th className="pb-3 font-medium text-sm text-muted-foreground">{t('admin.users.username')}</th>
+                    <th className="pb-3 font-medium text-sm text-muted-foreground hidden md:table-cell">{t('admin.users.role')}</th>
+                    <th className="pb-3 font-medium text-sm text-muted-foreground">{t('admin.users.status')}</th>
+                    <th className="pb-3 font-medium text-sm text-muted-foreground hidden lg:table-cell">{t('admin.overview.messages')}</th>
+                    <th className="pb-3 font-medium text-sm text-muted-foreground hidden lg:table-cell">{t('admin.users.lastLogin')}</th>
+                    <th className="pb-3 font-medium text-sm text-muted-foreground text-right">{t('admin.users.actions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
@@ -309,7 +314,7 @@ export function UserManagement({
                         <div className="min-w-0">
                           <p className="font-medium truncate">{user.username}</p>
                           <p className="text-xs text-muted-foreground truncate">
-                            {user.fullName || 'No name'}
+                            {user.fullName || t('common.notAvailable')}
                           </p>
                           {/* Mobile-only inline role badge (since Role column is hidden <md) */}
                           <div className="md:hidden mt-1">
@@ -318,7 +323,7 @@ export function UserManagement({
                               className={user.role === 'admin' ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/30' : ''}
                             >
                               {user.role === 'admin' && <Shield className="h-3 w-3 mr-1" />}
-                              {user.role}
+                              {user.role === 'admin' ? t('admin.users.roleAdmin') : t('admin.users.roleUser')}
                             </Badge>
                           </div>
                         </div>
@@ -336,19 +341,19 @@ export function UserManagement({
                         {user.blocked ? (
                           <Badge variant="destructive" className="bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/30">
                             <Ban className="h-3 w-3 mr-1" />
-                            Blocked
+                            {t('admin.users.blocked')}
                           </Badge>
                         ) : (
                           <Badge className="bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-500/30">
                             <CheckCircle className="h-3 w-3 mr-1" />
-                            Active
+                            {t('admin.users.active')}
                           </Badge>
                         )}
                       </td>
                       <td className="py-4 hidden lg:table-cell">
                         <div className="text-sm">
-                          <p>{user.sessionCount} sessions</p>
-                          <p className="text-xs text-muted-foreground">{user.messageCount} messages</p>
+                          <p>{user.sessionCount}</p>
+                          <p className="text-xs text-muted-foreground">{user.messageCount} {t('admin.overview.messages')}</p>
                         </div>
                       </td>
                       <td className="py-4 text-sm text-muted-foreground hidden lg:table-cell">
@@ -421,21 +426,14 @@ export function UserManagement({
       <ConfirmDialog
         open={modal.type === 'block'}
         onOpenChange={(open) => !open && closeModal()}
-        title={modal.user?.blocked ? 'Unblock User' : 'Block User'}
-        description={
-          modal.user?.blocked
-            ? `Are you sure you want to unblock ${modal.user?.username}?`
-            : // CP-D-8 (v1.2.0): hint that the block-status cache TTL is up
-              //   to 30 s (v1.1 Part C), so an already-in-flight request from
-              //   the user may complete before block takes effect on Edge.
-              `Are you sure you want to block ${modal.user?.username}? They will not be able to log in. Note: an active session may continue for up to 30 seconds while the block-status cache expires.`
-        }
+        title={modal.user?.blocked ? t('admin.users.unblock') : t('admin.users.block')}
+        description={t('admin.users.blockConfirm', { username: modal.user?.username ?? '' })}
         body={
           !modal.user?.blocked ? (
             <>
-              <label className="text-sm font-medium">Reason (optional)</label>
+              <label className="text-sm font-medium">{t('admin.users.blockReason')}</label>
               <Input
-                placeholder="Enter reason for blocking..."
+                placeholder={t('admin.users.blockReason')}
                 value={blockReason}
                 onChange={(e) => setBlockReason(e.target.value)}
                 className="mt-2"
@@ -443,7 +441,7 @@ export function UserManagement({
             </>
           ) : undefined
         }
-        confirmLabel={modal.user?.blocked ? 'Unblock' : 'Block'}
+        confirmLabel={modal.user?.blocked ? t('admin.users.unblock') : t('admin.users.block')}
         confirmVariant={modal.user?.blocked ? 'default' : 'destructive'}
         loading={actionLoading === modal.user?.id}
         onConfirm={handleBlockConfirm}
@@ -453,15 +451,14 @@ export function UserManagement({
       <ConfirmDialog
         open={modal.type === 'role'}
         onOpenChange={(open) => !open && closeModal()}
-        title="Change User Role"
+        title={t('admin.users.role')}
         description={
           <>
-            Change {modal.user?.username}&apos;s role from{' '}
-            <strong>{modal.user?.role}</strong> to{' '}
-            <strong>{modal.user?.role === 'admin' ? 'user' : 'admin'}</strong>?
+            <strong>{modal.user?.username}</strong>:{' '}
+            <strong>{modal.user?.role === 'admin' ? t('admin.users.roleUser') : t('admin.users.roleAdmin')}</strong>
           </>
         }
-        confirmLabel="Change Role"
+        confirmLabel={t('common.confirm')}
         loading={actionLoading === modal.user?.id}
         onConfirm={handleRoleConfirm}
       />
@@ -470,14 +467,14 @@ export function UserManagement({
       <ConfirmDialog
         open={modal.type === 'password'}
         onOpenChange={(open) => !open && closeModal()}
-        title="Reset Password"
-        description={`Enter a new password for ${modal.user?.username ?? ''}`}
+        title={t('admin.users.resetPassword')}
+        description={modal.user?.username ? `${t('admin.users.resetPassword')}: ${modal.user.username}` : t('admin.users.resetPassword')}
         body={
           <>
-            <label className="text-sm font-medium">New Password</label>
+            <label className="text-sm font-medium">{t('profile.newPassword')}</label>
             <Input
               type="password"
-              placeholder="Enter new password..."
+              placeholder={t('profile.newPassword')}
               value={newPassword}
               onChange={(e) => {
                 setNewPassword(e.target.value);
@@ -489,11 +486,11 @@ export function UserManagement({
               <p className="text-sm text-red-500 mt-2">{passwordError}</p>
             )}
             <p className="text-xs text-muted-foreground mt-2">
-              Password must be at least 8 characters with uppercase, lowercase, digit, and special character.
+              {t('auth.register.passwordPlaceholder')}
             </p>
           </>
         }
-        confirmLabel="Reset Password"
+        confirmLabel={t('admin.users.resetPassword')}
         loading={actionLoading === modal.user?.id}
         disabled={!newPassword}
         onConfirm={handlePasswordConfirm}
@@ -503,15 +500,10 @@ export function UserManagement({
       <ConfirmDialog
         open={modal.type === 'delete'}
         onOpenChange={(open) => !open && closeModal()}
-        title="Delete User"
+        title={t('admin.users.delete')}
         destructive
-        description={
-          <>
-            Are you sure you want to delete <strong>{modal.user?.username}</strong>?
-            This action cannot be undone. All user data including chat history will be permanently deleted.
-          </>
-        }
-        confirmLabel="Delete User"
+        description={t('admin.users.deleteConfirm', { username: modal.user?.username ?? '' })}
+        confirmLabel={t('admin.users.delete')}
         confirmVariant="destructive"
         loading={actionLoading === modal.user?.id}
         onConfirm={handleDeleteConfirm}

@@ -6,6 +6,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { useTranslation } from 'react-i18next';
 import {
   Users,
   Activity,
@@ -63,9 +64,10 @@ function TrendBadge({ today, yesterday }: { today: number; yesterday: number }) 
 }
 
 export function EnhancedStatsCards({ stats, loading }: EnhancedStatsCardsProps) {
+  const { t } = useTranslation();
   const cards = [
     {
-      title: 'Total Users',
+      title: t('admin.overview.totalUsers'),
       value: stats?.totalUsers ?? 0,
       icon: Users,
       color: 'text-blue-600 dark:text-blue-400',
@@ -73,7 +75,7 @@ export function EnhancedStatsCards({ stats, loading }: EnhancedStatsCardsProps) 
       hasTrend: false,
     },
     {
-      title: 'Active Today',
+      title: t('admin.overview.activeUsers'),
       value: stats?.activeUsersToday ?? 0,
       icon: Activity,
       color: 'text-violet-600 dark:text-violet-400',
@@ -83,7 +85,7 @@ export function EnhancedStatsCards({ stats, loading }: EnhancedStatsCardsProps) 
       yesterday: stats?.activeUsersYesterday ?? 0,
     },
     {
-      title: 'Messages Today',
+      title: t('admin.overview.totalMessages'),
       value: stats?.messagesToday ?? 0,
       icon: MessageSquare,
       color: 'text-purple-600 dark:text-purple-400',
@@ -93,7 +95,7 @@ export function EnhancedStatsCards({ stats, loading }: EnhancedStatsCardsProps) 
       yesterday: stats?.messagesYesterday ?? 0,
     },
     {
-      title: 'Permits Today',
+      title: t('admin.overview.totalPermits'),
       value: stats?.permitsToday ?? 0,
       icon: ClipboardCheck,
       color: 'text-orange-600 dark:text-orange-400',
@@ -103,7 +105,7 @@ export function EnhancedStatsCards({ stats, loading }: EnhancedStatsCardsProps) 
       yesterday: stats?.permitsYesterday ?? 0,
     },
     {
-      title: 'New Users',
+      title: t('admin.users.createUser'),
       value: stats?.newUsersToday ?? 0,
       icon: UserPlus,
       color: 'text-cyan-600 dark:text-cyan-400',
@@ -113,7 +115,7 @@ export function EnhancedStatsCards({ stats, loading }: EnhancedStatsCardsProps) 
       yesterday: stats?.newUsersYesterday ?? 0,
     },
     {
-      title: 'RAG Chunks',
+      title: t('admin.overview.totalChunks'),
       value: stats?.totalChunks ?? 0,
       icon: Database,
       color: 'text-yellow-600 dark:text-yellow-400',

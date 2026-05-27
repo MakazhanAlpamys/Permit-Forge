@@ -8,6 +8,7 @@ import { getCSRFTokenAction } from '@/actions/auth';
 import { formatFileSize } from '@/lib/file-upload';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { useTranslation } from 'react-i18next';
 import type { PermitAttachment } from '@/types';
 
 interface FileUploadZoneProps {
@@ -24,6 +25,7 @@ function getFileIcon(fileType: string) {
 }
 
 export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: FileUploadZoneProps) {
+  const { t } = useTranslation();
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,16 +50,16 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
       const result = await uploadPermitAttachment(permitId, formData, csrfTokenRef.current || undefined);
 
       if (!result.success) {
-        setError(result.error || 'Upload failed');
+        setError(result.error || t('errors.generic'));
       } else {
         onUpdate();
       }
     } catch {
-      setError('Upload failed');
+      setError(t('errors.generic'));
     } finally {
       setUploading(false);
     }
-  }, [permitId, onUpdate]);
+  }, [permitId, onUpdate, t]);
 
   // CP-D-4 (v1.2.0): wire delete through a ConfirmDialog instead of firing
   // immediately on click. An attachment is irrecoverable once the storage
@@ -79,10 +81,10 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
       if (result.success) {
         onUpdate();
       } else {
-        setError(result.error || 'Delete failed');
+        setError(result.error || t('errors.generic'));
       }
     } catch {
-      setError('Delete failed');
+      setError(t('errors.generic'));
     } finally {
       setDeleting(null);
       setPendingDeleteId(null);
@@ -121,7 +123,7 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-medium">
-          Attachments ({attachments.length}/{FILE_UPLOAD_LIMITS.maxFilesPerPermit})
+          {t('permits.detail.attachments')} ({attachments.length}/{FILE_UPLOAD_LIMITS.maxFilesPerPermit})
         </h3>
       </div>
 
@@ -146,10 +148,10 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
         >
           <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
           <p className="text-sm text-muted-foreground">
-            {uploading ? 'Uploading...' : 'Drag & drop or click to upload'}
+            {uploading ? t('permits.fileUpload.uploading') : t('permits.fileUpload.dropzone')}
           </p>
           <p className="text-xs text-muted-foreground/70 mt-1">
-            PDF, PNG, JPG, DWG, DXF (max 10MB)
+            {t('permits.fileUpload.allowedTypes')}
           </p>
           <input
             ref={inputRef}
@@ -196,7 +198,7 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
                         rel="noopener noreferrer"
                         download={attachment.fileName}
                       >
-                        Download
+                        {t('common.download')}
                       </a>
                     </Button>
                   )}
@@ -225,13 +227,13 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
           if (deleting) return;
           if (!open) { setPendingDeleteId(null); setPendingDeleteName(''); }
         }}
-        title="Delete attachment"
+        title={t('permits.detail.deleteAttachmentConfirm')}
         description={
           <>
-            Delete <strong>{pendingDeleteName}</strong>? This cannot be undone.
+            <strong>{pendingDeleteName}</strong>
           </>
         }
-        confirmLabel="Delete"
+        confirmLabel={t('common.delete')}
         confirmVariant="destructive"
         destructive
         loading={!!deleting}

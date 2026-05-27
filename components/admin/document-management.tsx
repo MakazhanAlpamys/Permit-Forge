@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   getAllRegisteredDocuments,
   upsertDocument,
@@ -58,6 +59,7 @@ interface DiagnosticInfo {
 // -----------------------------------------------------------------------------
 
 export function DocumentManagement() {
+  const { t } = useTranslation();
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -450,21 +452,20 @@ export function DocumentManagement() {
     <>
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-2xl font-bold">Document Management</h2>
-          <p className="text-muted-foreground">Manage documents, ingestion, and search configuration</p>
+          <h2 className="text-2xl font-bold">{t('admin.documents.title')}</h2>
         </div>
         <div className="flex gap-2 shrink-0">
           <Button
             variant="ghost"
             size="sm"
-            aria-label="Refresh documents"
+            aria-label={t('common.refresh')}
             onClick={() => { loadDocuments(); runDiagnostics(); }}
           >
             <RefreshCw className={`h-4 w-4 ${loading || diagnostic.loading ? 'animate-spin' : ''}`} />
           </Button>
           <Button onClick={openAddForm} size="sm">
             <Plus className="h-4 w-4 mr-1" />
-            Add Document
+            {t('admin.documents.addDocument')}
           </Button>
         </div>
       </div>
@@ -481,7 +482,7 @@ export function DocumentManagement() {
           <CardContent>
             {diagnostic.loading ? (
               <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                <Loader2 className="h-4 w-4 animate-spin" /> Running diagnostics...
+                <Loader2 className="h-4 w-4 animate-spin" /> {t('common.processing')}
               </div>
             ) : (
               <div className="flex flex-wrap gap-4 text-sm">
@@ -495,11 +496,11 @@ export function DocumentManagement() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Database className="h-3.5 w-3.5 text-muted-foreground" />
-                  {diagnostic.totalChunkCount} total chunks
+                  {diagnostic.totalChunkCount} {t('admin.documents.chunks')}
                 </div>
                 <div className="flex items-center gap-1.5">
                   <BookOpen className="h-3.5 w-3.5 text-muted-foreground" />
-                  {activeDocuments.length} active documents
+                  {activeDocuments.length} {t('admin.documents.active')}
                 </div>
                 {diagnostic.error && (
                   <div className="w-full mt-2 p-2 rounded bg-yellow-500/10 border border-yellow-500/30 flex items-start gap-2">
@@ -531,7 +532,7 @@ export function DocumentManagement() {
         {/* Document Cards */}
         {loading ? (
           <div className="flex items-center gap-2 text-muted-foreground py-8 justify-center">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading documents...
+            <Loader2 className="h-4 w-4 animate-spin" /> {t('common.loading')}
           </div>
         ) : (
           <>
@@ -563,7 +564,7 @@ export function DocumentManagement() {
                       )}
                       {isIngested && (
                         <Badge className="bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-500/30 text-[10px] shrink-0">
-                          {chunkCount} chunks
+                          {chunkCount} {t('admin.documents.chunks')}
                         </Badge>
                       )}
                       <Button
@@ -629,17 +630,17 @@ export function DocumentManagement() {
                         disabled={status === 'loading' || !diagnostic.dbConnected || !doc.storagePath}
                         size="sm"
                         className="flex-1"
-                        title={!doc.storagePath ? 'Upload a PDF first' : undefined}
+                        title={!doc.storagePath ? t('admin.documents.uploadPdf') : undefined}
                       >
                         {status === 'loading' ? (
                           <>
                             <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
-                            {progress ? `${progress.progress}%` : 'Processing...'}
+                            {progress ? `${progress.progress}%` : t('common.processing')}
                           </>
                         ) : (
                           <>
                             <Upload className="mr-1.5 h-3 w-3" />
-                            {isIngested ? 'Re-ingest' : 'Ingest'}
+                            {isIngested ? t('admin.documents.reIngest') : t('admin.documents.ingest')}
                           </>
                         )}
                       </Button>
@@ -654,7 +655,7 @@ export function DocumentManagement() {
                           title="Cancel ingestion"
                         >
                           <X className="mr-1.5 h-3 w-3" />
-                          Cancel
+                          {t('common.cancel')}
                         </Button>
                       )}
 
@@ -665,7 +666,7 @@ export function DocumentManagement() {
                           size="sm"
                         >
                           <Trash2 className="mr-1.5 h-3 w-3" />
-                          Clear
+                          {t('admin.documents.clearChunks')}
                         </Button>
                       )}
 
@@ -694,7 +695,7 @@ export function DocumentManagement() {
                   className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
                 >
                   <Archive className="h-3 w-3" />
-                  {showInactive ? 'Hide' : 'Show'} {inactiveDocuments.length} deactivated document{inactiveDocuments.length > 1 ? 's' : ''}
+                  {showInactive ? t('common.less') : t('common.more')} ({inactiveDocuments.length})
                 </button>
 
                 {showInactive && (
@@ -711,7 +712,7 @@ export function DocumentManagement() {
                           <div className="flex gap-2 flex-wrap shrink-0">
                             <Button size="sm" variant="outline" onClick={() => handleRestore(doc.id, doc.displayName)}>
                               <RotateCcw className="h-3 w-3 mr-1" />
-                              Restore
+                              {t('admin.documents.restore')}
                             </Button>
                             <Button
                               size="sm"
@@ -719,7 +720,7 @@ export function DocumentManagement() {
                               onClick={() => handleDeleteWithChunks(doc.id, doc.displayName)}
                             >
                               <Trash2 className="h-3 w-3 mr-1" />
-                              Delete + Chunks
+                              {t('common.delete')}
                             </Button>
                           </div>
                         </CardContent>

@@ -6,6 +6,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Database, Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import {
   BarChart,
   Bar,
@@ -30,6 +31,7 @@ const CHART_COLORS = ['#3b82f6', '#ef4444', '#7c3aed', '#a855f7', '#06b6d4', '#f
 const DEFAULT_COLOR = '#6b7280';
 
 export function DocumentUsageChart({ data, loading, displayNames }: DocumentUsageChartProps) {
+  const { t } = useTranslation();
   const chartData = data.map((d) => ({
     name: displayNames?.[d.documentName] || d.documentName,
     chunks: d.chunkCount,
@@ -42,7 +44,7 @@ export function DocumentUsageChart({ data, loading, displayNames }: DocumentUsag
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Database className="h-5 w-5 text-primary" />
-          Document Chunks
+          {t('admin.overview.documentUsage')}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -52,7 +54,7 @@ export function DocumentUsageChart({ data, loading, displayNames }: DocumentUsag
           </div>
         ) : data.length === 0 ? (
           <div className="h-[250px] flex items-center justify-center text-muted-foreground">
-            No documents ingested
+            {t('common.none')}
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={250}>
@@ -82,7 +84,7 @@ export function DocumentUsageChart({ data, loading, displayNames }: DocumentUsag
                   borderRadius: '8px',
                   fontSize: '12px',
                 }}
-                formatter={(value) => [`${value} chunks`, 'Chunks']}
+                formatter={(value) => [`${value}`, t('admin.documents.chunks')]}
               />
               <Bar dataKey="chunks" radius={[0, 4, 4, 0]} barSize={24}>
                 {chartData.map((entry, index) => (

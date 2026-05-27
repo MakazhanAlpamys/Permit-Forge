@@ -6,6 +6,7 @@
 
 import { useEffect } from 'react';
 import Link from 'next/link';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { AlertTriangle, RotateCcw, ArrowLeft } from 'lucide-react';
@@ -16,6 +17,7 @@ interface ErrorProps {
 }
 
 export default function ProfileError({ error, reset }: ErrorProps) {
+  const { t } = useTranslation();
   useEffect(() => {
     console.error('[app/profile/error.tsx] profile segment crashed:', {
       message: error.message,
@@ -34,26 +36,25 @@ export default function ProfileError({ error, reset }: ErrorProps) {
               </div>
             </div>
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold">Failed to load profile</h2>
+              <h2 className="text-xl font-semibold">{t('errors.profileError')}</h2>
               <p className="text-sm text-muted-foreground">
-                Something went wrong loading your profile data. Retry, or
-                head back to the dashboard.
+                {t('errors.pageCrashed')}
               </p>
               {error.digest && (
                 <p className="text-xs text-muted-foreground/70 font-mono">
-                  ref: {error.digest}
+                  {t('errors.errorDigest', { digest: error.digest })}
                 </p>
               )}
             </div>
             <div className="flex items-center justify-center gap-3 pt-2">
               <Button onClick={reset}>
                 <RotateCcw className="mr-2 h-4 w-4" />
-                Retry
+                {t('common.retry')}
               </Button>
               <Button variant="outline" asChild>
                 <Link href="/">
                   <ArrowLeft className="mr-2 h-4 w-4" />
-                  Dashboard
+                  {t('errors.goHome')}
                 </Link>
               </Button>
             </div>

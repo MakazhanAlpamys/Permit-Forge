@@ -6,13 +6,16 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTheme } from '@/components/theme-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { LanguageToggle } from '@/components/language-toggle';
 import { DitheringBackground } from '@/components/login/dithering-background';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, CheckCircle2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 function VerifyEmailForm() {
+  const { t } = useTranslation();
   const searchParams = useSearchParams();
   const emailParam = searchParams.get('email') || '';
   const [email] = useState(emailParam);
@@ -68,7 +71,8 @@ function VerifyEmailForm() {
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
       <DitheringBackground />
 
-      <div className="absolute top-4 right-4 z-20">
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        <LanguageToggle />
         <ThemeToggle />
       </div>
 
@@ -86,12 +90,14 @@ function VerifyEmailForm() {
 
           <div>
             <CardTitle className="text-2xl font-bold">
-              {verified ? 'Email Verified!' : 'Verify Your Email'}
+              {verified ? t('auth.verifyEmail.titleSuccess') : t('auth.verifyEmail.title')}
             </CardTitle>
             <CardDescription>
               {verified
-                ? 'Redirecting to login...'
-                : `We sent a 6-digit code to ${email || 'your email'}`}
+                ? t('auth.verifyEmail.subtitleRedirect')
+                : email
+                  ? t('auth.verifyEmail.subtitle', { email })
+                  : t('auth.verifyEmail.subtitleFallback')}
             </CardDescription>
           </div>
         </CardHeader>
@@ -100,14 +106,14 @@ function VerifyEmailForm() {
           {verified ? (
             <div className="flex flex-col items-center gap-4 py-4">
               <CheckCircle2 className="h-16 w-16 text-green-500" />
-              <p className="text-sm text-muted-foreground">You can now sign in with your account.</p>
+              <p className="text-sm text-muted-foreground">{t('auth.verifyEmail.successMessage')}</p>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Email (readonly) */}
               <div className="space-y-2">
                 <label htmlFor="email" className="text-sm font-medium leading-none">
-                  Email
+                  {t('auth.verifyEmail.emailLabel')}
                 </label>
                 <input
                   id="email"
@@ -121,7 +127,7 @@ function VerifyEmailForm() {
               {/* Code */}
               <div className="space-y-2">
                 <label htmlFor="code" className="text-sm font-medium leading-none">
-                  Verification Code
+                  {t('auth.verifyEmail.codeLabel')}
                 </label>
                 <input
                   id="code"
@@ -147,17 +153,17 @@ function VerifyEmailForm() {
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Verifying...
+                    {t('auth.verifyEmail.submitting')}
                   </>
                 ) : (
-                  'Verify Email'
+                  t('auth.verifyEmail.submit')
                 )}
               </Button>
 
               {/* CP-E-1: resend button for expired or lost codes. */}
               <div className="text-center text-sm text-muted-foreground">
                 {resentAt ? (
-                  <span className="text-green-500">A new code was sent. Check your inbox.</span>
+                  <span className="text-green-500">{t('auth.verifyEmail.resent')}</span>
                 ) : (
                   <button
                     type="button"
@@ -165,7 +171,7 @@ function VerifyEmailForm() {
                     disabled={resending || !email}
                     className="text-primary hover:underline disabled:opacity-50 disabled:no-underline"
                   >
-                    {resending ? 'Sending...' : "Didn't get the code? Resend"}
+                    {resending ? t('auth.verifyEmail.resending') : t('auth.verifyEmail.resend')}
                   </button>
                 )}
               </div>
@@ -174,7 +180,7 @@ function VerifyEmailForm() {
 
           <div className="mt-6 text-center text-sm text-muted-foreground">
             <Link href="/login" className="text-primary hover:underline">
-              Back to login
+              {t('auth.verifyEmail.backToLogin')}
             </Link>
           </div>
         </CardContent>

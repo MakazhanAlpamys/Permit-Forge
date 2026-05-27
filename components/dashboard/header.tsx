@@ -11,7 +11,9 @@ import { Button } from '@/components/ui/button';
 import { logoutAction, getCSRFTokenAction } from '@/actions/auth';
 import { useTheme } from '@/components/theme-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { LanguageToggle } from '@/components/language-toggle';
 import { NotificationBell } from '@/components/notifications';
+import { useTranslation } from 'react-i18next';
 import {
   Menu,
   LogOut
@@ -23,6 +25,7 @@ interface HeaderProps {
 
 export function Header({ onMenuClick }: HeaderProps) {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   const [csrfToken, setCsrfToken] = useState('');
 
   useEffect(() => {
@@ -43,7 +46,7 @@ export function Header({ onMenuClick }: HeaderProps) {
           onClick={onMenuClick}
         >
           <Menu className="h-5 w-5" />
-          <span className="sr-only">Toggle menu</span>
+          <span className="sr-only">{t('dashboard.header.userMenu')}</span>
         </Button>
 
         {/* Logo — click to go home */}
@@ -65,6 +68,9 @@ export function Header({ onMenuClick }: HeaderProps) {
           {/* Notifications */}
           <NotificationBell />
 
+          {/* Language Toggle */}
+          <LanguageToggle />
+
           {/* Theme Toggle Button */}
           <ThemeToggle />
 
@@ -84,7 +90,7 @@ export function Header({ onMenuClick }: HeaderProps) {
               disabled={!csrfToken}
             >
               <LogOut className="h-5 w-5" />
-              <span className="sr-only">Logout</span>
+              <span className="sr-only">{t('common.signOut')}</span>
             </Button>
           </form>
         </div>

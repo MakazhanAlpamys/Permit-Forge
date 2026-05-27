@@ -32,6 +32,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from '@/components/theme-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { LanguageToggle } from '@/components/language-toggle';
+import { useTranslation } from 'react-i18next';
 import {
   UserManagement,
   AuditLogs,
@@ -65,6 +67,7 @@ type Tab = 'overview' | 'users' | 'permits' | 'documents' | 'logs';
 
 export default function AdminPage() {
   const { theme } = useTheme();
+  const { t } = useTranslation();
   // Tab state
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   
@@ -198,7 +201,7 @@ export default function AdminPage() {
 
     const csrfToken = await getCSRFTokenAction();
     if (!csrfToken) {
-      setProfileError('Session expired. Please refresh.');
+      setProfileError(t('errors.tryAgain'));
       setProfileLoading(false);
       return;
     }
@@ -223,11 +226,11 @@ export default function AdminPage() {
   };
 
   const tabs = [
-    { id: 'overview' as Tab, label: 'Overview', icon: LayoutDashboard },
-    { id: 'users' as Tab, label: 'Users', icon: Users },
-    { id: 'permits' as Tab, label: 'Permits', icon: ClipboardCheck },
-    { id: 'documents' as Tab, label: 'Documents', icon: BookOpen },
-    { id: 'logs' as Tab, label: 'Audit Logs', icon: History },
+    { id: 'overview' as Tab, label: t('admin.tabs.overview'), icon: LayoutDashboard },
+    { id: 'users' as Tab, label: t('admin.tabs.users'), icon: Users },
+    { id: 'permits' as Tab, label: t('admin.tabs.permits'), icon: ClipboardCheck },
+    { id: 'documents' as Tab, label: t('admin.tabs.documents'), icon: BookOpen },
+    { id: 'logs' as Tab, label: t('admin.tabs.audit'), icon: History },
   ];
 
   return (
@@ -245,14 +248,14 @@ export default function AdminPage() {
                 className="h-10 w-auto"
               />
               <Badge variant="outline" className="text-orange-600 dark:text-orange-400 border-orange-500">
-                Admin Panel
+                {t('admin.title')}
               </Badge>
             </div>
             <div className="flex items-center gap-1 sm:gap-2 flex-wrap justify-end">
               <Button
                 variant="ghost"
                 size="sm"
-                aria-label="Refresh dashboard"
+                aria-label={t('common.refresh')}
                 onClick={async () => {
                   // D2: refresh the analytics_daily MV before reloading so
                   // the dashboard reflects the latest pre-aggregated data.
@@ -264,21 +267,22 @@ export default function AdminPage() {
               >
                 <RefreshCw className={`h-4 w-4 ${dataLoading ? 'animate-spin' : ''}`} />
               </Button>
+              <LanguageToggle variant="text" />
               <ThemeToggle variant="text" />
               <Button
                 variant="ghost"
                 size="sm"
-                aria-label="Open admin profile"
+                aria-label={t('dashboard.header.profile')}
                 onClick={() => { setProfileOpen(true); setProfileError(''); setProfileSuccess(false); }}
               >
                 <UserCircle className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Profile</span>
+                <span className="hidden sm:inline">{t('dashboard.header.profile')}</span>
               </Button>
               <form action={logoutAction}>
                 <input type="hidden" name="csrfToken" value={csrfToken} />
-                <Button variant="ghost" size="sm" type="submit" aria-label="Logout">
+                <Button variant="ghost" size="sm" type="submit" aria-label={t('common.signOut')}>
                   <LogOut className="h-4 w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Logout</span>
+                  <span className="hidden sm:inline">{t('common.signOut')}</span>
                 </Button>
               </form>
             </div>
@@ -345,8 +349,8 @@ export default function AdminPage() {
             {activeTab === 'overview' && (
               <section role="tabpanel" id="admin-panel-overview" aria-labelledby="admin-tab-overview">
                 <div className="mb-6">
-                  <h2 className="text-2xl font-bold">Dashboard Overview</h2>
-                  <p className="text-muted-foreground">Monitor system activity and performance</p>
+                  <h2 className="text-2xl font-bold">{t('admin.tabs.overview')}</h2>
+                  <p className="text-muted-foreground">{t('admin.overview.messageActivity')}</p>
                 </div>
 
                 {/* Enhanced Stats Cards with Trends */}
@@ -381,8 +385,7 @@ export default function AdminPage() {
             {activeTab === 'users' && (
               <section role="tabpanel" id="admin-panel-users" aria-labelledby="admin-tab-users">
                 <div className="mb-6">
-                  <h2 className="text-2xl font-bold">User Management</h2>
-                  <p className="text-muted-foreground">Manage user accounts and permissions</p>
+                  <h2 className="text-2xl font-bold">{t('admin.users.title')}</h2>
                 </div>
 
                 <UserManagement
@@ -405,8 +408,7 @@ export default function AdminPage() {
             {activeTab === 'permits' && (
               <section role="tabpanel" id="admin-panel-permits" aria-labelledby="admin-tab-permits">
                 <div className="mb-6">
-                  <h2 className="text-2xl font-bold">Permit Applications</h2>
-                  <p className="text-muted-foreground">Review and manage permit applications</p>
+                  <h2 className="text-2xl font-bold">{t('admin.permits.title')}</h2>
                 </div>
 
                 <PermitManagement
@@ -430,8 +432,7 @@ export default function AdminPage() {
             {activeTab === 'logs' && (
               <section role="tabpanel" id="admin-panel-logs" aria-labelledby="admin-tab-logs">
                 <div className="mb-6">
-                  <h2 className="text-2xl font-bold">Audit Logs</h2>
-                  <p className="text-muted-foreground">View security events and admin actions</p>
+                  <h2 className="text-2xl font-bold">{t('admin.audit.title')}</h2>
                 </div>
 
                 <AuditLogs logs={auditLogs} loading={dataLoading} />
@@ -452,10 +453,10 @@ export default function AdminPage() {
         >
           <div className="bg-card border border-border rounded-lg p-6 max-w-sm w-full max-h-[90vh] overflow-y-auto shadow-lg">
             <div className="flex items-center justify-between mb-4">
-              <h3 id="admin-profile-title" className="text-lg font-semibold">Admin Profile</h3>
+              <h3 id="admin-profile-title" className="text-lg font-semibold">{t('profile.title')}</h3>
               <button
                 onClick={closeProfileDialog}
-                aria-label="Close profile dialog"
+                aria-label={t('common.close')}
                 className="text-muted-foreground hover:text-foreground"
               >
                 <X className="h-4 w-4" />
@@ -465,14 +466,14 @@ export default function AdminPage() {
             {profileSuccess ? (
               <div className="flex flex-col items-center gap-3 py-6">
                 <CheckCircle2 className="h-12 w-12 text-green-500" />
-                <p className="text-sm text-muted-foreground">Password changed successfully!</p>
+                <p className="text-sm text-muted-foreground">{t('profile.passwordChanged')}</p>
               </div>
             ) : (
               <form onSubmit={handleAdminPasswordChange} className="space-y-4">
-                <p className="text-sm text-muted-foreground">Change your password</p>
+                <p className="text-sm text-muted-foreground">{t('profile.changePassword')}</p>
 
                 <div className="space-y-2">
-                  <label htmlFor="currentPw" className="text-sm font-medium">Current Password</label>
+                  <label htmlFor="currentPw" className="text-sm font-medium">{t('profile.currentPassword')}</label>
                   <div className="relative">
                     <input
                       id="currentPw"
@@ -482,7 +483,7 @@ export default function AdminPage() {
                       required
                       disabled={profileLoading}
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
-                      placeholder="Current password"
+                      placeholder={t('profile.currentPassword')}
                     />
                     <button type="button" onClick={() => setShowCurrentPw(!showCurrentPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" tabIndex={-1}>
                       {showCurrentPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -491,7 +492,7 @@ export default function AdminPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label htmlFor="newPw" className="text-sm font-medium">New Password</label>
+                  <label htmlFor="newPw" className="text-sm font-medium">{t('profile.newPassword')}</label>
                   <div className="relative">
                     <input
                       id="newPw"
@@ -501,7 +502,7 @@ export default function AdminPage() {
                       required
                       disabled={profileLoading}
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
-                      placeholder="Min 8 chars, uppercase, lowercase, digit, special"
+                      placeholder={t('auth.register.passwordPlaceholder')}
                     />
                     <button type="button" onClick={() => setShowNewPw(!showNewPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" tabIndex={-1}>
                       {showNewPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -516,10 +517,10 @@ export default function AdminPage() {
                 )}
 
                 <div className="flex gap-3 justify-end">
-                  <Button variant="outline" type="button" onClick={closeProfileDialog}>Cancel</Button>
+                  <Button variant="outline" type="button" onClick={closeProfileDialog}>{t('common.cancel')}</Button>
                   <Button type="submit" disabled={profileLoading}>
                     {profileLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Change Password
+                    {t('profile.changePassword')}
                   </Button>
                 </div>
               </form>

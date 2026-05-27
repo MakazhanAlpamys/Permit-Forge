@@ -2,32 +2,42 @@
 
 import { permitStatusConfig } from '@/lib/constants';
 import { getStatusIcon } from '@/lib/status-icons';
+import { useTranslation } from 'react-i18next';
 import type { PermitStatusHistoryEntry, PermitStatus } from '@/types';
 
 interface PermitStatusTimelineProps {
   history: PermitStatusHistoryEntry[];
 }
 
-function formatTime(dateStr: string): string {
+function formatTime(dateStr: string, locale: string): string {
   const date = new Date(dateStr);
-  return date.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const tag = locale === 'kk' ? 'kk-KZ' : locale === 'ru' ? 'ru-RU' : 'en-US';
+  try {
+    return date.toLocaleString(tag, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return date.toISOString();
+  }
 }
 
 export function PermitStatusTimeline({ history }: PermitStatusTimelineProps) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage || i18n.language || 'en';
   if (history.length === 0) return null;
 
   return (
     <div className="space-y-0">
       {history.map((entry, index) => {
-        const config = permitStatusConfig[entry.toStatus as PermitStatus];
+        const status = entry.toStatus as PermitStatus;
+        const config = permitStatusConfig[status];
         const Icon = config ? getStatusIcon(config.iconName) : null;
         const isLast = index === history.length - 1;
+        const label = t(`permits.status.${status}`, { defaultValue: config?.label || entry.toStatus });
 
         return (
           <div key={entry.id} className="flex gap-3">
@@ -46,13 +56,13 @@ export function PermitStatusTimeline({ history }: PermitStatusTimelineProps) {
             {/* Content */}
             <div className="pb-6">
               <p className="text-sm font-medium">
-                {config?.label || entry.toStatus}
+                {label}
               </p>
               {entry.comment && (
                 <p className="text-xs text-muted-foreground mt-0.5">{entry.comment}</p>
               )}
               <p className="text-xs text-muted-foreground mt-0.5">
-                {formatTime(entry.createdAt)}
+                {formatTime(entry.createdAt, locale)}
               </p>
             </div>
           </div>

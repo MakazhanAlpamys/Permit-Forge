@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useTranslation } from 'react-i18next';
 import { PROJECT_TYPES } from '@/lib/constants';
 
 interface Step1Data {
@@ -21,6 +22,7 @@ interface PermitFormStep1Props {
 }
 
 export function PermitFormStep1({ data, onChange, onNext, loading, error }: PermitFormStep1Props) {
+  const { t } = useTranslation();
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onNext();
@@ -29,25 +31,25 @@ export function PermitFormStep1({ data, onChange, onNext, loading, error }: Perm
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Project Information</CardTitle>
+        <CardTitle className="text-lg">{t('permits.step1.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Project Name *</label>
+            <label className="text-sm font-medium">{t('permits.step1.projectName')} *</label>
             <input
               type="text"
               required
               value={data.projectName}
               onChange={(e) => onChange({ ...data, projectName: e.target.value })}
               className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
-              placeholder="e.g., Al Barsha Residential Tower"
+              placeholder={t('permits.step1.projectNamePlaceholder')}
               disabled={loading}
             />
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Project Type *</label>
+            <label className="text-sm font-medium">{t('permits.step1.projectType')} *</label>
             <select
               required
               value={data.projectType}
@@ -55,45 +57,47 @@ export function PermitFormStep1({ data, onChange, onNext, loading, error }: Perm
               className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
               disabled={loading}
             >
-              <option value="">Select project type</option>
+              <option value="">{t('permits.step1.projectType')}</option>
               {PROJECT_TYPES.map(type => (
-                <option key={type.value} value={type.value}>{type.label}</option>
+                <option key={type.value} value={type.value}>
+                  {t(`permits.step1.type.${type.value}`, { defaultValue: type.label })}
+                </option>
               ))}
             </select>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Project Address *</label>
+            <label className="text-sm font-medium">{t('permits.step1.location')} *</label>
             <input
               type="text"
               required
               value={data.projectAddress}
               onChange={(e) => onChange({ ...data, projectAddress: e.target.value })}
               className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
-              placeholder="e.g., Plot 123, District 1"
+              placeholder={t('permits.step1.locationPlaceholder')}
               disabled={loading}
             />
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Plot Number</label>
+            <label className="text-sm font-medium">{t('permits.step2.plotArea')}</label>
             <input
               type="text"
               value={data.plotNumber}
               onChange={(e) => onChange({ ...data, plotNumber: e.target.value })}
               className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm"
-              placeholder="e.g., 123-456"
+              placeholder="123-456"
               disabled={loading}
             />
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium">Project Description</label>
+            <label className="text-sm font-medium">{t('permits.step1.projectDescription')}</label>
             <textarea
               value={data.projectDescription}
               onChange={(e) => onChange({ ...data, projectDescription: e.target.value })}
               className="w-full px-3 py-2 rounded-md border border-input bg-background text-sm min-h-[80px] resize-none"
-              placeholder="Brief description of the project..."
+              placeholder={t('permits.step1.projectDescriptionPlaceholder')}
               disabled={loading}
               maxLength={2000}
             />
@@ -107,7 +111,7 @@ export function PermitFormStep1({ data, onChange, onNext, loading, error }: Perm
 
           <div className="flex justify-end">
             <Button type="submit" disabled={loading}>
-              {loading ? 'Saving...' : 'Next'}
+              {loading ? t('common.saving') : t('common.next')}
             </Button>
           </div>
         </form>

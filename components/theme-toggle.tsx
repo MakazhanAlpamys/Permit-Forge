@@ -7,6 +7,7 @@
 import { Button } from '@/components/ui/button';
 import { useTheme } from '@/components/theme-provider';
 import { Sun, Moon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface ThemeToggleProps {
   variant?: 'icon' | 'text';
@@ -15,24 +16,25 @@ interface ThemeToggleProps {
 
 export function ThemeToggle({ variant = 'icon', className }: ThemeToggleProps) {
   const { theme, toggleTheme } = useTheme();
+  const { t } = useTranslation();
 
   if (variant === 'text') {
     return (
-      <Button 
-        variant="ghost" 
-        size="sm" 
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={toggleTheme}
         className={className}
       >
         {theme === 'dark' ? (
           <>
             <Sun className="h-4 w-4 mr-2" />
-            Light Mode
+            {t('common.lightMode')}
           </>
         ) : (
           <>
             <Moon className="h-4 w-4 mr-2" />
-            Dark Mode
+            {t('common.darkMode')}
           </>
         )}
       </Button>
@@ -40,18 +42,19 @@ export function ThemeToggle({ variant = 'icon', className }: ThemeToggleProps) {
   }
 
   return (
-    <Button 
-      variant="ghost" 
-      size="icon" 
+    <Button
+      variant="ghost"
+      size="icon"
       onClick={toggleTheme}
       className={`text-muted-foreground ${className || ''}`}
+      aria-label={t('common.toggleTheme')}
     >
       {theme === 'dark' ? (
         <Sun className="h-5 w-5" />
       ) : (
         <Moon className="h-5 w-5" />
       )}
-      <span className="sr-only">Toggle theme</span>
+      <span className="sr-only">{t('common.toggleTheme')}</span>
     </Button>
   );
 }

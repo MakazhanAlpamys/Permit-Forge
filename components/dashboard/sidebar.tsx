@@ -7,6 +7,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -43,24 +44,8 @@ interface SidebarProps {
   onSelectSession?: (sessionId: string) => void;
 }
 
-// Navigation items
-const navItems = [
-  {
-    title: 'Chat',
-    href: '/',
-    icon: MessageSquare,
-    description: 'AI compliance assistant',
-  },
-  {
-    title: 'Permits',
-    href: '/permits',
-    icon: ClipboardList,
-    description: 'Permit applications',
-  },
-];
-
 // Helper function to format time ago
-function formatTimeAgo(date: Date): string {
+function formatTimeAgo(date: Date, locale: string): string {
   const now = new Date();
   const diff = now.getTime() - date.getTime();
   const seconds = Math.floor(diff / 1000);
@@ -68,20 +53,49 @@ function formatTimeAgo(date: Date): string {
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
+  // Map our internal locale codes (e.g. "kk") to BCP 47 tags
+  // accepted by Intl.RelativeTimeFormat. "kk" is fine as-is.
+  const tag = locale === 'kk' ? 'kk-KZ' : locale;
+  let rtf: Intl.RelativeTimeFormat;
+  try {
+    rtf = new Intl.RelativeTimeFormat(tag, { numeric: 'auto' });
+  } catch {
+    rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  }
+
   if (days > 7) {
-    return date.toLocaleDateString();
+    try {
+      return date.toLocaleDateString(tag);
+    } catch {
+      return date.toLocaleDateString();
+    }
   } else if (days > 0) {
-    return `${days}d ago`;
+    return rtf.format(-days, 'day');
   } else if (hours > 0) {
-    return `${hours}h ago`;
+    return rtf.format(-hours, 'hour');
   } else if (minutes > 0) {
-    return `${minutes}m ago`;
+    return rtf.format(-minutes, 'minute');
   } else {
-    return 'Just now';
+    return rtf.format(-Math.max(seconds, 1), 'second');
   }
 }
 
 export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0, onNewChat, onSelectSession }: SidebarProps) {
+  const { t, i18n } = useTranslation();
+  const navItems = [
+    {
+      title: t('dashboard.header.newChat'),
+      href: '/',
+      icon: MessageSquare,
+      description: t('dashboard.chat.welcomeSubtitle'),
+    },
+    {
+      title: t('dashboard.header.permits'),
+      href: '/permits',
+      icon: ClipboardList,
+      description: t('permits.list.subtitle'),
+    },
+  ];
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -129,7 +143,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
   // as a visible error dialog instead of letting the confirm modal close
   // silently and leaving the stale session in the list.
   const deleteSessionAction = useServerAction(deleteChatSession, {
-    fallbackErrorMessage: 'Failed to delete chat session',
+    fallbackErrorMessage: t('errors.generic'),
     onSuccess: () => {
       setSessions(prev => prev.filter(s => s.id !== sessionToDelete));
       if (currentSessionId === sessionToDelete && onNewChat) {
@@ -210,7 +224,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
             {/* Main Navigation */}
             <div>
               <h3 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                Main
+                {t('common.actions')}
               </h3>
               <nav className="space-y-1">
                 {navItems.map((item) => {
@@ -255,7 +269,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
                 variant="outline"
               >
                 <Plus className="h-4 w-4" />
-                New Chat
+                {t('dashboard.sidebar.newChat')}
               </Button>
             </div>
 
@@ -266,7 +280,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
-                  placeholder="Search chats..."
+                  placeholder={t('common.search')}
                   value={searchQuery}
                   onChange={e => handleSearchChange(e.target.value)}
                   className="h-8 pl-8 pr-8 text-xs"
@@ -283,12 +297,12 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
             {searchQuery && (
               <div className="flex-1 min-h-0">
                 <h3 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                  Search Results
+                  {t('common.search')}
                 </h3>
                 {isSearching ? (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">Searching...</div>
+                  <div className="px-3 py-2 text-xs text-muted-foreground">{t('common.loading')}</div>
                 ) : searchResults.length === 0 ? (
-                  <div className="px-3 py-2 text-xs text-muted-foreground">No results found</div>
+                  <div className="px-3 py-2 text-xs text-muted-foreground">{t('dashboard.sidebar.noSessions')}</div>
                 ) : (
                   <nav className="space-y-1 px-3">
                     {searchResults.map(r => (
@@ -309,15 +323,15 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
             {/* Chat History */}
             {!searchQuery && <div className="flex-1 min-h-0">
               <h3 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                Chat History
+                {t('dashboard.sidebar.title')}
               </h3>
               {loading ? (
                 <div className="px-3 py-4 text-sm text-muted-foreground">
-                  Loading...
+                  {t('common.loading')}
                 </div>
               ) : sessions.length === 0 ? (
                 <div className="px-3 py-4 text-sm text-muted-foreground">
-                  No chat history yet
+                  {t('dashboard.sidebar.noSessions')}
                 </div>
               ) : (
                 <ScrollArea className="h-[calc(100vh-550px)]">
@@ -325,7 +339,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
                     {sessions.map((session) => {
                       const isActive = currentSessionId === session.id;
                       const date = new Date(session.updated_at);
-                      const timeAgo = formatTimeAgo(date);
+                      const timeAgo = formatTimeAgo(date, i18n.resolvedLanguage || i18n.language || 'en');
                       
                       return (
                         <div
@@ -370,9 +384,9 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
             {/* Resources */}
             <div>
               <h3 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                Resources
+                {t('common.more')}
               </h3>
-              <p className="px-3 text-sm text-muted-foreground italic">Coming soon</p>
+              <p className="px-3 text-sm text-muted-foreground italic">{t('common.comingSoon')}</p>
             </div>
           </div>
 
@@ -384,7 +398,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
               className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
               <UserCircle className="h-5 w-5" />
-              <span className="font-medium">Profile</span>
+              <span className="font-medium">{t('dashboard.header.profile')}</span>
             </Link>
           </div>
         </ScrollArea>
@@ -394,9 +408,9 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
       {deleteDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
           <div className="bg-card border border-border rounded-lg p-6 max-w-sm w-full mx-4 shadow-lg">
-            <h3 className="text-lg font-semibold mb-2">Delete Chat</h3>
+            <h3 className="text-lg font-semibold mb-2">{t('dashboard.sidebar.deleteSession')}</h3>
             <p className="text-sm text-muted-foreground mb-6">
-              Are you sure you want to delete this chat? This action cannot be undone.
+              {t('permits.detail.deleteConfirm')}
             </p>
             <div className="flex gap-3 justify-end">
               <Button
@@ -404,7 +418,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
                 onClick={cancelDelete}
                 disabled={deleteSessionAction.isLoading}
               >
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 variant="destructive"
@@ -412,7 +426,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
                 disabled={deleteSessionAction.isLoading}
               >
                 {deleteSessionAction.isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Delete
+                {t('common.delete')}
               </Button>
             </div>
           </div>

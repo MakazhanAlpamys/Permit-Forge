@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ShieldCheck, ShieldAlert, ShieldQuestion, ChevronDown, ChevronUp } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { ComplianceCheckResult, ComplianceCheckItem } from '@/types';
 
 interface ComplianceCheckPanelProps {
@@ -13,25 +14,26 @@ interface ComplianceCheckPanelProps {
 const statusConfig = {
   compliant: {
     icon: ShieldCheck,
-    label: 'Compliant',
+    labelKey: 'permits.compliance.compliant',
     badgeClass: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
     borderClass: 'border-violet-500/30',
   },
   non_compliant: {
     icon: ShieldAlert,
-    label: 'Non-Compliant',
+    labelKey: 'permits.compliance.non_compliant',
     badgeClass: 'bg-red-500/20 text-red-400 border-red-500/30',
     borderClass: 'border-red-500/30',
   },
   requires_review: {
     icon: ShieldQuestion,
-    label: 'Requires Review',
+    labelKey: 'permits.compliance.requires_review',
     badgeClass: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
     borderClass: 'border-yellow-500/30',
   },
 };
 
 function CheckItem({ check }: { check: ComplianceCheckItem }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const config = statusConfig[check.status];
   const Icon = config.icon;
@@ -46,7 +48,7 @@ function CheckItem({ check }: { check: ComplianceCheckItem }) {
           <Icon className="h-4 w-4" />
           <span className="text-sm font-medium">{check.category}</span>
           <Badge variant="outline" className={`text-xs ${config.badgeClass}`}>
-            {config.label}
+            {t(config.labelKey)}
           </Badge>
         </div>
         {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -58,10 +60,10 @@ function CheckItem({ check }: { check: ComplianceCheckItem }) {
 
           {check.codeReferences.length > 0 && (
             <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Code References:</p>
+              <p className="text-xs font-medium text-muted-foreground">{t('permits.compliance.codeReferences')}:</p>
               {check.codeReferences.map((ref, i) => (
                 <div key={i} className="text-xs p-2 rounded bg-muted/50">
-                  <span className="font-medium">Page {ref.page}{ref.section ? `, Section ${ref.section}` : ''}</span>
+                  <span className="font-medium">{t('dashboard.chat.page', { page: ref.page })}{ref.section ? `, ${t('dashboard.chat.section', { section: ref.section })}` : ''}</span>
                   {ref.excerpt && (
                     <p className="text-muted-foreground mt-1 italic">&quot;{ref.excerpt}&quot;</p>
                   )}
@@ -75,23 +77,23 @@ function CheckItem({ check }: { check: ComplianceCheckItem }) {
   );
 }
 
-// TS-M-4 / v1.6.0 Part E: hydration-safe date formatter pinned to en-US so
-// the SSR-rendered string and the client-rendered string always match
-// regardless of the browser's locale.
-const CHECKED_AT_FMT = new Intl.DateTimeFormat('en-US', {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-  hour12: true,
-});
-
-function formatCheckedAt(iso: string): string {
-  return CHECKED_AT_FMT.format(new Date(iso));
+function formatCheckedAt(iso: string, locale: string): string {
+  const tag = locale === 'kk' ? 'kk-KZ' : locale === 'ru' ? 'ru-RU' : 'en-US';
+  try {
+    return new Intl.DateTimeFormat(tag, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    }).format(new Date(iso));
+  } catch {
+    return new Date(iso).toISOString();
+  }
 }
 
 export function ComplianceCheckPanel({ result }: ComplianceCheckPanelProps) {
+  const { t, i18n } = useTranslation();
   const overallConfig = statusConfig[result.overallStatus];
   const OverallIcon = overallConfig.icon;
 
@@ -101,11 +103,11 @@ export function ComplianceCheckPanel({ result }: ComplianceCheckPanelProps) {
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg flex items-center gap-2">
             <ShieldCheck className="h-5 w-5" />
-            AI Compliance Check
+            {t('permits.actions.runCompliance')}
           </CardTitle>
           <Badge variant="outline" className={overallConfig.badgeClass}>
             <OverallIcon className="h-3 w-3 mr-1" />
-            {overallConfig.label}
+            {t(overallConfig.labelKey)}
           </Badge>
         </div>
       </CardHeader>
@@ -119,10 +121,7 @@ export function ComplianceCheckPanel({ result }: ComplianceCheckPanelProps) {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          {/* TS-M-4 / v1.6.0 Part E: fixed locale to avoid hydration mismatch
-              (server renders en-US, client may pick up user locale → date
-              format diverges → React hydration warning). */}
-          Checked: {formatCheckedAt(result.checkedAt)}
+          {t('permits.compliance.checks')}: {formatCheckedAt(result.checkedAt, i18n.resolvedLanguage || i18n.language || 'en')}
         </p>
       </CardContent>
     </Card>

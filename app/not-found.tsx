@@ -1,9 +1,13 @@
+'use client';
+
 import Link from 'next/link';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Home } from 'lucide-react';
 
 export default function NotFound() {
+  const { t } = useTranslation();
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-background">
       <Card className="w-full max-w-lg text-center">
@@ -13,10 +17,10 @@ export default function NotFound() {
               404
             </h1>
             <p className="text-xl font-medium text-foreground">
-              Page Not Found
+              {t('errors.notFound')}
             </p>
             <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-              The page you are looking for does not exist or has been moved.
+              {t('errors.notFoundDescription')}
             </p>
           </div>
 
@@ -24,7 +28,7 @@ export default function NotFound() {
             <Button asChild>
               <Link href="/">
                 <Home className="mr-2 h-4 w-4" />
-                Go Home
+                {t('errors.goHome')}
               </Link>
             </Button>
           </div>

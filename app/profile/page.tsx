@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   getProfileAction,
   updateProfileAction,
@@ -27,6 +28,7 @@ import Link from 'next/link';
 type PasswordStep = 'idle' | 'code_sent' | 'done';
 
 export default function ProfilePage() {
+  const { t } = useTranslation();
   // Profile data
   const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
@@ -72,7 +74,7 @@ export default function ProfilePage() {
   const getCSRF = async (setError: (msg: string) => void): Promise<string | null> => {
     const token = await getCSRFTokenAction();
     if (!token) {
-      setError('Session expired. Please refresh.');
+      setError(t('errors.tryAgain'));
       return null;
     }
     return token;
@@ -92,7 +94,7 @@ export default function ProfilePage() {
     if (fullName !== origFullName) updates.full_name = fullName;
 
     if (Object.keys(updates).length === 0) {
-      setProfileError('No changes to save');
+      setProfileError(t('common.notAvailable'));
       setProfileSaving(false);
       return;
     }
@@ -165,7 +167,7 @@ export default function ProfilePage() {
           <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">
             <ArrowLeft className="h-5 w-5" />
           </Link>
-          <h1 className="text-2xl font-bold">Profile</h1>
+          <h1 className="text-2xl font-bold">{t('profile.title')}</h1>
         </div>
 
         {/* Profile Info */}
@@ -173,13 +175,13 @@ export default function ProfilePage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <User className="h-5 w-5" />
-              Account Information
+              {t('profile.personalInfo')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleProfileSave} className="space-y-4">
               <div className="space-y-2">
-                <label htmlFor="username" className="text-sm font-medium">Username</label>
+                <label htmlFor="username" className="text-sm font-medium">{t('profile.username')}</label>
                 <input
                   id="username"
                   type="text"
@@ -191,7 +193,7 @@ export default function ProfilePage() {
               </div>
 
               <div className="space-y-2">
-                <label htmlFor="fullName" className="text-sm font-medium">Full Name</label>
+                <label htmlFor="fullName" className="text-sm font-medium">{t('profile.fullName')}</label>
                 <input
                   id="fullName"
                   type="text"
@@ -199,14 +201,14 @@ export default function ProfilePage() {
                   onChange={(e) => setFullName(e.target.value)}
                   disabled={profileSaving}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
-                  placeholder="Enter your full name"
+                  placeholder={t('profile.fullName')}
                 />
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium flex items-center gap-2">
                   <Mail className="h-4 w-4" />
-                  Email
+                  {t('profile.email')}
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -217,7 +219,7 @@ export default function ProfilePage() {
                   />
                   {emailVerified && (
                     <span className="flex items-center gap-1 text-xs text-green-600 whitespace-nowrap">
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Verified
+                      <CheckCircle2 className="h-3.5 w-3.5" /> {t('admin.users.active')}
                     </span>
                   )}
                 </div>
@@ -231,7 +233,7 @@ export default function ProfilePage() {
 
               {profileSuccess && (
                 <div className="p-3 text-sm text-green-600 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-md">
-                  Profile updated successfully!
+                  {t('profile.profileUpdated')}
                 </div>
               )}
 
@@ -240,7 +242,7 @@ export default function ProfilePage() {
                 disabled={profileSaving || (username === origUsername && fullName === origFullName)}
               >
                 {profileSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                Save Changes
+                {profileSaving ? t('profile.updating') : t('profile.updateProfile')}
               </Button>
             </form>
           </CardContent>
@@ -253,19 +255,19 @@ export default function ProfilePage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Lock className="h-5 w-5" />
-              Change Password
+              {t('profile.changePassword')}
             </CardTitle>
           </CardHeader>
           <CardContent>
             {passwordStep === 'done' ? (
               <div className="flex flex-col items-center gap-3 py-4">
                 <CheckCircle2 className="h-12 w-12 text-green-500" />
-                <p className="text-sm text-muted-foreground">Password changed successfully!</p>
+                <p className="text-sm text-muted-foreground">{t('profile.passwordChanged')}</p>
               </div>
             ) : passwordStep === 'idle' ? (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  A verification code will be sent to your email to confirm the password change.
+                  {t('profile.codeSent')}
                 </p>
 
                 {passwordError && (
@@ -276,24 +278,24 @@ export default function ProfilePage() {
 
                 <Button onClick={handleRequestCode} disabled={passwordLoading || !email || !emailVerified}>
                   {passwordLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Send Verification Code
+                  {passwordLoading ? t('profile.sendingCode') : t('profile.sendCode')}
                 </Button>
 
                 {!email && (
-                  <p className="text-xs text-muted-foreground">No email associated with your account.</p>
+                  <p className="text-xs text-muted-foreground">{t('profile.email')}</p>
                 )}
                 {email && !emailVerified && (
-                  <p className="text-xs text-muted-foreground">Your email must be verified first.</p>
+                  <p className="text-xs text-muted-foreground">{t('auth.verifyEmail.title')}</p>
                 )}
               </div>
             ) : (
               <form onSubmit={handleConfirmPasswordChange} className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Enter the code sent to {email} and your new password.
+                  {t('auth.forgotPassword.subtitleCode', { email })}
                 </p>
 
                 <div className="space-y-2">
-                  <label htmlFor="pwCode" className="text-sm font-medium">Verification Code</label>
+                  <label htmlFor="pwCode" className="text-sm font-medium">{t('profile.codeLabel')}</label>
                   <input
                     id="pwCode"
                     type="text"
@@ -309,7 +311,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label htmlFor="newPw" className="text-sm font-medium">New Password</label>
+                  <label htmlFor="newPw" className="text-sm font-medium">{t('profile.newPassword')}</label>
                   <div className="relative">
                     <input
                       id="newPw"
@@ -319,7 +321,7 @@ export default function ProfilePage() {
                       onChange={(e) => setNewPassword(e.target.value)}
                       disabled={passwordLoading}
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50"
-                      placeholder="Min 8 chars, uppercase, lowercase, digit, special"
+                      placeholder={t('auth.register.passwordPlaceholder')}
                     />
                     <button
                       type="button"
@@ -341,14 +343,14 @@ export default function ProfilePage() {
                 <div className="flex gap-3">
                   <Button type="submit" disabled={passwordLoading || passwordCode.length !== 6}>
                     {passwordLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Change Password
+                    {t('profile.changePassword')}
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
                     onClick={() => { setPasswordStep('idle'); setPasswordError(''); setPasswordCode(''); setNewPassword(''); }}
                   >
-                    Cancel
+                    {t('common.cancel')}
                   </Button>
                 </div>
               </form>

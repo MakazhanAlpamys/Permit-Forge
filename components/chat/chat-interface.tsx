@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { createChatSession, saveMessageToSession, getSessionMessages } from '@/actions/chat-history';
 import { getCSRFTokenAction } from '@/actions/auth';
 import { useChatStream } from '@/hooks/use-chat-stream';
@@ -47,6 +48,7 @@ interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProps) {
+  const { t } = useTranslation();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -244,7 +246,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
         // Previously: the input cleared, isLoading flickered, and the user
         // had no idea why their message vanished.
         setIsLoading(false);
-        setActionError(sessionError || 'Could not start a new chat session. Please try again.');
+        setActionError(sessionError || t('dashboard.chat.errorMessage'));
         return;
       }
       activeSessionId = newSessionId;
@@ -311,7 +313,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
             const errorMessage: ChatMessage = {
               id: `error-${Date.now()}`,
               role: 'assistant',
-              content: 'Sorry, I encountered an error while processing your request. Please try again.',
+              content: t('dashboard.chat.errorMessage'),
               timestamp: new Date(),
               complianceStatus: 'pending',
             };
@@ -440,7 +442,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
                   ) : (
                     <ChevronUp className="h-3 w-3 mr-1" />
                   )}
-                  Load earlier messages
+                  {t('dashboard.sidebar.loadMore')}
                 </Button>
               </div>
             )}
@@ -457,7 +459,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
                 </div>
-                Verifying sources...
+                {t('dashboard.chat.thinking')}
               </div>
             )}
           </div>
@@ -468,7 +470,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
           Refreshing the page or switching sessions will refetch from DB. */}
       {saveSyncFailed && (
         <div className="border-t border-yellow-500/30 bg-yellow-500/10 text-yellow-700 px-4 py-2 text-xs text-center">
-          Save failed — last reply isn&apos;t synced. Refresh to reconcile this session.
+          {t('dashboard.chat.errorMessage')}
         </div>
       )}
 
@@ -485,7 +487,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
                 className="text-xs text-muted-foreground"
               >
                 <RotateCcw className="h-3 w-3 mr-1" />
-                Clear Chat
+                {t('dashboard.header.newChat')}
               </Button>
               {currentSessionId && (
                 // X10: Export pulls messages from the DB. If clicked while the
@@ -503,14 +505,14 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
                   className="text-xs text-muted-foreground"
                   title={
                     isLoading || isStreaming
-                      ? 'Wait for the current response to finish'
+                      ? t('dashboard.chat.thinking')
                       : messages.length === 0
-                        ? 'Send at least one message to export'
+                        ? t('dashboard.chat.welcomeSubtitle')
                         : undefined
                   }
                 >
                   <Download className="h-3 w-3 mr-1" />
-                  Export
+                  {t('dashboard.chat.exportChat')}
                 </Button>
               )}
             </div>
@@ -524,7 +526,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
                 value={inputValue}
                 onChange={e => setInputValue(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask about building code compliance..."
+                placeholder={t('dashboard.chat.placeholder')}
                 className="min-h-[52px] max-h-[200px] pr-12 resize-none bg-background"
                 rows={1}
                 disabled={isLoading || isStreaming}
@@ -535,7 +537,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
                   size="icon"
                   variant="destructive"
                   className="absolute right-2 bottom-2 h-8 w-8"
-                  title="Stop generation"
+                  title={t('dashboard.chat.stopGenerating')}
                 >
                   <Square className="h-4 w-4" />
                 </Button>
@@ -554,8 +556,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
 
           {/* Disclaimer - minimal spacing for maximum chat area */}
           <p className="text-xs text-muted-foreground text-center mt-2 mb-1">
-            PermitForge provides guidance based on your ingested building codes.
-            Always verify with official authorities for final compliance decisions.
+            {t('dashboard.chat.welcomeSubtitle')}
           </p>
         </div>
       </div>
@@ -575,28 +576,13 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
 // Example Questions
 // ============================================================================
 
-const EXAMPLE_QUESTIONS = [
-  {
-    title: "Building Height",
-    question: "How is the maximum allowable building height determined when specific plot-limitations are not defined in the Development Control Regulations (DCR)?",
-    icon: "🏗️",
-  },
-  {
-    title: "Window-to-Wall Ratio",
-    question: "What are the specific constraints for Window-to-Wall Ratio (WWR) under the Elemental Method, and how does building orientation affect allowable glazing?",
-    icon: "🪟",
-  },
-  {
-    title: "Vertical Transportation",
-    question: "Under what conditions is a performance-based Vertical Transportation design (Method 2) mandatory instead of the prescriptive Method 1?",
-    icon: "🛗",
-  },
-  {
-    title: "Seismic Requirements",
-    question: "How does the building code modify the seismic hazard assessment of ASCE/SEI 7-16, and why is the 'two-thirds' factor excluded?",
-    icon: "🌍",
-  },
-];
+// Example question keys — translation looks up dashboard.chat.examples.q1..q4
+const EXAMPLE_QUESTION_KEYS = [
+  { key: 'q1', icon: '🏗️' },
+  { key: 'q2', icon: '🪟' },
+  { key: 'q3', icon: '🛗' },
+  { key: 'q4', icon: '🌍' },
+] as const;
 
 // ============================================================================
 // Empty State Component with Example Questions
@@ -607,6 +593,7 @@ interface EmptyStateProps {
 }
 
 function EmptyState({ onSelectQuestion }: EmptyStateProps) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center px-4">
       {/* Logo/Icon */}
@@ -616,34 +603,33 @@ function EmptyState({ onSelectQuestion }: EmptyStateProps) {
 
       {/* Title */}
       <h2 className="text-2xl font-semibold text-foreground mb-2">
-        Building Code Assistant
+        {t('dashboard.chat.welcomeTitle')}
       </h2>
       <p className="text-muted-foreground max-w-md mb-8">
-        Ask me anything about building code compliance, parking requirements,
-        fire safety, or other regulatory requirements.
+        {t('dashboard.chat.welcomeSubtitle')}
       </p>
 
       {/* Example Questions Grid */}
       <div className="w-full max-w-2xl">
-        <p className="text-sm text-muted-foreground mb-3">Try asking:</p>
+        <p className="text-sm text-muted-foreground mb-3">{t('dashboard.chat.examples.title')}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {EXAMPLE_QUESTIONS.map((item, index) => (
-            <button
-              key={index}
-              onClick={() => onSelectQuestion(item.question)}
-              className="group flex items-start gap-3 p-4 rounded-xl border border-border bg-card/50 hover:bg-card hover:border-violet-500/50 hover:shadow-lg hover:shadow-violet-500/5 transition-all duration-200 text-left"
-            >
-              <span className="text-2xl">{item.icon}</span>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm text-foreground group-hover:text-violet-500 transition-colors">
-                  {item.title}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                  {item.question}
-                </p>
-              </div>
-            </button>
-          ))}
+          {EXAMPLE_QUESTION_KEYS.map(({ key, icon }) => {
+            const question = t(`dashboard.chat.examples.${key}`);
+            return (
+              <button
+                key={key}
+                onClick={() => onSelectQuestion(question)}
+                className="group flex items-start gap-3 p-4 rounded-xl border border-border bg-card/50 hover:bg-card hover:border-violet-500/50 hover:shadow-lg hover:shadow-violet-500/5 transition-all duration-200 text-left"
+              >
+                <span className="text-2xl">{icon}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm text-foreground group-hover:text-violet-500 transition-colors line-clamp-3">
+                    {question}
+                  </p>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

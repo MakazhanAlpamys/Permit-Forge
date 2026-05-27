@@ -6,6 +6,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ClipboardCheck, Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import {
   PieChart,
   Pie,
@@ -22,19 +23,20 @@ interface PermitStatusChartProps {
 }
 
 const STATUS_CONFIG = [
-  { key: 'draft', label: 'Draft', color: '#6b7280' },
-  { key: 'submitted', label: 'Submitted', color: '#eab308' },
-  { key: 'underReview', label: 'Under Review', color: '#3b82f6' },
-  { key: 'approved', label: 'Approved', color: '#7c3aed' },
-  { key: 'rejected', label: 'Rejected', color: '#ef4444' },
-  { key: 'revisionRequested', label: 'Revision', color: '#f97316' },
+  { key: 'draft', i18nKey: 'permits.status.draft', color: '#6b7280' },
+  { key: 'submitted', i18nKey: 'permits.status.submitted', color: '#eab308' },
+  { key: 'underReview', i18nKey: 'permits.status.under_review', color: '#3b82f6' },
+  { key: 'approved', i18nKey: 'permits.status.approved', color: '#7c3aed' },
+  { key: 'rejected', i18nKey: 'permits.status.rejected', color: '#ef4444' },
+  { key: 'revisionRequested', i18nKey: 'permits.status.revision_requested', color: '#f97316' },
 ] as const;
 
 export function PermitStatusChart({ data, loading }: PermitStatusChartProps) {
+  const { t } = useTranslation();
   const chartData = data
     ? STATUS_CONFIG
         .map((s) => ({
-          name: s.label,
+          name: t(s.i18nKey),
           value: data[s.key] || 0,
           color: s.color,
         }))
@@ -48,7 +50,7 @@ export function PermitStatusChart({ data, loading }: PermitStatusChartProps) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <ClipboardCheck className="h-5 w-5 text-primary" />
-          Permit Status
+          {t('admin.overview.permitStatus')}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -58,7 +60,7 @@ export function PermitStatusChart({ data, loading }: PermitStatusChartProps) {
           </div>
         ) : chartData.length === 0 ? (
           <div className="h-[250px] flex items-center justify-center text-muted-foreground">
-            No permit data
+            {t('common.none')}
           </div>
         ) : (
           <div className="relative">
@@ -84,7 +86,7 @@ export function PermitStatusChart({ data, loading }: PermitStatusChartProps) {
                     borderRadius: '8px',
                     fontSize: '12px',
                   }}
-                  formatter={(value) => [`${value} permits`, '']}
+                  formatter={(value) => [`${value}`, '']}
                 />
                 <Legend
                   wrapperStyle={{ fontSize: '11px' }}
@@ -98,7 +100,7 @@ export function PermitStatusChart({ data, loading }: PermitStatusChartProps) {
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={{ marginBottom: '30px' }}>
               <div className="text-center">
                 <p className="text-2xl font-bold">{total}</p>
-                <p className="text-xs text-muted-foreground">Total</p>
+                <p className="text-xs text-muted-foreground">{t('common.all')}</p>
               </div>
             </div>
           </div>

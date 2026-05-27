@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { FileText, Image, File, Download } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { formatFileSize } from '@/lib/file-upload';
 import type { PermitAttachment } from '@/types';
 
@@ -16,11 +17,12 @@ function getFileIcon(fileType: string) {
 }
 
 export function AttachmentList({ attachments }: AttachmentListProps) {
+  const { t } = useTranslation();
   if (attachments.length === 0) return null;
 
   return (
     <div className="space-y-2">
-      <h3 className="text-sm font-medium">Attachments ({attachments.length})</h3>
+      <h3 className="text-sm font-medium">{t('permits.detail.attachments')} ({attachments.length})</h3>
       {attachments.map((attachment) => {
         const Icon = getFileIcon(attachment.fileType);
         return (
@@ -44,7 +46,7 @@ export function AttachmentList({ attachments }: AttachmentListProps) {
                   download={attachment.fileName}
                 >
                   <Download className="h-4 w-4 mr-1" />
-                  Download
+                  {t('common.download')}
                 </a>
               </Button>
             )}

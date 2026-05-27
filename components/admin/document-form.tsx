@@ -8,6 +8,7 @@
 // to collapse the 9 `setFormData(prev => ({ ...prev, x }))` calls.
 
 import { useEffect, useReducer, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Loader2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -78,6 +79,7 @@ export function DocumentForm({
   onSave,
   onCancel,
 }: DocumentFormProps) {
+  const { t } = useTranslation();
   const [formData, dispatch] = useReducer(formReducer, EMPTY_FORM);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const editingId = editingDocument?.id ?? null;
@@ -113,13 +115,13 @@ export function DocumentForm({
     <Card className="border-primary/50">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center justify-between gap-2 text-base">
-          <span className="truncate">{editingId ? 'Edit Document' : 'Register New Document'}</span>
+          <span className="truncate">{editingId ? t('common.edit') : t('admin.documents.addDocument')}</span>
           <Button
             type="button"
             variant="ghost"
             size="icon"
             onClick={onCancel}
-            aria-label="Close document form"
+            aria-label={t('common.close')}
             className="shrink-0"
           >
             <X className="h-4 w-4" />
@@ -127,14 +129,14 @@ export function DocumentForm({
         </CardTitle>
         <CardDescription>
           {editingId
-            ? 'Update document metadata. Select a new PDF to replace the existing one.'
-            : 'Add a new document and upload its PDF file.'}
+            ? t('admin.documents.form.submit')
+            : t('admin.documents.addDocument')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label htmlFor="doc-display-name" className="text-xs font-medium text-muted-foreground">Display Name *</label>
+            <label htmlFor="doc-display-name" className="text-xs font-medium text-muted-foreground">{t('admin.documents.form.displayName')} *</label>
             <Input
               id="doc-display-name"
               value={formData.displayName}
@@ -143,7 +145,7 @@ export function DocumentForm({
             />
           </div>
           <div>
-            <label htmlFor="doc-short-name" className="text-xs font-medium text-muted-foreground">Short Name *</label>
+            <label htmlFor="doc-short-name" className="text-xs font-medium text-muted-foreground">{t('admin.documents.form.shortName')} *</label>
             <Input
               id="doc-short-name"
               value={formData.shortName}
@@ -155,7 +157,7 @@ export function DocumentForm({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label htmlFor="doc-pdf-file" className="text-xs font-medium text-muted-foreground">PDF File *</label>
+            <label htmlFor="doc-pdf-file" className="text-xs font-medium text-muted-foreground">{t('admin.documents.uploadPdf')} *</label>
             <input
               id="doc-pdf-file"
               type="file"
@@ -171,7 +173,7 @@ export function DocumentForm({
             />
             {editingId && !pdfFile && formData.fileName && (
               <p className="text-[10px] text-muted-foreground mt-1 break-all">
-                Current: {formData.fileName}
+                {formData.fileName}
               </p>
             )}
             {pdfFile && (
@@ -194,7 +196,7 @@ export function DocumentForm({
         {!editingId && (
           <div>
             <label htmlFor="doc-id" className="text-xs font-medium text-muted-foreground">
-              Document ID (auto-generated from name if empty)
+              {t('admin.documents.form.id')}
             </label>
             <Input
               id="doc-id"
@@ -206,12 +208,12 @@ export function DocumentForm({
         )}
 
         <div>
-          <label htmlFor="doc-description" className="text-xs font-medium text-muted-foreground">Description</label>
+          <label htmlFor="doc-description" className="text-xs font-medium text-muted-foreground">{t('permits.step1.projectDescription')}</label>
           <Input
             id="doc-description"
             value={formData.description}
             onChange={(e) => set('description', e.target.value)}
-            placeholder="Brief description of the document"
+            placeholder={t('permits.step1.projectDescriptionPlaceholder')}
           />
         </div>
 
@@ -227,7 +229,7 @@ export function DocumentForm({
 
         <div>
           <label htmlFor="doc-keywords" className="text-xs font-medium text-muted-foreground">
-            Keywords (comma-separated, for search routing)
+            {t('admin.documents.form.keywords')}
           </label>
           <Input
             id="doc-keywords"
@@ -238,7 +240,7 @@ export function DocumentForm({
         </div>
 
         <div>
-          <label htmlFor="doc-categories" className="text-xs font-medium text-muted-foreground">Categories (comma-separated)</label>
+          <label htmlFor="doc-categories" className="text-xs font-medium text-muted-foreground">{t('admin.documents.form.categories')}</label>
           <Input
             id="doc-categories"
             value={formData.categories}
@@ -281,9 +283,9 @@ export function DocumentForm({
         <div className="flex gap-2 pt-2 flex-wrap">
           <Button type="button" onClick={() => onSave(formData, pdfFile)} disabled={saving || uploading} size="sm">
             {(saving || uploading) ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-            {uploading ? 'Uploading PDF...' : saving ? 'Saving...' : editingId ? 'Update' : 'Register'}
+            {uploading ? t('permits.fileUpload.uploading') : saving ? t('admin.documents.form.submitting') : t('admin.documents.form.submit')}
           </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>{t('common.cancel')}</Button>
         </div>
       </CardContent>
     </Card>

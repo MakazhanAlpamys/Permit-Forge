@@ -1,20 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Bell, Check } from 'lucide-react';
 import { getNotifications, markNotificationRead, markAllNotificationsRead } from '@/actions/notifications';
 import { getCSRFTokenAction } from '@/actions/auth';
 import type { Notification, NotificationType } from '@/types';
-
-const NOTIFICATION_ICONS: Record<NotificationType, string> = {
-  permit_submitted: 'Submitted',
-  permit_under_review: 'Under Review',
-  permit_approved: 'Approved',
-  permit_rejected: 'Rejected',
-  permit_revision_requested: 'Revision',
-};
 
 const NOTIFICATION_COLORS: Record<NotificationType, string> = {
   permit_submitted: 'text-blue-400',
@@ -24,18 +17,26 @@ const NOTIFICATION_COLORS: Record<NotificationType, string> = {
   permit_revision_requested: 'text-orange-400',
 };
 
-function timeAgo(dateString: string): string {
+function timeAgo(dateString: string, locale: string): string {
   const seconds = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
-  if (seconds < 60) return 'just now';
+  const tag = locale === 'kk' ? 'kk-KZ' : locale;
+  let rtf: Intl.RelativeTimeFormat;
+  try {
+    rtf = new Intl.RelativeTimeFormat(tag, { numeric: 'auto' });
+  } catch {
+    rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
+  }
+  if (seconds < 60) return rtf.format(-Math.max(seconds, 1), 'second');
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return rtf.format(-minutes, 'minute');
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return rtf.format(-hours, 'hour');
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  return rtf.format(-days, 'day');
 }
 
 export function NotificationBell() {
+  const { t, i18n } = useTranslation();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
@@ -175,7 +176,7 @@ export function NotificationBell() {
           {/* Dropdown */}
           <div className="absolute right-0 top-full mt-2 w-80 max-h-96 z-50 rounded-lg border border-border bg-card shadow-lg overflow-hidden">
             <div className="flex items-center justify-between p-3 border-b border-border">
-              <h3 className="text-sm font-medium">Notifications</h3>
+              <h3 className="text-sm font-medium">{t('notifications.title')}</h3>
               {unreadCount > 0 && (
                 <Button
                   variant="ghost"
@@ -185,7 +186,7 @@ export function NotificationBell() {
                   disabled={loading}
                 >
                   <Check className="h-3 w-3 mr-1" />
-                  Mark all read
+                  {t('notifications.markAllRead')}
                 </Button>
               )}
             </div>
@@ -193,7 +194,7 @@ export function NotificationBell() {
             <div className="overflow-y-auto max-h-72">
               {notifications.length === 0 ? (
                 <div className="p-6 text-center text-sm text-muted-foreground">
-                  No notifications
+                  {t('notifications.empty')}
                 </div>
               ) : (
                 notifications.map(notification => (
@@ -206,7 +207,7 @@ export function NotificationBell() {
                   >
                     <div className="flex items-start gap-2">
                       <span className={`text-xs font-medium mt-0.5 ${NOTIFICATION_COLORS[notification.type]}`}>
-                        {NOTIFICATION_ICONS[notification.type]}
+                        {t(`notifications.types.${notification.type}`)}
                       </span>
                       <div className="flex-1 min-w-0">
                         <p className={`text-sm ${!notification.read ? 'font-medium' : ''}`}>
@@ -216,7 +217,7 @@ export function NotificationBell() {
                           {notification.body}
                         </p>
                         <p className="text-xs text-muted-foreground/70 mt-1">
-                          {timeAgo(notification.createdAt)}
+                          {timeAgo(notification.createdAt, i18n.resolvedLanguage || i18n.language || 'en')}
                         </p>
                       </div>
                       {!notification.read && (

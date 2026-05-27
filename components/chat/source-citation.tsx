@@ -5,6 +5,7 @@
 // ============================================================================
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -30,14 +31,14 @@ import type { Citation } from '@/types';
  * @example formatPageDisplay(45, 45) => "Page 45"
  * @example formatPageDisplay(45, 46) => "Pages 45-46"
  */
-function formatPageDisplay(citation: Citation): string {
+function formatPageDisplay(citation: Citation, t: (k: string, opts?: Record<string, unknown>) => string): string {
   const startPage = citation.startPage ?? citation.page;
   const endPage = citation.endPage ?? citation.page;
 
   if (startPage === endPage) {
-    return `Page ${startPage}`;
+    return t('dashboard.chat.page', { page: startPage });
   }
-  return `Pages ${startPage}-${endPage}`;
+  return t('dashboard.chat.page', { page: `${startPage}-${endPage}` });
 }
 
 /**
@@ -62,7 +63,6 @@ function formatSectionDisplay(citation: Citation): string | null {
  */
 function getConfidenceLevel(confidence: number | undefined): {
   level: 'high' | 'medium' | 'low';
-  label: string;
   color: string;
   bgColor: string;
   borderColor: string;
@@ -72,7 +72,6 @@ function getConfidenceLevel(confidence: number | undefined): {
   if (conf >= 70) {
     return {
       level: 'high',
-      label: 'High',
       color: 'text-violet-600',
       bgColor: 'bg-violet-500/10',
       borderColor: 'border-violet-500/20',
@@ -80,7 +79,6 @@ function getConfidenceLevel(confidence: number | undefined): {
   } else if (conf >= 40) {
     return {
       level: 'medium',
-      label: 'Medium',
       color: 'text-yellow-600',
       bgColor: 'bg-yellow-500/10',
       borderColor: 'border-yellow-500/20',
@@ -88,7 +86,6 @@ function getConfidenceLevel(confidence: number | undefined): {
   } else {
     return {
       level: 'low',
-      label: 'Low',
       color: 'text-orange-600',
       bgColor: 'bg-orange-500/10',
       borderColor: 'border-orange-500/20',
@@ -234,9 +231,10 @@ interface SourceCitationProps {
 }
 
 function SourceCitation({ citation, index }: SourceCitationProps) {
+  const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const pageDisplay = formatPageDisplay(citation);
+  const pageDisplay = formatPageDisplay(citation, t);
   const sectionDisplay = formatSectionDisplay(citation);
   const isPageRange = (citation.startPage ?? citation.page) !== (citation.endPage ?? citation.page);
   const confidenceInfo = getConfidenceLevel(citation.confidence);
@@ -333,7 +331,7 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
           {/* Section title if present */}
           {citation.sectionTitle && (
             <div className="text-xs text-muted-foreground">
-              <span className="font-medium">Section:</span> {citation.sectionTitle}
+              <span className="font-medium">{t('dashboard.chat.section', { section: '' }).replace(/[:：\s]+$/, '')}:</span> {citation.sectionTitle}
             </div>
           )}
 
@@ -347,7 +345,7 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
               {citation.confidence !== undefined && (
                 <div className="flex items-center gap-2 flex-1">
                   <span className="text-[10px] text-muted-foreground/70 shrink-0">
-                    Confidence:
+                    {t('permits.compliance.overall')}:
                   </span>
                   <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden max-w-[100px]">
                     <div
@@ -366,7 +364,7 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
               {/* Relevance score */}
               {citation.similarity !== undefined && citation.similarity > 0 && (
                 <span className="text-[10px] text-muted-foreground/70">
-                  Relevance: {Math.round(citation.similarity * 100)}%
+                  {Math.round(citation.similarity * 100)}%
                 </span>
               )}
             </div>
@@ -380,7 +378,7 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
               onClick={(e) => e.stopPropagation()}
             >
               <ExternalLink className="h-3 w-3" />
-              View in PDF
+              {t('dashboard.chat.viewSource')}
             </a>
           </div>
         </div>
@@ -398,6 +396,7 @@ interface CitationsListProps {
 }
 
 export function CitationsList({ citations }: CitationsListProps) {
+  const { t } = useTranslation();
   const [showAll, setShowAll] = useState(false);
 
   if (!citations || citations.length === 0) {
@@ -429,7 +428,7 @@ export function CitationsList({ citations }: CitationsListProps) {
         <div className="flex items-center justify-center w-5 h-5 rounded-md bg-violet-500/15">
           <BookOpen className="h-3 w-3 text-violet-500" />
         </div>
-        <span className="text-xs font-medium text-foreground">Sources</span>
+        <span className="text-xs font-medium text-foreground">{t('dashboard.chat.sources')}</span>
         <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-muted text-muted-foreground border-border">
           {citations.length}
         </Badge>
@@ -469,12 +468,12 @@ export function CitationsList({ citations }: CitationsListProps) {
           {showAll ? (
             <>
               <ChevronUp className="h-3 w-3 mr-1" />
-              Show less
+              {t('common.less')}
             </>
           ) : (
             <>
               <ChevronDown className="h-3 w-3 mr-1" />
-              Show {citations.length - 3} more sources
+              {t('common.more')} ({citations.length - 3})
             </>
           )}
         </Button>

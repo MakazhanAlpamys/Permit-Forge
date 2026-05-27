@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useTranslation } from 'react-i18next';
 import { Header } from '@/components/dashboard';
 import { PermitFormStepper, PermitFormStep1, PermitFormStep2, PermitFormStep3, ComplianceCheckPanel, FileUploadZone } from '@/components/permits';
 import {
@@ -24,7 +25,7 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ArrowLeft } from 'lucide-react';
 import type { BuildingDetails, ComplianceRequirements, ComplianceCheckResult, PermitApplication, PermitAttachment } from '@/types';
 
-const STEPS = ['Project Info', 'Building Details', 'Compliance'];
+// Step labels are pulled via t() inside the component (i18n)
 
 const EMPTY_BUILDING_DETAILS: BuildingDetails = {
   numberOfFloors: 0,
@@ -85,6 +86,8 @@ export default function NewPermitPage() {
 
 function NewPermitPageInner() {
   const router = useRouter();
+  const { t } = useTranslation();
+  const STEPS = [t('permits.new.step1'), t('permits.new.step2'), t('permits.new.step3')];
   const searchParams = useSearchParams();
   const urlPermitId = searchParams.get('id');
   const urlStep = parseStep(searchParams.get('step'));
@@ -229,7 +232,7 @@ function NewPermitPageInner() {
       syncUrl(result.permitId, 2);
       setCurrentStep(2);
     } else {
-      setError(result.error || 'Failed to create permit');
+      setError(result.error || t('errors.generic'));
     }
   };
 
@@ -293,7 +296,7 @@ function NewPermitPageInner() {
       if (typeof permitVersion === 'number') setPermitVersion(permitVersion + 1);
       goToStep(3);
     } else {
-      setError(result.error || 'Failed to save building details');
+      setError(result.error || t('errors.generic'));
     }
   };
 
@@ -330,7 +333,7 @@ function NewPermitPageInner() {
         if (typeof permitVersion === 'number') setPermitVersion(permitVersion + 1);
         router.push('/permits');
       } else {
-        setError(result.error || 'Failed to save');
+        setError(result.error || t('errors.generic'));
       }
     } finally {
       setLoading(false);
@@ -354,7 +357,7 @@ function NewPermitPageInner() {
       }, csrfToken || '');
 
       if (!saveResult.success) {
-        setError(saveResult.error || 'Failed to save compliance requirements');
+        setError(saveResult.error || t('errors.generic'));
         return;
       }
       if (typeof permitVersion === 'number') setPermitVersion(permitVersion + 1);
@@ -369,7 +372,7 @@ function NewPermitPageInner() {
         }
         router.push(`/permits/${permitId}`);
       } else {
-        setError(submitResult.error || 'Failed to submit');
+        setError(submitResult.error || t('errors.generic'));
       }
     } finally {
       setLoading(false);
@@ -403,7 +406,7 @@ function NewPermitPageInner() {
       }, csrfToken || '');
 
       if (!saveResult.success) {
-        setError(saveResult.error || 'Failed to save compliance requirements');
+        setError(saveResult.error || t('errors.generic'));
         return;
       }
       if (typeof permitVersion === 'number') setPermitVersion(permitVersion + 1);
@@ -416,7 +419,7 @@ function NewPermitPageInner() {
       if (result.success && result.data) {
         setComplianceResult(result.data);
       } else {
-        setError(result.error || 'Failed to run compliance check');
+        setError(result.error || t('errors.generic'));
       }
     } finally {
       setCheckLoading(false);
@@ -437,17 +440,17 @@ function NewPermitPageInner() {
           onClick={() => router.push('/permits')}
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Permits
+          {t('common.back')}
         </Button>
 
-        <h1 className="text-2xl font-bold mb-6">New Permit Application</h1>
+        <h1 className="text-2xl font-bold mb-6">{t('permits.new.title')}</h1>
 
         {/* Stepper */}
         <PermitFormStepper currentStep={currentStep} steps={STEPS} />
 
         {bootstrapping && (
           <p className="text-sm text-muted-foreground text-center py-8">
-            Loading draft…
+            {t('common.loading')}
           </p>
         )}
 
@@ -524,10 +527,10 @@ function NewPermitPageInner() {
       <ConfirmDialog
         open={discardConfirmOpen}
         onOpenChange={(open) => { if (!open) setDiscardConfirmOpen(false); }}
-        title="Discard changes?"
-        description="You have unsaved building details. Going back will discard them."
-        confirmLabel="Discard"
-        cancelLabel="Keep editing"
+        title={t('permits.detail.deleteAttachmentConfirm')}
+        description={t('permits.detail.deleteConfirm')}
+        confirmLabel={t('common.delete')}
+        cancelLabel={t('common.cancel')}
         confirmVariant="destructive"
         destructive
         onConfirm={confirmDiscardStep2}

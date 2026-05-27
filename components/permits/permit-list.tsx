@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { PermitCard } from './permit-card';
 import { Button } from '@/components/ui/button';
 import { ClipboardList } from 'lucide-react';
@@ -15,7 +16,21 @@ interface PermitListProps {
 }
 
 export function PermitList({ permits, loading, onView, onDelete }: PermitListProps) {
+  const { t } = useTranslation();
   const [filter, setFilter] = useState<PermitStatus | 'all'>('all');
+
+  const filterLabel = (value: string, fallback: string): string => {
+    const map: Record<string, string> = {
+      all: 'permits.list.filterAll',
+      draft: 'permits.list.filterDraft',
+      submitted: 'permits.list.filterSubmitted',
+      under_review: 'permits.list.filterUnderReview',
+      approved: 'permits.list.filterApproved',
+      rejected: 'permits.list.filterRejected',
+      revision_requested: 'permits.list.filterRevisionRequested',
+    };
+    return t(map[value] ?? '', { defaultValue: fallback });
+  };
 
   const filteredPermits = filter === 'all'
     ? permits
@@ -43,7 +58,7 @@ export function PermitList({ permits, loading, onView, onDelete }: PermitListPro
             onClick={() => setFilter(sf.value)}
             className="text-xs"
           >
-            {sf.label}
+            {filterLabel(sf.value, sf.label)}
             {sf.value !== 'all' && (
               <span className="ml-1 opacity-60">
                 ({permits.filter(p => p.status === sf.value).length})
@@ -58,7 +73,7 @@ export function PermitList({ permits, loading, onView, onDelete }: PermitListPro
         <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
           <ClipboardList className="h-12 w-12 mb-3 opacity-30" />
           <p className="text-sm">
-            {filter === 'all' ? 'No permit applications yet' : `No ${filter.replace('_', ' ')} permits`}
+            {t('permits.list.empty')}
           </p>
         </div>
       ) : (
