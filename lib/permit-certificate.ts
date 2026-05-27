@@ -3,6 +3,7 @@
 // ============================================================================
 
 import PDFDocument from 'pdfkit';
+import QRCode from 'qrcode';
 import type { BuildingDetails } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -18,7 +19,13 @@ export interface CertificateData {
   buildingDetails: BuildingDetails;
   complianceStatus: string;
   approvalDate: string;
+  expiryDate?: string;
+  permitType?: string;
+  ownerName?: string;
+  ownerPhone?: string;
+  ownerEmiratesId?: string;
   reviewComments?: string;
+  verifyUrl?: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -75,6 +82,23 @@ const LIGHT_BG = '#f7fafc';
 // -----------------------------------------------------------------------------
 
 export async function generateCertificatePDF(data: CertificateData): Promise<Buffer> {
+  // QR is generated up-front (async). PDFKit itself is sync-stream, so we
+  // resolve to a buffer once everything is drawn.
+  let qrPngBuffer: Buffer | null = null;
+  if (data.verifyUrl) {
+    try {
+      qrPngBuffer = await QRCode.toBuffer(data.verifyUrl, {
+        errorCorrectionLevel: 'M',
+        margin: 1,
+        width: 120,
+        color: { dark: '#1a365d', light: '#ffffff' },
+      });
+    } catch (err) {
+      // QR is decorative — if generation fails, fall through without it.
+      console.warn('QR generation failed:', err);
+    }
+  }
+
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({ size: 'A4', margin: 40 });
@@ -149,6 +173,9 @@ export async function generateCertificatePDF(data: CertificateData): Promise<Buf
 
       drawRow(doc, 'Project Name:', s(data.projectName), pageWidth);
       drawRow(doc, 'Project Type:', formatProjectType(s(data.projectType)), pageWidth);
+      if (data.permitType) {
+        drawRow(doc, 'Permit Type:', formatProjectType(s(data.permitType)), pageWidth);
+      }
       drawRow(doc, 'Address:', s(data.projectAddress), pageWidth);
       if (data.plotNumber) {
         drawRow(doc, 'Plot Number:', s(data.plotNumber), pageWidth);
@@ -159,9 +186,31 @@ export async function generateCertificatePDF(data: CertificateData): Promise<Buf
         : approvalDateObj.toLocaleDateString('en-US', {
             year: 'numeric', month: 'long', day: 'numeric',
           });
-      drawRow(doc, 'Approval Date:', approvalDateStr, pageWidth);
+      drawRow(doc, 'Issue Date:', approvalDateStr, pageWidth);
+
+      if (data.expiryDate) {
+        const expiryDateObj = new Date(s(data.expiryDate));
+        const expiryDateStr = isNaN(expiryDateObj.getTime())
+          ? 'N/A'
+          : expiryDateObj.toLocaleDateString('en-US', {
+              year: 'numeric', month: 'long', day: 'numeric',
+            });
+        drawRow(doc, 'Valid Until:', expiryDateStr, pageWidth);
+      }
 
       doc.moveDown(0.8);
+
+      // ── Section: Owner Information (optional) ───────────────────────────
+      if (data.ownerName || data.ownerPhone || data.ownerEmiratesId) {
+        maybePageBreak(doc, 100);
+        drawSectionTitle(doc, 'Owner Information', pageWidth);
+
+        if (data.ownerName) drawRow(doc, 'Owner Name:', s(data.ownerName), pageWidth);
+        if (data.ownerPhone) drawRow(doc, 'Phone:', s(data.ownerPhone), pageWidth);
+        if (data.ownerEmiratesId) drawRow(doc, 'Emirates ID:', s(data.ownerEmiratesId), pageWidth);
+
+        doc.moveDown(0.8);
+      }
 
       // ── Section: Building Details ───────────────────────────────────────
       maybePageBreak(doc, 130);
@@ -203,6 +252,42 @@ export async function generateCertificatePDF(data: CertificateData): Promise<Buf
           .text(s(data.reviewComments), 52, boxY + 12, textOpts);
 
         doc.y = boxY + textHeight + 36;
+      }
+
+      // ── Section: Verification (QR code) ─────────────────────────────────
+      if (qrPngBuffer) {
+        const qrSize = 90;
+        const verifyBlockHeight = qrSize + 20;
+        maybePageBreak(doc, verifyBlockHeight + 40);
+        drawSectionTitle(doc, 'Verification', pageWidth);
+
+        const blockY = doc.y;
+        const qrX = 40 + pageWidth - qrSize;
+
+        // QR on the right
+        doc.image(qrPngBuffer, qrX, blockY, { width: qrSize, height: qrSize });
+
+        // Text on the left
+        doc
+          .font('Helvetica-Bold')
+          .fontSize(11)
+          .fillColor(DARK)
+          .text('Scan to verify authenticity', 40, blockY + 8, { width: pageWidth - qrSize - 16 });
+
+        doc
+          .font('Helvetica')
+          .fontSize(9)
+          .fillColor(GRAY)
+          .text(
+            'This QR code links to the official permit record. ' +
+            'Reviewers and inspectors can scan it to confirm that this ' +
+            'certificate is genuine and currently valid.',
+            40,
+            blockY + 26,
+            { width: pageWidth - qrSize - 16 },
+          );
+
+        doc.y = blockY + qrSize + 16;
       }
 
       // ── Footer ──────────────────────────────────────────────────────────

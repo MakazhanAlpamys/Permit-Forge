@@ -80,6 +80,28 @@ export async function createPermit(
     const newId = firstRpcRow<{ permit_id?: string }>(rpcRows)?.permit_id;
     if (!newId) throw new Error('create_permit_atomic returned no id');
 
+    // Realism-pass fields aren't part of the existing atomic RPC signature
+    // (kept stable so the SECURITY DEFINER body + admin guard don't have to
+    // change). Apply them as a follow-up UPDATE. Same transaction window is
+    // fine — this is still the user's own freshly-inserted draft.
+    const extras: Record<string, string | null> = {};
+    if (validation.data.permitType)      extras.permit_type       = validation.data.permitType;
+    if (validation.data.ownerName)       extras.owner_name        = validation.data.ownerName;
+    if (validation.data.ownerPhone)      extras.owner_phone       = validation.data.ownerPhone;
+    if (validation.data.ownerEmiratesId) extras.owner_emirates_id = validation.data.ownerEmiratesId;
+
+    if (Object.keys(extras).length > 0) {
+      const { error: updErr } = await supabase
+        .from('permit_applications')
+        .update(extras)
+        .eq('id', newId);
+      if (updErr) {
+        // Best-effort: the permit exists and is usable. Log + continue rather
+        // than rolling back, since the user can still edit these on detail.
+        console.warn('createPermit extras update failed:', updErr);
+      }
+    }
+
     await logAuditWithMeta(authCheck.user.id, 'permit_created', {
       metadata: { permitId: newId, projectName: validation.data.projectName },
     });

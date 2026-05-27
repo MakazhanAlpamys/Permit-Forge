@@ -78,6 +78,11 @@ export interface PermitRow {
   created_at: string;
   updated_at: string;
   version?: number | null;
+  permit_type?: string | null;
+  expires_at?: string | null;
+  owner_name?: string | null;
+  owner_phone?: string | null;
+  owner_emirates_id?: string | null;
   users?: { username?: string | null } | null;
 }
 
@@ -153,6 +158,11 @@ export function transformPermit(row: PermitRow): PermitApplication & { username?
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     version: row.version ?? 0,
+    permitType: (row.permit_type as PermitApplication['permitType']) || undefined,
+    expiresAt: row.expires_at || null,
+    ownerName: row.owner_name || undefined,
+    ownerPhone: row.owner_phone || undefined,
+    ownerEmiratesId: row.owner_emirates_id || undefined,
     username: row.users?.username || undefined,
   };
 }

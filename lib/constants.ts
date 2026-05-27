@@ -220,6 +220,19 @@ export const PROJECT_TYPES = [
   { value: 'institutional', label: 'Institutional' },
 ] as const;
 
+// Realism pass: kind of work the permit authorises (distinct from
+// PROJECT_TYPES which is the building's intended use). Mirrors the
+// permitTypeSchema enum in lib/validations.ts and the CHECK constraint on
+// permit_applications.permit_type.
+export const PERMIT_TYPES = [
+  { value: 'new_construction', label: 'New Construction' },
+  { value: 'addition',         label: 'Addition' },
+  { value: 'alteration',       label: 'Alteration' },
+  { value: 'demolition',       label: 'Demolition' },
+  { value: 'renovation',       label: 'Renovation' },
+  { value: 'change_of_use',    label: 'Change of Use' },
+] as const;
+
 // ============================================================================
 // File Upload Configuration
 // ============================================================================

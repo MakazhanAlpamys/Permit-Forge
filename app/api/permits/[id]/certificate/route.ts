@@ -111,6 +111,7 @@ export async function GET(
 
     // Cache miss → generate the PDF, upload to Storage best-effort, and
     // persist the storage_path on the cert row so the next request hits cache.
+    const origin = request.nextUrl.origin;
     const certData: CertificateData = {
       certificateNumber: certNumber,
       projectName: permit.project_name,
@@ -120,7 +121,13 @@ export async function GET(
       buildingDetails: permit.building_details,
       complianceStatus: permit.compliance_check_result?.overallStatus || 'approved',
       approvalDate: permit.reviewed_at || permit.updated_at,
+      expiryDate: permit.expires_at || undefined,
+      permitType: permit.permit_type || undefined,
+      ownerName: permit.owner_name || undefined,
+      ownerPhone: permit.owner_phone || undefined,
+      ownerEmiratesId: permit.owner_emirates_id || undefined,
       reviewComments: permit.review_comments || undefined,
+      verifyUrl: `${origin}/permits/${permitId}`,
     };
 
     const pdfBuffer = await generateCertificatePDF(certData);

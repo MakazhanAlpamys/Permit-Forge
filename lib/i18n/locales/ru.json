@@ -232,6 +232,7 @@
       "projectDescriptionPlaceholder": "Краткое описание проекта",
       "location": "Местоположение",
       "locationPlaceholder": "например, Dubai Marina, участок 123",
+      "plotNumber": "Номер участка",
       "projectType": "Тип проекта",
       "type": {
         "residential": "Жилой",
@@ -239,7 +240,21 @@
         "industrial": "Промышленный",
         "mixed_use": "Смешанный",
         "institutional": "Институциональный"
-      }
+      },
+      "permitType": "Тип разрешения",
+      "permit": {
+        "new_construction": "Новое строительство",
+        "addition": "Пристройка",
+        "alteration": "Перепланировка",
+        "demolition": "Снос",
+        "renovation": "Реновация",
+        "change_of_use": "Смена назначения"
+      },
+      "ownerSection": "Информация о собственнике",
+      "ownerName": "Имя собственника",
+      "ownerNamePlaceholder": "ФИО или название компании",
+      "ownerPhone": "Телефон",
+      "ownerEmiratesId": "Emirates ID / № паспорта"
     },
     "step2": {
       "title": "Детали здания",

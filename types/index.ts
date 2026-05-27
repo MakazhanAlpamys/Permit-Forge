@@ -229,6 +229,14 @@ export type PermitStatus = 'draft' | 'submitted' | 'under_review' | 'approved' |
 
 export type ProjectType = 'residential' | 'commercial' | 'industrial' | 'mixed_use' | 'institutional';
 
+export type PermitType =
+  | 'new_construction'
+  | 'addition'
+  | 'alteration'
+  | 'demolition'
+  | 'renovation'
+  | 'change_of_use';
+
 /**
  * Building details captured during step 2 of permit creation.
  *
@@ -288,6 +296,12 @@ export interface PermitApplication {
   projectAddress: string;
   plotNumber?: string;
   projectDescription?: string;
+  // Realism pass — all optional so existing rows keep round-tripping.
+  permitType?: PermitType;
+  expiresAt?: string | null;
+  ownerName?: string;
+  ownerPhone?: string;
+  ownerEmiratesId?: string;
   // TS-H-6 / v1.6.0 Part C: these are nullable in the DB (draft permit
   // created before step 2 / step 3 → null). Old transforms.ts cast `{}` to
   // the concrete type, which silently passed `if (!bd || !bd.numberOfFloors)`

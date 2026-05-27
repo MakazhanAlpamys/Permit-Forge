@@ -57,7 +57,7 @@ function parseStep(raw: string | null): 1 | 2 | 3 {
 
 function applyPermitToFormState(
   permit: PermitApplication,
-  setStep1: React.Dispatch<React.SetStateAction<{ projectName: string; projectType: string; projectAddress: string; plotNumber: string; projectDescription: string }>>,
+  setStep1: React.Dispatch<React.SetStateAction<Step1FormData>>,
   setStep2: React.Dispatch<React.SetStateAction<BuildingDetails>>,
   setStep3: React.Dispatch<React.SetStateAction<ComplianceRequirements>>,
 ) {
@@ -67,10 +67,28 @@ function applyPermitToFormState(
     projectAddress: permit.projectAddress || '',
     plotNumber: permit.plotNumber || '',
     projectDescription: permit.projectDescription || '',
+    permitType: permit.permitType || '',
+    ownerName: permit.ownerName || '',
+    ownerPhone: permit.ownerPhone || '',
+    ownerEmiratesId: permit.ownerEmiratesId || '',
   });
   setStep2({ ...EMPTY_BUILDING_DETAILS, ...(permit.buildingDetails || {}) });
   setStep3({ ...EMPTY_COMPLIANCE, ...(permit.complianceRequirements || {}) });
 }
+
+// Realism pass: keep Step1 form shape in one place — page-level state +
+// hydrate helper need to stay in lockstep.
+type Step1FormData = {
+  projectName: string;
+  projectType: string;
+  projectAddress: string;
+  plotNumber: string;
+  projectDescription: string;
+  permitType: string;
+  ownerName: string;
+  ownerPhone: string;
+  ownerEmiratesId: string;
+};
 
 // B9 fixup: useSearchParams forces dynamic rendering and Next 15 demands a
 // Suspense boundary above any component that calls it, otherwise the static
@@ -115,12 +133,16 @@ function NewPermitPageInner() {
   }, []);
 
   // Form data
-  const [step1Data, setStep1Data] = useState({
+  const [step1Data, setStep1Data] = useState<Step1FormData>({
     projectName: '',
     projectType: '',
     projectAddress: '',
     plotNumber: '',
     projectDescription: '',
+    permitType: '',
+    ownerName: '',
+    ownerPhone: '',
+    ownerEmiratesId: '',
   });
 
   const [step2Data, setStep2Data] = useState<BuildingDetails>(EMPTY_BUILDING_DETAILS);
@@ -221,6 +243,12 @@ function NewPermitPageInner() {
       projectAddress: step1Data.projectAddress,
       plotNumber: step1Data.plotNumber || undefined,
       projectDescription: step1Data.projectDescription || undefined,
+      permitType: (step1Data.permitType || undefined) as
+        | 'new_construction' | 'addition' | 'alteration'
+        | 'demolition' | 'renovation' | 'change_of_use' | undefined,
+      ownerName: step1Data.ownerName || undefined,
+      ownerPhone: step1Data.ownerPhone || undefined,
+      ownerEmiratesId: step1Data.ownerEmiratesId || undefined,
     }, csrfToken || '');
 
     setLoading(false);

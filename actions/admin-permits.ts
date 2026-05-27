@@ -148,6 +148,21 @@ export async function reviewPermit(
       project_name: rpcResult.project_name ?? '',
     };
 
+    // Realism pass: real building permits are time-limited. On approve, stamp
+    // a 24-month validity window. Kept outside the RPC body so the SECURITY
+    // DEFINER signature stays stable. Best-effort — if this UPDATE fails the
+    // approval still stands and the cert simply won't print a "Valid Until"
+    // row.
+    if (action === 'approve') {
+      const expiresAt = new Date();
+      expiresAt.setUTCMonth(expiresAt.getUTCMonth() + 24);
+      const { error: expErr } = await supabase
+        .from('permit_applications')
+        .update({ expires_at: expiresAt.toISOString() })
+        .eq('id', permitId);
+      if (expErr) console.warn('reviewPermit expires_at stamp failed:', expErr);
+    }
+
     await logAuditWithMeta(
       authCheck.user.id,
       action === 'request_revision' ? 'permit_revision_requested' : 'permit_reviewed',

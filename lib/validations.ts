@@ -185,12 +185,25 @@ export const changePasswordSchema = z.object({
 // Citation Schema
 // -----------------------------------------------------------------------------
 
+// Mirrors the runtime `Citation` interface in `types/index.ts`. By default
+// `z.object` strips unknown keys, so any field NOT listed here is silently
+// dropped at `safeParse(...).data` time and never reaches the JSONB column
+// in chat_messages.citations. Keep this schema in lock-step with the type
+// or reloaded chat messages will silently lose UI affordances (confidence
+// bar, page range, document attribution, content-type pill, etc.).
 const citationSchema = z.object({
   chunkId: z.number().int().positive(),
   page: z.number().int().nonnegative(),
-  section: z.string().optional(),
-  excerpt: z.string(),
+  startPage: z.number().int().nonnegative().optional(),
+  endPage: z.number().int().nonnegative().optional(),
+  section: z.string().max(200).optional(),
+  sectionTitle: z.string().max(500).optional(),
+  excerpt: z.string().max(2000),
   similarity: z.number().min(0).max(1),
+  isVerified: z.boolean().optional(),
+  confidence: z.number().int().min(0).max(100).optional(),
+  contentType: z.enum(['text', 'table', 'list', 'heading']).optional(),
+  documentName: z.string().max(200).optional(),
 });
 
 export const citationsArraySchema = z.array(citationSchema);
@@ -210,6 +223,14 @@ export const paginationSchema = z.object({
 
 export const projectTypeSchema = z.enum([
   'residential', 'commercial', 'industrial', 'mixed_use', 'institutional'
+]);
+
+// Realism pass: distinct from projectType — projectType describes the
+// building's use, permitType describes the *kind of work* the permit
+// authorises. Real building permits always carry both.
+export const permitTypeSchema = z.enum([
+  'new_construction', 'addition', 'alteration',
+  'demolition', 'renovation', 'change_of_use',
 ]);
 
 export const buildingDetailsSchema = z.object({
@@ -260,6 +281,16 @@ export const createPermitSchema = z.object({
     .transform(sanitizeString),
   plotNumber: z.string().max(50).transform(sanitizeString).optional(),
   projectDescription: z.string().max(2000).transform(sanitizeString).optional(),
+  // Realism pass — all optional so existing drafts keep saving without these.
+  permitType: permitTypeSchema.optional(),
+  ownerName: z.string().max(200).transform(sanitizeString).optional(),
+  // Phone validation is loose by design — international formats vary wildly.
+  // Sanitize HTML and cap length; let users type whatever they have.
+  ownerPhone: z.string().max(40).transform(sanitizeString).optional(),
+  // Emirates ID is typically 15 digits with optional dashes (784-XXXX-XXXXXXX-X).
+  // We accept any 10–30 char alphanumeric+dash string so passports/IDs from
+  // other jurisdictions also fit during the diploma demo.
+  ownerEmiratesId: z.string().max(40).transform(sanitizeString).optional(),
 });
 
 export type CreatePermitInput = z.infer<typeof createPermitSchema>;

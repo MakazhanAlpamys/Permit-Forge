@@ -232,6 +232,7 @@
       "projectDescriptionPlaceholder": "Жобаның қысқаша сипаттамасы",
       "location": "Орналасуы",
       "locationPlaceholder": "мысалы, Dubai Marina, 123 учаске",
+      "plotNumber": "Учаске нөмірі",
       "projectType": "Жоба түрі",
       "type": {
         "residential": "Тұрғын",
@@ -239,7 +240,21 @@
         "industrial": "Өнеркәсіптік",
         "mixed_use": "Аралас",
         "institutional": "Институционалдық"
-      }
+      },
+      "permitType": "Рұқсат түрі",
+      "permit": {
+        "new_construction": "Жаңа құрылыс",
+        "addition": "Кеңейту",
+        "alteration": "Қайта жоспарлау",
+        "demolition": "Бұзу",
+        "renovation": "Жөндеу",
+        "change_of_use": "Мақсатын өзгерту"
+      },
+      "ownerSection": "Иесі туралы ақпарат",
+      "ownerName": "Иесінің аты",
+      "ownerNamePlaceholder": "Толық аты немесе компания атауы",
+      "ownerPhone": "Телефон",
+      "ownerEmiratesId": "Emirates ID / Төлқұжат №"
     },
     "step2": {
       "title": "Ғимарат туралы",

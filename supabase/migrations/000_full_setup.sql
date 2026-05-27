@@ -1160,7 +1160,7 @@ BEGIN
   SELECT
     al.id, al.user_id, u.username, al.action,
     al.target_user_id, tu.username AS target_username,
-    al.metadata, al.ip_address, al.created_at
+    al.metadata, al.ip_address::TEXT, al.created_at
   FROM audit_logs al
   LEFT JOIN users u ON al.user_id = u.id
   LEFT JOIN users tu ON al.target_user_id = tu.id
@@ -4680,6 +4680,47 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION save_document_tree(TEXT, INT, JSONB) FROM anon, authenticated, PUBLIC;
 GRANT EXECUTE ON FUNCTION save_document_tree(TEXT, INT, JSONB) TO service_role;
+
+
+-- ---- 024_permit_metadata.sql ----
+
+-- ============================================================================
+-- Realism pass: permit_type / expires_at / owner identification
+-- ============================================================================
+-- Diploma scope. Real building permits have a permit kind (new vs alteration
+-- vs demolition vs change-of-use), a validity window after issuance, and
+-- owner identification separate from the system user. These columns let the
+-- form + PDF certificate carry that information without changing the RAG /
+-- compliance pipeline. All NULL-friendly so existing drafts keep working.
+
+ALTER TABLE permit_applications
+  ADD COLUMN IF NOT EXISTS permit_type        TEXT,
+  ADD COLUMN IF NOT EXISTS expires_at         TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS owner_name         TEXT,
+  ADD COLUMN IF NOT EXISTS owner_phone        TEXT,
+  ADD COLUMN IF NOT EXISTS owner_emirates_id  TEXT;
+
+-- Bound permit_type to a known set. The CHECK is added with NOT VALID first
+-- so any pre-existing NULL row doesn't fail the constraint, then VALIDATEd —
+-- but since we just added the column, every row is NULL and validation is
+-- trivially satisfied.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'permit_applications_permit_type_check'
+  ) THEN
+    ALTER TABLE permit_applications
+      ADD CONSTRAINT permit_applications_permit_type_check
+      CHECK (
+        permit_type IS NULL OR
+        permit_type IN ('new_construction', 'addition', 'alteration',
+                        'demolition', 'renovation', 'change_of_use')
+      );
+  END IF;
+END $$;
+
+-- index for filtering expired permits in admin views
+CREATE INDEX IF NOT EXISTS permit_apps_expires_at_idx ON permit_applications(expires_at);
 
 
 -- ============================================================================

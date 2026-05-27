@@ -232,6 +232,7 @@
       "projectDescriptionPlaceholder": "Brief description of the project",
       "location": "Location",
       "locationPlaceholder": "e.g. Dubai Marina, Plot 123",
+      "plotNumber": "Plot Number",
       "projectType": "Project Type",
       "type": {
         "residential": "Residential",
@@ -239,7 +240,21 @@
         "industrial": "Industrial",
         "mixed_use": "Mixed Use",
         "institutional": "Institutional"
-      }
+      },
+      "permitType": "Permit Type",
+      "permit": {
+        "new_construction": "New Construction",
+        "addition": "Addition",
+        "alteration": "Alteration",
+        "demolition": "Demolition",
+        "renovation": "Renovation",
+        "change_of_use": "Change of Use"
+      },
+      "ownerSection": "Owner Information",
+      "ownerName": "Owner Name",
+      "ownerNamePlaceholder": "Full name or company name",
+      "ownerPhone": "Phone",
+      "ownerEmiratesId": "Emirates ID / Passport No."
     },
     "step2": {
       "title": "Building Details",
