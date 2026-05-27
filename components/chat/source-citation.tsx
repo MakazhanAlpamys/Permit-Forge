@@ -38,7 +38,7 @@ function formatPageDisplay(citation: Citation, t: (k: string, opts?: Record<stri
   if (startPage === endPage) {
     return t('dashboard.chat.page', { page: startPage });
   }
-  return t('dashboard.chat.page', { page: `${startPage}-${endPage}` });
+  return t('dashboard.chat.pages', { start: startPage, end: endPage });
 }
 
 /**
@@ -468,12 +468,12 @@ export function CitationsList({ citations }: CitationsListProps) {
           {showAll ? (
             <>
               <ChevronUp className="h-3 w-3 mr-1" />
-              {t('common.less')}
+              {t('dashboard.chat.showLess')}
             </>
           ) : (
             <>
               <ChevronDown className="h-3 w-3 mr-1" />
-              {t('common.more')} ({citations.length - 3})
+              {t('dashboard.chat.showMoreSources', { count: citations.length - 3 })}
             </>
           )}
         </Button>

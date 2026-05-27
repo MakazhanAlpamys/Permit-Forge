@@ -76,18 +76,18 @@ export function PermitDetailView({ permit }: PermitDetailViewProps) {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <DetailItem label={t('permits.step2.floors')} value={String(bd.numberOfFloors)} />
-              <DetailItem label={t('permits.step2.height')} value={`${bd.buildingHeight}m`} />
-              <DetailItem label={t('permits.step2.builtUpArea')} value={`${bd.totalBuiltUpArea} m²`} />
-              <DetailItem label={t('permits.step2.plotArea')} value={`${bd.plotArea} m²`} />
-              <DetailItem label={t('permits.step2.units')} value={String(bd.numberOfUnits || 0)} />
+              <DetailItem label={t('permits.step2.floorsShort')} value={String(bd.numberOfFloors)} />
+              <DetailItem label={t('permits.step2.heightShort')} value={`${bd.buildingHeight}m`} />
+              <DetailItem label={t('permits.step2.builtUpAreaShort')} value={`${bd.totalBuiltUpArea} m²`} />
+              <DetailItem label={t('permits.step2.plotAreaShort')} value={`${bd.plotArea} m²`} />
+              <DetailItem label={t('permits.step2.unitsShort')} value={String(bd.numberOfUnits || 0)} />
               <DetailItem
-                label={t('permits.step2.parkingSpaces')}
+                label={t('permits.step2.parkingShort')}
                 value={String(bd.numberOfParkingSpaces || 0)}
                 icon={<ParkingSquare className="h-3 w-3" />}
               />
-              <DetailItem label={t('permits.step2.occupancyType')} value={bd.occupancyType || t('common.notAvailable')} />
-              <DetailItem label={t('permits.step2.constructionType')} value={bd.constructionType || t('common.notAvailable')} />
+              <DetailItem label={t('permits.step2.occupancyShort')} value={bd.occupancyType || t('common.notAvailable')} />
+              <DetailItem label={t('permits.step2.constructionShort')} value={bd.constructionType || t('common.notAvailable')} />
             </div>
 
             {bd.plotArea && bd.totalBuiltUpArea && (

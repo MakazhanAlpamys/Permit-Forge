@@ -26,6 +26,9 @@ function formatDate(dateStr: string, locale: string, t: (k: string) => string): 
   if (diffDays === 0) return t('common.today');
   if (diffDays === 1) return t('common.yesterday');
   if (diffDays < 7) {
+    // EN: keep terse "Xd ago" form matching the pre-i18n format that existing
+    // tests assert on. RU/KK use Intl.RelativeTimeFormat for proper grammar.
+    if (locale === 'en') return `${diffDays}d ago`;
     try {
       return new Intl.RelativeTimeFormat(tag, { numeric: 'auto' }).format(-diffDays, 'day');
     } catch {

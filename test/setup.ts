@@ -1,5 +1,24 @@
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
+import i18n from 'i18next';
+import { initReactI18next } from 'react-i18next';
+import enTranslations from '../lib/i18n/locales/en.json';
+
+// Initialize i18next synchronously for tests with the EN bundle so component
+// tests that assert on English UI text (e.g. "Today", "Sources", "Approve")
+// see translated strings instead of raw i18n keys. No language detector — we
+// pin to 'en' since every existing component test expects English copy.
+if (!i18n.isInitialized) {
+  i18n
+    .use(initReactI18next)
+    .init({
+      resources: { en: { translation: enTranslations } },
+      lng: 'en',
+      fallbackLng: 'en',
+      interpolation: { escapeValue: false },
+      react: { useSuspense: false },
+    });
+}
 
 // Mock environment variables for testing
 process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';

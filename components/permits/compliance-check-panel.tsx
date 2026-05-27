@@ -121,7 +121,7 @@ export function ComplianceCheckPanel({ result }: ComplianceCheckPanelProps) {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          {t('permits.compliance.checks')}: {formatCheckedAt(result.checkedAt, i18n.resolvedLanguage || i18n.language || 'en')}
+          {t('permits.compliance.checkedAt', { when: formatCheckedAt(result.checkedAt, i18n.resolvedLanguage || i18n.language || 'en') })}
         </p>
       </CardContent>
     </Card>

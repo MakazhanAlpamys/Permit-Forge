@@ -274,7 +274,7 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                           ) : (
                             <>
                               <Eye className="h-3 w-3 mr-1" />
-                              {t('admin.permits.review')}
+                              {t('admin.permits.startReview')}
                             </>
                           )}
                         </Button>
@@ -333,19 +333,19 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                       {permit.buildingDetails?.numberOfFloors && (
                         <>
                           <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">{t('permits.step2.floors')}</p>
+                            <p className="text-xs text-muted-foreground">{t('permits.step2.floorsShort')}</p>
                             <p className="font-medium truncate">{permit.buildingDetails.numberOfFloors}</p>
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">{t('permits.step2.height')}</p>
+                            <p className="text-xs text-muted-foreground">{t('permits.step2.heightShort')}</p>
                             <p className="font-medium truncate">{permit.buildingDetails.buildingHeight}m</p>
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">{t('permits.step2.builtUpArea')}</p>
+                            <p className="text-xs text-muted-foreground">{t('permits.step2.builtUpAreaShort')}</p>
                             <p className="font-medium truncate">{permit.buildingDetails.totalBuiltUpArea} m²</p>
                           </div>
                           <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">{t('permits.step2.parkingSpaces')}</p>
+                            <p className="text-xs text-muted-foreground">{t('permits.step2.parkingShort')}</p>
                             <p className="font-medium truncate">{permit.buildingDetails.numberOfParkingSpaces}</p>
                           </div>
                         </>

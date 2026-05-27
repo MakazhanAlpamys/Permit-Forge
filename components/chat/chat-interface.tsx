@@ -470,7 +470,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
           Refreshing the page or switching sessions will refetch from DB. */}
       {saveSyncFailed && (
         <div className="border-t border-yellow-500/30 bg-yellow-500/10 text-yellow-700 px-4 py-2 text-xs text-center">
-          {t('dashboard.chat.errorMessage')}
+          {t('dashboard.chat.saveFailed')}
         </div>
       )}
 
