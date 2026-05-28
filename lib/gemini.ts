@@ -33,7 +33,11 @@ export function getChatModel(): ChatGoogleGenerativeAI {
       model: GEMINI_MODEL_CHAT,
       apiKey: getApiKey(),
       temperature: 0,
-      maxOutputTokens: 4096,
+      // Gemini 2.5 Flash is a thinking model — thinking tokens count against
+      // maxOutputTokens. 4096 left too little for the permit-compliance JSON
+      // after thinking, truncating it mid-string ("Unterminated string in
+      // JSON"). 8192 gives headroom for thinking + the full structured result.
+      maxOutputTokens: 8192,
       maxRetries: 0,
     });
   }

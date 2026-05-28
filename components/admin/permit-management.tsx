@@ -4,7 +4,7 @@
 // Admin Permit Management Component
 // ============================================================================
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
@@ -12,8 +12,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { PermitStatusBadge } from '@/components/permits/permit-status-badge';
+import { PermitDetailView } from '@/components/permits/permit-detail-view';
+import { AttachmentList } from '@/components/permits/attachment-list';
 import { PROJECT_TYPES, PERMIT_STATUS_FILTERS } from '@/lib/constants';
 import { reviewPermit, setPermitUnderReview } from '@/actions/admin-permits';
+import { getPermitAttachments } from '@/actions/permit-attachments';
 import { useCsrfAction } from '@/hooks/use-csrf-action';
 import { isOperationAllowed } from '@/lib/permit-state-machine';
 import {
@@ -28,7 +31,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import type { PermitApplication, PermitStats } from '@/types';
+import type { PermitApplication, PermitStats, PermitAttachment } from '@/types';
 
 interface PermitManagementProps {
   permits: (PermitApplication & { username?: string })[];
@@ -59,6 +62,10 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
 
   const [activeFilter, setActiveFilter] = useState(initialFilter);
   const [expandedPermit, setExpandedPermit] = useState<string | null>(null);
+  // Attachments are fetched lazily when a permit is expanded so the admin sees
+  // the same files the applicant uploaded (admin bypasses the ownership check
+  // in getPermitAttachments). Keyed by permit id; fetched once per permit.
+  const [attachmentsByPermit, setAttachmentsByPermit] = useState<Record<string, PermitAttachment[]>>({});
   const [reviewDialog, setReviewDialog] = useState<{ permit: PermitApplication; action: 'approve' | 'reject' | 'request_revision' } | null>(null);
   const [reviewComments, setReviewComments] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -153,6 +160,18 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
     }
   };
 
+  const loadAttachments = useCallback(async (permitId: string) => {
+    const result = await getPermitAttachments(permitId);
+    setAttachmentsByPermit(prev => ({ ...prev, [permitId]: result.data || [] }));
+  }, []);
+
+  const toggleExpand = (permitId: string) => {
+    const next = expandedPermit === permitId ? null : permitId;
+    setExpandedPermit(next);
+    // Fetch attachments the first time this permit is opened.
+    if (next && !(next in attachmentsByPermit)) void loadAttachments(next);
+  };
+
   return (
     <div className="space-y-6">
       {/* Stats row */}
@@ -224,11 +243,11 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                   aria-expanded={isExpanded}
                   aria-label={`${isExpanded ? 'Collapse' : 'Expand'} permit ${permit.projectName}`}
                   className="p-4 cursor-pointer hover:bg-muted/30 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  onClick={() => setExpandedPermit(isExpanded ? null : permit.id)}
+                  onClick={() => toggleExpand(permit.id)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      setExpandedPermit(isExpanded ? null : permit.id);
+                      toggleExpand(permit.id);
                     }
                   }}
                 >
@@ -326,33 +345,14 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                   </div>
                 </div>
 
-                {/* Expanded details */}
+                {/* Expanded details — full applicant view (same component the
+                    user sees) + AI compliance result + uploaded attachments. */}
                 {isExpanded && (
-                  <CardContent className="border-t border-border pt-4">
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-                      {permit.buildingDetails?.numberOfFloors && (
-                        <>
-                          <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">{t('permits.step2.floorsShort')}</p>
-                            <p className="font-medium truncate">{permit.buildingDetails.numberOfFloors}</p>
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">{t('permits.step2.heightShort')}</p>
-                            <p className="font-medium truncate">{permit.buildingDetails.buildingHeight}m</p>
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">{t('permits.step2.builtUpAreaShort')}</p>
-                            <p className="font-medium truncate">{permit.buildingDetails.totalBuiltUpArea} m²</p>
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs text-muted-foreground">{t('permits.step2.parkingShort')}</p>
-                            <p className="font-medium truncate">{permit.buildingDetails.numberOfParkingSpaces}</p>
-                          </div>
-                        </>
-                      )}
-                    </div>
+                  <CardContent className="border-t border-border pt-4 space-y-4">
+                    <PermitDetailView permit={permit} />
+
                     {permit.complianceCheckResult && (
-                      <div className="mt-3 p-3 rounded-lg bg-muted/50">
+                      <div className="p-3 rounded-lg bg-muted/50">
                         <p className="text-xs font-medium">{t('permits.actions.runCompliance')}: {' '}
                           <span className={
                             permit.complianceCheckResult.overallStatus === 'compliant' ? 'text-violet-600 dark:text-violet-400' :
@@ -367,11 +367,9 @@ export function PermitManagement({ permits, stats, loading, onRefresh, onFilterS
                         <p className="text-xs text-muted-foreground mt-1">{permit.complianceCheckResult.summary}</p>
                       </div>
                     )}
-                    {permit.reviewComments && (
-                      <div className="mt-3 p-3 rounded-lg border border-border">
-                        <p className="text-xs font-medium">{t('permits.detail.reviewComments')}:</p>
-                        <p className="text-sm mt-1">{permit.reviewComments}</p>
-                      </div>
+
+                    {(attachmentsByPermit[permit.id]?.length ?? 0) > 0 && (
+                      <AttachmentList attachments={attachmentsByPermit[permit.id]} />
                     )}
                   </CardContent>
                 )}

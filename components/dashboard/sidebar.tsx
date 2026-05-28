@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { getChatSessions, deleteChatSession, searchChatHistory } from '@/actions/chat-history';
-import { getCSRFTokenAction } from '@/actions/auth';
+import { readCsrfCookie } from '@/lib/csrf-client';
 import { Input } from '@/components/ui/input';
 import { ResultDialog } from '@/components/ui/confirm-dialog';
 import { useServerAction } from '@/hooks/use-server-action';
@@ -113,10 +113,9 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
   // between existing sessions, which caused an extra unnecessary DB roundtrip.
   useEffect(() => {
     loadSessions();
-    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
-    getCSRFTokenAction()
-      .then(token => { csrfTokenRef.current = token; })
-      .catch(err => console.error('CSRF token fetch failed:', err));
+    // Read the CSRF token straight from the (non-HttpOnly) cookie — no network
+    // fetch that could fail and leave session deletes without a token.
+    csrfTokenRef.current = readCsrfCookie();
   }, [sessionsVersion]);
 
   // Clear pending debounce timeout on unmount to prevent state updates on unmounted component

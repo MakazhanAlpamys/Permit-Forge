@@ -984,7 +984,11 @@ AS $$
 BEGIN
   RETURN QUERY
   SELECT
-    d.document_name,
+    -- dubai_code_chunks.document_name is VARCHAR(64); cast to TEXT so the
+    -- returned column type exactly matches this function's RETURNS TABLE
+    -- declaration (otherwise: "structure of query does not match function
+    -- result type").
+    d.document_name::TEXT,
     COUNT(*)::BIGINT AS chunk_count,
     MIN(COALESCE((d.metadata->>'startPage')::INT, (d.metadata->>'page')::INT, 0))::INT AS min_page,
     MAX(COALESCE((d.metadata->>'endPage')::INT, (d.metadata->>'page')::INT, 0))::INT AS max_page
@@ -1503,6 +1507,14 @@ GRANT SELECT ON dubai_code_chunks TO anon, authenticated;
 GRANT SELECT, INSERT, DELETE, UPDATE ON dubai_code_chunks TO service_role;
 GRANT USAGE, SELECT ON SEQUENCE dubai_code_chunks_id_seq TO service_role;
 
+-- parent_chunks: service_role only (RLS already restricts to service_role, but
+-- the table-level GRANT was missing — RLS is only consulted AFTER the GRANT
+-- check, so ingestion hit "42501 permission denied for table parent_chunks"
+-- and no chunks were ever written). No anon/authenticated read: the LLM
+-- context fetcher (get_parent_chunks) runs as service_role.
+GRANT SELECT, INSERT, DELETE, UPDATE ON parent_chunks TO service_role;
+GRANT USAGE, SELECT ON SEQUENCE parent_chunks_id_seq TO service_role;
+
 -- RAG search functions
 GRANT EXECUTE ON FUNCTION match_dubai_code TO anon, authenticated, service_role;
 GRANT EXECUTE ON FUNCTION search_dubai_code_keywords TO anon, authenticated, service_role;
@@ -1872,8 +1884,12 @@ SET search_path = public
 AS $$
 BEGIN
   RETURN QUERY
-  SELECT dr.id, dr.display_name, dr.short_name, dr.file_name,
-         dr.storage_path, dr.source_url, dr.authority, dr.description, dr.badge_color,
+  -- id / display_name / badge_color are VARCHAR(n) in document_registry; cast
+  -- to TEXT so the returned column types match this function's RETURNS TABLE
+  -- declaration (otherwise: "structure of query does not match function result
+  -- type", which surfaces as a silently-empty document list in the admin UI).
+  SELECT dr.id::TEXT, dr.display_name::TEXT, dr.short_name, dr.file_name,
+         dr.storage_path, dr.source_url, dr.authority, dr.description, dr.badge_color::TEXT,
          dr.keywords, dr.categories, dr.is_active, dr.keywords_auto_generated,
          dr.created_at, dr.updated_at
   FROM document_registry dr
@@ -2116,6 +2132,40 @@ DO $$ BEGIN
       ON storage.objects FOR ALL TO service_role
       USING (bucket_id = 'document-pdfs')
       WITH CHECK (bucket_id = 'document-pdfs');
+  END IF;
+END $$;
+
+-- ============================================================================
+-- 14b. STORAGE BUCKET FOR PERMIT ATTACHMENTS
+-- ============================================================================
+-- Permit applicants attach drawings/docs (PDF/PNG/JPG/DWG/DXF, <=10MB, <=10
+-- files per permit). Private bucket — downloads go through getPermitAttachments
+-- via short-lived signed URLs, uploads through the /api/permits/[id]/attachments
+-- route. MIME enforcement lives in lib/file-upload.ts (extension + MIME +
+-- magic-byte sniff), so allowed_mime_types is left NULL here: DWG/DXF have
+-- messy/empty browser MIME types and a second storage-layer gate would
+-- false-reject otherwise-valid uploads.
+
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'permit-attachments',
+  'permit-attachments',
+  FALSE,
+  10485760,  -- 10MB, matches FILE_UPLOAD_LIMITS.maxFileSize
+  NULL
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- Policy: only service_role can manage files (server actions / API route use adminClient)
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE tablename = 'objects' AND policyname = 'Service role full access to permit-attachments'
+  ) THEN
+    CREATE POLICY "Service role full access to permit-attachments"
+      ON storage.objects FOR ALL TO service_role
+      USING (bucket_id = 'permit-attachments')
+      WITH CHECK (bucket_id = 'permit-attachments');
   END IF;
 END $$;
 
@@ -2424,7 +2474,10 @@ RETURNS TABLE (
   id UUID,
   permit_id UUID,
   file_name TEXT,
-  file_size BIGINT,
+  -- Must match permit_attachments.file_size (INTEGER). Declaring BIGINT here
+  -- made the RETURN QUERY fail with 42804 "Returned type integer does not
+  -- match expected type bigint in column 4".
+  file_size INTEGER,
   file_type TEXT,
   storage_path TEXT,
   uploaded_by UUID,
@@ -3674,13 +3727,20 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_current_state TEXT;
+  v_started_at TIMESTAMPTZ;
+  -- A real ingestion completes well within this window even on the free-tier
+  -- embedding rate limit. A 'pending' row older than this is from a run that
+  -- died without flipping the flag (dev-server restart mid-ingest, process
+  -- kill, unhandled crash) and must be reclaimable.
+  v_stale_after CONSTANT INTERVAL := INTERVAL '15 minutes';
 BEGIN
   -- Per-document advisory lock, transaction-scoped. Two concurrent
   -- callers for the same id will serialize here; for different ids the
   -- locks are independent so ingestion of doc-A doesn't block doc-B.
   PERFORM pg_advisory_xact_lock(hashtextextended(p_document_id, 0));
 
-  SELECT ingestion_state INTO v_current_state
+  SELECT ingestion_state, ingestion_started_at
+    INTO v_current_state, v_started_at
     FROM document_registry
    WHERE id = p_document_id
    FOR UPDATE;
@@ -3691,7 +3751,13 @@ BEGIN
     RETURN FALSE;
   END IF;
 
-  IF v_current_state = 'pending' THEN
+  -- Refuse ONLY if a pending run is still fresh (genuinely in flight).
+  -- A stale 'pending' (older than v_stale_after, or with no start time) is
+  -- treated as a dead run and reclaimed below — otherwise a crashed ingest
+  -- would wedge every future attempt with INGESTION_IN_PROGRESS forever.
+  IF v_current_state = 'pending'
+     AND v_started_at IS NOT NULL
+     AND v_started_at > NOW() - v_stale_after THEN
     RETURN FALSE;
   END IF;
 

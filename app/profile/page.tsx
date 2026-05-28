@@ -8,7 +8,7 @@ import {
   requestPasswordChangeCodeAction,
   confirmPasswordChangeAction,
 } from '@/actions/profile';
-import { getCSRFTokenAction } from '@/actions/auth';
+import { readCsrfCookie } from '@/lib/csrf-client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -72,7 +72,7 @@ export default function ProfilePage() {
   };
 
   const getCSRF = async (setError: (msg: string) => void): Promise<string | null> => {
-    const token = await getCSRFTokenAction();
+    const token = readCsrfCookie();
     if (!token) {
       setError(t('errors.tryAgain'));
       return null;

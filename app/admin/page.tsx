@@ -25,7 +25,8 @@ import {
   type TopActiveUser,
 } from '@/actions/analytics';
 import { getAdminPermits, getPermitStats } from '@/actions/admin-permits';
-import { logoutAction, getCSRFTokenAction } from '@/actions/auth';
+import { logoutAction } from '@/actions/auth';
+import { readCsrfCookie } from '@/lib/csrf-client';
 import { adminChangePasswordAction } from '@/actions/profile';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -93,10 +94,9 @@ export default function AdminPage() {
   // CSRF token (needed for logout form per C20H)
   const [csrfToken, setCsrfToken] = useState('');
   useEffect(() => {
-    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
-    getCSRFTokenAction()
-      .then((t) => setCsrfToken(t ?? ''))
-      .catch(err => console.error('CSRF token fetch failed:', err));
+    // Read straight from the (non-HttpOnly) cookie — set post-mount to stay
+    // SSR-safe and avoid the network fetch that could fail and blank the token.
+    setCsrfToken(readCsrfCookie() ?? '');
   }, []);
 
   // Admin profile dialog
@@ -199,7 +199,7 @@ export default function AdminPage() {
     setProfileError('');
     setProfileSuccess(false);
 
-    const csrfToken = await getCSRFTokenAction();
+    const csrfToken = readCsrfCookie();
     if (!csrfToken) {
       setProfileError(t('errors.tryAgain'));
       setProfileLoading(false);

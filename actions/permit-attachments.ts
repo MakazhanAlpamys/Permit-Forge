@@ -8,35 +8,10 @@ import { createAdminClient, checkRateLimit } from '@/lib/supabase-server';
 import { getQuickSession, logAuditWithMeta } from '@/lib/auth';
 import { requireAuth, requireCSRF } from '@/lib/security';
 import { uuidSchema } from '@/lib/validations';
-import { validateFile, generateStoragePath } from '@/lib/file-upload';
 import { FILE_UPLOAD_LIMITS, PERMIT_ATTACHMENT_SIGNED_URL_TTL_SECONDS } from '@/lib/constants';
 import { canPerformOperation, type PermitStatus } from '@/lib/permit-state-machine';
-import { firstRpcRow } from '@/lib/transforms';
+import { uploadPermitAttachmentShared, transformAttachment } from '@/lib/permit-attachment-upload';
 import type { PermitAttachment } from '@/types';
-
-interface AttachmentRow {
-  id: string;
-  permit_id: string;
-  file_name: string;
-  file_size: number;
-  file_type: string;
-  storage_path: string;
-  uploaded_by: string;
-  uploaded_at: string;
-}
-
-function transformAttachment(row: AttachmentRow): PermitAttachment {
-  return {
-    id: row.id,
-    permitId: row.permit_id,
-    fileName: row.file_name,
-    fileSize: row.file_size,
-    fileType: row.file_type,
-    storagePath: row.storage_path,
-    uploadedBy: row.uploaded_by,
-    uploadedAt: row.uploaded_at,
-  };
-}
 
 // -----------------------------------------------------------------------------
 // Upload Attachment
@@ -66,103 +41,17 @@ export async function uploadPermitAttachment(
       return { success: false, error: 'Too many requests. Please wait before uploading again.' };
     }
 
-    const idValidation = uuidSchema.safeParse(permitId);
-    if (!idValidation.success) {
-      return { success: false, error: 'Invalid permit ID' };
-    }
-
-    // Verify ownership
-    const supabase = createAdminClient();
-    const { data: permit } = await supabase
-      .from('permit_applications')
-      .select('user_id, status')
-      .eq('id', permitId)
-      .single();
-
-    if (!permit || permit.user_id !== authCheck.user.id) {
-      return { success: false, error: 'Access denied' };
-    }
-
-    const uploadCheck = canPerformOperation(permit.status as PermitStatus, 'upload_attachment');
-    if (!uploadCheck.allowed) {
-      return { success: false, error: uploadCheck.reason };
-    }
-
-    // Get file from FormData
-    const file = formData.get('file') as File | null;
-    if (!file) {
-      return { success: false, error: 'No file provided' };
-    }
-
-    // Validate file (size, extension, MIME, magic bytes)
-    const validation = await validateFile(file);
-    if (!validation.valid) {
-      return { success: false, error: validation.error };
-    }
-
-    // Upload to Supabase Storage first so a successful insert never references
-    // a missing object. Cleanup compensates if the RPC then rejects.
-    const storagePath = generateStoragePath(permitId, file.name);
-    const adminClient = createAdminClient();
-    const { error: uploadError } = await adminClient.storage
-      .from(FILE_UPLOAD_LIMITS.storageBucket)
-      .upload(storagePath, file, {
-        contentType: file.type,
-        upsert: false,
-      });
-
-    if (uploadError) {
-      console.error('Storage upload error:', uploadError);
-      return { success: false, error: 'Failed to upload file' };
-    }
-
-    // C6H/H9: atomic count-and-insert. The previous SELECT count → INSERT
-    // sequence let two concurrent uploads both observe count < 10 and both
-    // insert, blowing through the cap. The RPC takes a row lock on the
-    // parent permit row before counting, serializing concurrent uploaders.
-    const { data: rpcRows, error: rpcError } = await supabase.rpc(
-      'insert_permit_attachment_capped',
-      {
-        p_permit_id: permitId,
-        p_file_name: file.name,
-        p_file_size: file.size,
-        p_file_type: file.type,
-        p_storage_path: storagePath,
-        p_uploaded_by: authCheck.user.id,
-        p_max_files: FILE_UPLOAD_LIMITS.maxFilesPerPermit,
-      },
-    );
-
-    if (rpcError || !rpcRows || (Array.isArray(rpcRows) && rpcRows.length === 0)) {
-      // Compensating cleanup so we don't leave an orphan object in storage.
-      try {
-        await adminClient.storage
-          .from(FILE_UPLOAD_LIMITS.storageBucket)
-          .remove([storagePath]);
-      } catch (cleanupErr) {
-        console.error('Failed to cleanup orphaned file:', cleanupErr);
-      }
-
-      const errMsg = rpcError?.message ?? '';
-      if (errMsg.includes('ATTACHMENT_LIMIT_EXCEEDED')) {
-        return {
-          success: false,
-          error: `Maximum ${FILE_UPLOAD_LIMITS.maxFilesPerPermit} files allowed per permit`,
-        };
-      }
-      throw rpcError ?? new Error('Attachment insert returned no rows');
-    }
-
-    const attachment = firstRpcRow<AttachmentRow>(rpcRows);
-    if (!attachment) {
-      return { success: false, error: 'Failed to record attachment' };
-    }
-
-    await logAuditWithMeta(authCheck.user.id, 'permit_attachment_uploaded', {
-      metadata: { permitId, fileName: file.name, fileSize: file.size },
+    // The ownership + status + file-validation + storage + capped-insert flow
+    // lives in the shared helper so the /api/permits/[id]/attachments route can
+    // run the exact same path without the 1MB Server Action body cap. The file
+    // may be absent here — the helper does the "No file provided" check after
+    // the ownership/status checks, preserving the original error ordering.
+    const file = formData.get('file');
+    return await uploadPermitAttachmentShared({
+      permitId,
+      file: file instanceof File ? file : null,
+      uploadedByUserId: authCheck.user.id,
     });
-
-    return { success: true, attachment: transformAttachment(attachment) };
   } catch (error) {
     console.error('uploadPermitAttachment error:', error);
     return {

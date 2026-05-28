@@ -30,7 +30,7 @@ import {
   adminDeleteUser,
   type AdminUser 
 } from '@/actions/admin';
-import { getCSRFTokenAction } from '@/actions/auth';
+import { readCsrfCookie } from '@/lib/csrf-client';
 import { validatePasswordClient } from '@/lib/validations';
 
 // -----------------------------------------------------------------------------
@@ -79,12 +79,10 @@ export function UserManagement({
   // and drop their result when a newer action has already fired.
   const actionTokenRef = useRef(0);
 
-  // Fetch CSRF token on mount
+  // Read the CSRF token from the (non-HttpOnly) cookie on mount — no network
+  // fetch that could fail and leave admin actions without a token.
   useEffect(() => {
-    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
-    getCSRFTokenAction()
-      .then(token => { csrfTokenRef.current = token; })
-      .catch(err => console.error('CSRF token fetch failed:', err));
+    csrfTokenRef.current = readCsrfCookie();
   }, []);
 
   /**

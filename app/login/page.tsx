@@ -36,8 +36,12 @@ export default function LoginPage() {
       if (result?.error) {
         setError(result.error);
         setLoading(false);
+      } else if (result?.success) {
+        // Full navigation so middleware re-runs with the fresh session cookie
+        // and lands the user on their role's home. Keep `loading` true so the
+        // form stays disabled through the transition.
+        window.location.href = result.role === 'admin' ? '/admin' : '/';
       }
-      // On success loginAction redirects — no need to reset loading
     } catch {
       setError(t('auth.login.failed'));
       setLoading(false);

@@ -19,7 +19,7 @@ import {
   getPermitById,
 } from '@/actions/permits';
 import { getPermitAttachments } from '@/actions/permit-attachments';
-import { getCSRFTokenAction } from '@/actions/auth';
+import { readCsrfCookie } from '@/lib/csrf-client';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ArrowLeft } from 'lucide-react';
@@ -126,10 +126,9 @@ function NewPermitPageInner() {
   const [bootstrapping, setBootstrapping] = useState(true);
 
   useEffect(() => {
-    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
-    getCSRFTokenAction()
-      .then(setCsrfToken)
-      .catch(err => console.error('CSRF token fetch failed:', err));
+    // Read the CSRF token straight from the (non-HttpOnly) cookie — no network
+    // fetch that could fail and leave permit-create steps without a token.
+    setCsrfToken(readCsrfCookie());
   }, []);
 
   // Form data

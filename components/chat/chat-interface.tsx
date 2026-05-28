@@ -7,7 +7,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createChatSession, saveMessageToSession, getSessionMessages } from '@/actions/chat-history';
-import { getCSRFTokenAction } from '@/actions/auth';
+import { readCsrfCookie } from '@/lib/csrf-client';
 import { useChatStream } from '@/hooks/use-chat-stream';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -167,12 +167,10 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     }
   };
 
-  // Fetch CSRF token on mount
+  // Read the CSRF token from the (non-HttpOnly) cookie on mount — no network
+  // round-trip, so a connection blip can't leave it null and wedge sends.
   useEffect(() => {
-    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
-    getCSRFTokenAction()
-      .then(token => { csrfTokenRef.current = token; })
-      .catch(err => console.error('CSRF token fetch failed:', err));
+    csrfTokenRef.current = readCsrfCookie();
   }, []);
 
   // Cleanup on unmount - properly abort any pending requests

@@ -16,7 +16,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { adminCreateUser } from '@/actions/admin';
-import { getCSRFTokenAction } from '@/actions/auth';
+import { readCsrfCookie } from '@/lib/csrf-client';
 
 interface CreateUserDialogProps {
   isOpen: boolean;
@@ -39,10 +39,9 @@ export function CreateUserDialog({ isOpen, onClose, onSuccess }: CreateUserDialo
 
   useEffect(() => {
     if (isOpen) {
-      // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
-      getCSRFTokenAction()
-        .then(token => { csrfTokenRef.current = token; })
-        .catch(err => console.error('CSRF token fetch failed:', err));
+      // Read straight from the (non-HttpOnly) cookie — no network fetch that
+      // could fail and leave the create-user submit without a token.
+      csrfTokenRef.current = readCsrfCookie();
     }
   }, [isOpen]);
 

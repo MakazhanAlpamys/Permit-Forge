@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Bell, Check } from 'lucide-react';
 import { getNotifications, markNotificationRead, markAllNotificationsRead } from '@/actions/notifications';
-import { getCSRFTokenAction } from '@/actions/auth';
+import { readCsrfCookie } from '@/lib/csrf-client';
 import type { Notification, NotificationType } from '@/types';
 
 const NOTIFICATION_COLORS: Record<NotificationType, string> = {
@@ -62,11 +62,9 @@ export function NotificationBell() {
 
   useEffect(() => {
     fetchNotifications();
-    // TS-M-2 / v1.6.0 Part F: surface CSRF fetch errors instead of leaving
-    // an unhandled-rejection warning when the server-action transiently fails.
-    getCSRFTokenAction()
-      .then(token => { csrfTokenRef.current = token; })
-      .catch(err => console.error('CSRF token fetch failed:', err));
+    // Read the CSRF token straight from the (non-HttpOnly) cookie — no network
+    // fetch that could fail and leave mark-as-read without a token.
+    csrfTokenRef.current = readCsrfCookie();
 
     // X7: 30s base poll with ±5s jitter so a tab full of users opened at
     // the same time doesn't stampede the notifications endpoint at the

@@ -8,7 +8,8 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { logoutAction, getCSRFTokenAction } from '@/actions/auth';
+import { logoutAction } from '@/actions/auth';
+import { readCsrfCookie } from '@/lib/csrf-client';
 import { useTheme } from '@/components/theme-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { LanguageToggle } from '@/components/language-toggle';
@@ -29,10 +30,9 @@ export function Header({ onMenuClick }: HeaderProps) {
   const [csrfToken, setCsrfToken] = useState('');
 
   useEffect(() => {
-    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
-    getCSRFTokenAction()
-      .then((t) => setCsrfToken(t ?? ''))
-      .catch(err => console.error('CSRF token fetch failed:', err));
+    // Read straight from the (non-HttpOnly) cookie — set post-mount to stay
+    // SSR-safe and avoid the network fetch that could fail and blank the token.
+    setCsrfToken(readCsrfCookie() ?? '');
   }, []);
 
   return (

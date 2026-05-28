@@ -528,6 +528,7 @@ erDiagram
 | `POST` | `/api/chat/stream` | User | SSE streaming chat — tokens + citations |
 | `GET` | `/api/chat/export?sessionId=uuid` | User | Export chat session as Markdown file |
 | `POST` | `/api/ingest` | Admin | PDF ingestion with SSE progress streaming |
+| `POST` | `/api/permits/[id]/attachments` | User | Upload permit attachment (route handler — not bound by the 1MB server-action body cap) |
 | `GET` | `/api/permits/[id]/certificate` | User | Download approved permit PDF certificate |
 | `GET` | `/api/health` | Public | Health check — env vars + DB connectivity |
 
@@ -796,7 +797,7 @@ PermitForge/
 │   │                                  #   StatusBadge, StatusTimeline, AttachmentList
 │   └── ui/                            #   shadcn/ui primitives (9 components)
 │
-├── lib/                               # Core Business Logic (27 modules)
+├── lib/                               # Core Business Logic (29 modules)
 │   ├── chat-pipeline.ts               #   RAG orchestration + feature flags
 │   ├── rag.ts                         #   Hybrid search, CRAG check, parent expansion
 │   ├── agents.ts                      #   Topic classifier + Tree Reasoner
@@ -809,6 +810,7 @@ PermitForge/
 │   ├── document-registry.ts           #   Document registry (fully DB-driven, cached)
 │   ├── auth.ts                        #   JWT, sessions, passwords, CSRF
 │   ├── security.ts                    #   requireAuth / requireAdmin guards
+│   ├── csrf-client.ts                 #   Client-side readCsrfCookie() — CSRF token from cookie (no network)
 │   ├── gemini.ts                      #   Gemini + LangChain configuration
 │   ├── email.ts                       #   Email via Nodemailer SMTP: verification, reset, password change
 │   ├── pdf-parser.ts                  #   PDF.js text & TOC extraction
@@ -818,6 +820,7 @@ PermitForge/
 │   ├── permit-certificate.ts          #   PDF certificate via PDFKit
 │   ├── notifications.ts               #   In-app + email (Nodemailer SMTP) notifications
 │   ├── file-upload.ts                 #   File validation, storage path generation
+│   ├── permit-attachment-upload.ts    #   Shared permit-attachment upload (server action + API route)
 │   ├── transforms.ts                  #   Shared data transforms (permit row → TS object)
 │   ├── supabase-server.ts             #   Supabase client factory (anon + admin)
 │   ├── validations.ts                 #   Zod v4 schemas for all inputs

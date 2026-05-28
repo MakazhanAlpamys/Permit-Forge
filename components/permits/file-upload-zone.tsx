@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Upload, X, FileText, Image, File } from 'lucide-react';
-import { uploadPermitAttachment, deletePermitAttachment } from '@/actions/permit-attachments';
-import { getCSRFTokenAction } from '@/actions/auth';
+import { deletePermitAttachment } from '@/actions/permit-attachments';
+import { readCsrfCookie } from '@/lib/csrf-client';
 import { formatFileSize } from '@/lib/file-upload';
 import { FILE_UPLOAD_LIMITS } from '@/lib/constants';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -30,15 +30,7 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
   const [deleting, setDeleting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const csrfTokenRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
-    getCSRFTokenAction()
-      .then(token => { csrfTokenRef.current = token; })
-      .catch(err => console.error('CSRF token fetch failed:', err));
-  }, []);
 
   const handleUpload = useCallback(async (file: File) => {
     setError(null);
@@ -47,9 +39,17 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const result = await uploadPermitAttachment(permitId, formData, csrfTokenRef.current || undefined);
+      // Upload via the API route, not the server action: a 10MB attachment
+      // exceeds Next's 1MB serverActions.bodySizeLimit (kept low per C5H/H6),
+      // and route handlers don't share that cap.
+      const resp = await fetch(`/api/permits/${permitId}/attachments`, {
+        method: 'POST',
+        headers: { 'x-csrf-token': readCsrfCookie() ?? '' },
+        body: formData,
+      });
+      const result = await resp.json().catch(() => ({ success: false }));
 
-      if (!result.success) {
+      if (!resp.ok || !result.success) {
         setError(result.error || t('errors.generic'));
       } else {
         onUpdate();
@@ -77,7 +77,7 @@ export function FileUploadZone({ permitId, attachments, onUpdate, disabled }: Fi
     if (!attachmentId) return;
     setDeleting(attachmentId);
     try {
-      const result = await deletePermitAttachment(attachmentId, csrfTokenRef.current || undefined);
+      const result = await deletePermitAttachment(attachmentId, readCsrfCookie() ?? undefined);
       if (result.success) {
         onUpdate();
       } else {

@@ -174,12 +174,17 @@ describe('Auth Server Actions', () => {
       mockGetRequestMetadata.mockResolvedValue({ ipAddress: '10.0.0.1', userAgent: 'test' });
     });
 
-    it('should redirect on successful login', async () => {
+    it('should return success + role on successful login', async () => {
       mockSingle.mockResolvedValueOnce({ data: validUser, error: null });
 
       const formData = makeFormData({ username: 'testuser', password: 'Password1!' });
 
-      await expect(loginAction(formData)).rejects.toThrow('NEXT_REDIRECT:/');
+      // Login no longer redirects server-side; it returns success + role and
+      // the client navigates (avoids a NEXT_REDIRECT caught by the page's
+      // try/catch flashing a false "login failed" banner).
+      const result = await loginAction(formData);
+      expect(result.success).toBe(true);
+      expect(result.role).toBe('user');
 
       expect(mockVerifyPassword).toHaveBeenCalledWith('Password1!', validUser.password_hash);
       expect(mockCreateSession).toHaveBeenCalledWith({
@@ -247,7 +252,8 @@ describe('Auth Server Actions', () => {
 
       const formData = makeFormData({ username: 'testuser', password: 'Password1!' });
 
-      await expect(loginAction(formData)).rejects.toThrow('NEXT_REDIRECT:/');
+      const result = await loginAction(formData);
+      expect(result.success).toBe(true);
 
       expect(mockCreateSession).toHaveBeenCalled();
     });

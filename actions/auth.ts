@@ -61,7 +61,9 @@ async function checkLoginRateLimit(ip: string): Promise<boolean> {
 // Login Action
 // -----------------------------------------------------------------------------
 
-export async function loginAction(formData: FormData): Promise<{ error?: string }> {
+export async function loginAction(
+  formData: FormData,
+): Promise<{ success?: boolean; role?: 'admin' | 'user'; error?: string }> {
   const metadata = await getRequestMetadata();
   
   try {
@@ -186,13 +188,16 @@ export async function loginAction(formData: FormData): Promise<{ error?: string 
       ...metadata,
     });
 
+    // Return success + role and let the client navigate. Calling redirect()
+    // here threw NEXT_REDIRECT, which the login page's await/try-catch caught
+    // and rendered as a one-frame "login failed" banner before the navigation
+    // committed. Client-side navigation has no such race.
+    return { success: true, role: user.role as 'admin' | 'user' };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'An error occurred during login';
     console.error('Login error:', errorMessage);
     return { error: 'Login failed. Please try again.' };
   }
-
-  redirect('/');
 }
 
 // -----------------------------------------------------------------------------

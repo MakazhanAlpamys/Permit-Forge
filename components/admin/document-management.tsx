@@ -16,7 +16,7 @@ import {
   type DocumentRecord,
 } from '@/actions/documents';
 import { clearDocumentChunks, getIngestionStatus, testRAGQuery } from '@/actions/ingest-pdf';
-import { getCSRFTokenAction } from '@/actions/auth';
+import { readCsrfCookie } from '@/lib/csrf-client';
 import { useIngestionStream } from '@/hooks/use-ingestion-stream';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -160,10 +160,9 @@ export function DocumentManagement() {
   useEffect(() => {
     loadDocuments();
     runDiagnostics();
-    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
-    getCSRFTokenAction()
-      .then(token => { csrfTokenRef.current = token; })
-      .catch(err => console.error('CSRF token fetch failed:', err));
+    // Read the CSRF token straight from the (non-HttpOnly) cookie — no network
+    // fetch that could fail and leave every admin mutation without a token.
+    csrfTokenRef.current = readCsrfCookie();
   }, [loadDocuments, runDiagnostics]);
 
   // Form handlers

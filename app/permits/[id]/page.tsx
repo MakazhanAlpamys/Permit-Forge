@@ -16,8 +16,8 @@ import {
   AttachmentList,
 } from '@/components/permits';
 import { getPermitById, getPermitHistory, runComplianceCheck, submitPermit, deletePermit, revisePermit } from '@/actions/permits';
-import { getCSRFTokenAction } from '@/actions/auth';
 import { getPermitAttachments } from '@/actions/permit-attachments';
+import { readCsrfCookie } from '@/lib/csrf-client';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ArrowLeft, Send, ShieldCheck, Trash2, Loader2, Download, RotateCcw } from 'lucide-react';
@@ -78,10 +78,9 @@ export default function PermitDetailPage() {
 
   useEffect(() => {
     loadPermit();
-    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
-    getCSRFTokenAction()
-      .then(setCsrfToken)
-      .catch(err => console.error('CSRF token fetch failed:', err));
+    // Read the CSRF token straight from the (non-HttpOnly) cookie — no network
+    // fetch that could fail and leave permit actions without a token.
+    setCsrfToken(readCsrfCookie());
   }, [loadPermit]);
 
   const handleRunCheck = async () => {

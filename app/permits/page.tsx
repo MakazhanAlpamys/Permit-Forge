@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { Header } from '@/components/dashboard';
 import { PermitList } from '@/components/permits';
 import { getMyPermits, deletePermit } from '@/actions/permits';
-import { getCSRFTokenAction } from '@/actions/auth';
+import { readCsrfCookie } from '@/lib/csrf-client';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { ResultDialog } from '@/components/ui/confirm-dialog';
@@ -36,10 +36,9 @@ export default function PermitsPage() {
 
   useEffect(() => {
     loadPermits();
-    // TS-M-2 / v1.6.0 Part F: catch + log CSRF fetch failure.
-    getCSRFTokenAction()
-      .then(setCsrfToken)
-      .catch(err => console.error('CSRF token fetch failed:', err));
+    // Read the CSRF token straight from the (non-HttpOnly) cookie — no network
+    // fetch that could fail and leave permit deletes without a token.
+    setCsrfToken(readCsrfCookie());
   }, [loadPermits]);
 
   // X6: poll for status changes every 60s so an admin's approve/reject is
