@@ -3,7 +3,6 @@
 // ============================================================================
 
 import PDFDocument from 'pdfkit';
-import QRCode from 'qrcode';
 import type { BuildingDetails } from '@/types';
 
 // -----------------------------------------------------------------------------
@@ -25,7 +24,6 @@ export interface CertificateData {
   ownerPhone?: string;
   ownerEmiratesId?: string;
   reviewComments?: string;
-  verifyUrl?: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -82,23 +80,6 @@ const LIGHT_BG = '#f7fafc';
 // -----------------------------------------------------------------------------
 
 export async function generateCertificatePDF(data: CertificateData): Promise<Buffer> {
-  // QR is generated up-front (async). PDFKit itself is sync-stream, so we
-  // resolve to a buffer once everything is drawn.
-  let qrPngBuffer: Buffer | null = null;
-  if (data.verifyUrl) {
-    try {
-      qrPngBuffer = await QRCode.toBuffer(data.verifyUrl, {
-        errorCorrectionLevel: 'M',
-        margin: 1,
-        width: 120,
-        color: { dark: '#1a365d', light: '#ffffff' },
-      });
-    } catch (err) {
-      // QR is decorative — if generation fails, fall through without it.
-      console.warn('QR generation failed:', err);
-    }
-  }
-
   return new Promise((resolve, reject) => {
     try {
       const doc = new PDFDocument({ size: 'A4', margin: 40 });
@@ -252,42 +233,6 @@ export async function generateCertificatePDF(data: CertificateData): Promise<Buf
           .text(s(data.reviewComments), 52, boxY + 12, textOpts);
 
         doc.y = boxY + textHeight + 36;
-      }
-
-      // ── Section: Verification (QR code) ─────────────────────────────────
-      if (qrPngBuffer) {
-        const qrSize = 90;
-        const verifyBlockHeight = qrSize + 20;
-        maybePageBreak(doc, verifyBlockHeight + 40);
-        drawSectionTitle(doc, 'Verification', pageWidth);
-
-        const blockY = doc.y;
-        const qrX = 40 + pageWidth - qrSize;
-
-        // QR on the right
-        doc.image(qrPngBuffer, qrX, blockY, { width: qrSize, height: qrSize });
-
-        // Text on the left
-        doc
-          .font('Helvetica-Bold')
-          .fontSize(11)
-          .fillColor(DARK)
-          .text('Scan to verify authenticity', 40, blockY + 8, { width: pageWidth - qrSize - 16 });
-
-        doc
-          .font('Helvetica')
-          .fontSize(9)
-          .fillColor(GRAY)
-          .text(
-            'This QR code links to the official permit record. ' +
-            'Reviewers and inspectors can scan it to confirm that this ' +
-            'certificate is genuine and currently valid.',
-            40,
-            blockY + 26,
-            { width: pageWidth - qrSize - 16 },
-          );
-
-        doc.y = blockY + qrSize + 16;
       }
 
       // ── Footer ──────────────────────────────────────────────────────────
