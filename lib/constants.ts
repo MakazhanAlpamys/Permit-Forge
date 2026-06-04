@@ -276,3 +276,38 @@ export const DOCUMENT_BADGE_COLORS: readonly BadgeColorOption[] = [
   { label: 'Yellow', value: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' },
   { label: 'Gray', value: 'bg-gray-500/20 text-gray-400 border-gray-500/30' },
 ] as const;
+
+// ============================================================================
+// Building occupancy / construction types (i18n)
+// ============================================================================
+// `value` is the canonical English value stored in the DB (do NOT translate —
+// it's compared in logic and persisted). `labelKey` points at the i18n entry
+// used to render the localized caption in the form dropdown + detail view.
+
+export interface LabeledOption {
+  value: string;
+  labelKey: string;
+}
+
+export const OCCUPANCY_TYPES: readonly LabeledOption[] = [
+  { value: 'Residential', labelKey: 'permits.step2.occupancy.residential' },
+  { value: 'Commercial', labelKey: 'permits.step2.occupancy.commercial' },
+  { value: 'Office', labelKey: 'permits.step2.occupancy.office' },
+  { value: 'Retail', labelKey: 'permits.step2.occupancy.retail' },
+  { value: 'Hotel', labelKey: 'permits.step2.occupancy.hotel' },
+  { value: 'Hospital', labelKey: 'permits.step2.occupancy.hospital' },
+  { value: 'Educational', labelKey: 'permits.step2.occupancy.educational' },
+  { value: 'Industrial', labelKey: 'permits.step2.occupancy.industrial' },
+  { value: 'Mixed', labelKey: 'permits.step2.occupancy.mixed' },
+  { value: 'Assembly', labelKey: 'permits.step2.occupancy.assembly' },
+  { value: 'Warehouse', labelKey: 'permits.step2.occupancy.warehouse' },
+] as const;
+
+export const CONSTRUCTION_TYPES: readonly LabeledOption[] = [
+  { value: 'Reinforced Concrete', labelKey: 'permits.step2.construction.reinforcedConcrete' },
+  { value: 'Steel Frame', labelKey: 'permits.step2.construction.steelFrame' },
+  { value: 'Precast Concrete', labelKey: 'permits.step2.construction.precastConcrete' },
+  { value: 'Masonry', labelKey: 'permits.step2.construction.masonry' },
+  { value: 'Composite', labelKey: 'permits.step2.construction.composite' },
+  { value: 'Timber', labelKey: 'permits.step2.construction.timber' },
+] as const;

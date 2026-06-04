@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PermitStatusBadge } from './permit-status-badge';
-import { PROJECT_TYPES } from '@/lib/constants';
+import { PROJECT_TYPES, OCCUPANCY_TYPES, CONSTRUCTION_TYPES } from '@/lib/constants';
 import { Building2, MapPin, Ruler, ParkingSquare, Layers } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { PermitApplication } from '@/types';
@@ -34,6 +34,12 @@ export function PermitDetailView({ permit }: PermitDetailViewProps) {
   });
   const bd = permit.buildingDetails;
   const hasBuildingDetails = bd && bd.numberOfFloors;
+  const occupancyText = bd?.occupancyType
+    ? t(OCCUPANCY_TYPES.find((o) => o.value === bd.occupancyType)?.labelKey ?? '_', { defaultValue: bd.occupancyType })
+    : t('common.notAvailable');
+  const constructionText = bd?.constructionType
+    ? t(CONSTRUCTION_TYPES.find((c) => c.value === bd.constructionType)?.labelKey ?? '_', { defaultValue: bd.constructionType })
+    : t('common.notAvailable');
 
   return (
     <div className="space-y-4">
@@ -86,8 +92,8 @@ export function PermitDetailView({ permit }: PermitDetailViewProps) {
                 value={String(bd.numberOfParkingSpaces || 0)}
                 icon={<ParkingSquare className="h-3 w-3" />}
               />
-              <DetailItem label={t('permits.step2.occupancyShort')} value={bd.occupancyType || t('common.notAvailable')} />
-              <DetailItem label={t('permits.step2.constructionShort')} value={bd.constructionType || t('common.notAvailable')} />
+              <DetailItem label={t('permits.step2.occupancyShort')} value={occupancyText} />
+              <DetailItem label={t('permits.step2.constructionShort')} value={constructionText} />
             </div>
 
             {bd.plotArea && bd.totalBuiltUpArea && (
@@ -95,12 +101,12 @@ export function PermitDetailView({ permit }: PermitDetailViewProps) {
                 <div className="flex items-center gap-2">
                   <Ruler className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm">
-                    <span className="font-medium">FAR:</span>{' '}
+                    <span className="font-medium">{t('permits.detail.far')}:</span>{' '}
                     {bd.totalBuiltUpArea && bd.plotArea
                       ? (bd.totalBuiltUpArea / bd.plotArea).toFixed(2)
                       : '—'}
                     {' · '}
-                    <span className="font-medium">Coverage:</span>{' '}
+                    <span className="font-medium">{t('permits.detail.coverage')}:</span>{' '}
                     {bd.totalBuiltUpArea && bd.plotArea && (bd.numberOfFloors ?? 0) > 0
                       ? ((bd.totalBuiltUpArea / (bd.numberOfFloors as number) / bd.plotArea) * 100).toFixed(1) + '%'
                       : '—'}

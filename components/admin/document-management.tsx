@@ -136,10 +136,10 @@ export function DocumentManagement() {
         documentStats: [],
         rpcWorking: false,
         loading: false,
-        error: error instanceof Error ? error.message : 'Diagnostic failed',
+        error: error instanceof Error ? error.message : t('admin.documents.errors.diagnosticFailed'),
       });
     }
-  }, []);
+  }, [t]);
 
   // Ingestion stream — encapsulates SSE parsing, AbortController, and per-doc
   // status / progress state (F17).
@@ -180,7 +180,7 @@ export function DocumentManagement() {
 
   const handleSave = async (formData: DocumentFormValues, pdfFile: File | null) => {
     if (!formData.displayName || !formData.shortName) {
-      setFormError('Display Name and Short Name are required');
+      setFormError(t('admin.documents.errors.nameRequired'));
       return;
     }
 
@@ -188,7 +188,7 @@ export function DocumentManagement() {
 
     // For new documents, require either a PDF file or a filename
     if (!editingId && !pdfFile && !formData.fileName) {
-      setFormError('Please select a PDF file');
+      setFormError(t('admin.documents.errors.selectPdf'));
       return;
     }
 
@@ -223,7 +223,7 @@ export function DocumentManagement() {
           handleRestore(docId, formData.displayName);
           return;
         }
-        setFormError(result.error || 'Failed to save');
+        setFormError(result.error || t('admin.documents.errors.saveFailed'));
         return;
       }
 
@@ -246,7 +246,7 @@ export function DocumentManagement() {
           });
           uploadResult = await resp.json().catch(() => ({
             success: false,
-            error: `Upload failed: HTTP ${resp.status}`,
+            error: t('admin.documents.errors.uploadFailedHttp', { status: resp.status }),
           }));
         } finally {
           setUploading(false);
@@ -265,13 +265,13 @@ export function DocumentManagement() {
           if (!editingId) {
             await deleteDocument(docId, true, csrfTokenRef.current || '');
             setFormError(
-              (uploadResult.error || 'PDF upload failed') +
-                ' — the document entry was rolled back. Please try again.',
+              (uploadResult.error || t('admin.documents.errors.pdfUploadFailed')) +
+                t('admin.documents.errors.rolledBackSuffix'),
             );
           } else {
             setFormError(
-              (uploadResult.error || 'PDF upload failed') +
-                ' — metadata was saved but the new PDF was not uploaded. The previous PDF (if any) is unchanged.',
+              (uploadResult.error || t('admin.documents.errors.pdfUploadFailed')) +
+                t('admin.documents.errors.metadataKeptSuffix'),
             );
           }
           loadDocuments();
@@ -284,7 +284,7 @@ export function DocumentManagement() {
       loadDocuments();
       runDiagnostics();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'An unexpected error occurred');
+      setFormError(err instanceof Error ? err.message : t('admin.documents.errors.unexpected'));
     } finally {
       setSaving(false);
     }
@@ -292,13 +292,9 @@ export function DocumentManagement() {
 
   const handleDelete = (docId: string, docName: string) => {
     setPendingConfirm({
-      title: 'Deactivate Document',
-      description: (
-        <>
-          Deactivate <strong>{docName}</strong>? This will hide it from search but preserve its data.
-        </>
-      ),
-      confirmLabel: 'Deactivate',
+      title: t('admin.documents.confirm.deactivateTitle'),
+      description: t('admin.documents.confirm.deactivateBody', { name: docName }),
+      confirmLabel: t('admin.documents.deactivate'),
       onConfirm: async () => {
         const result = await deleteDocument(docId, false, csrfTokenRef.current || '');
         if (result.success) {
@@ -306,7 +302,7 @@ export function DocumentManagement() {
         } else {
           // v1.2.0 re-audit follow-up: was silent on failure (audit flagged
           // it as the same silent-else family v1.2.0 set out to fix).
-          setRestoreError(result.error || 'Failed to deactivate document');
+          setRestoreError(result.error || t('admin.documents.errors.deactivateFailed'));
         }
       },
     });
@@ -314,13 +310,9 @@ export function DocumentManagement() {
 
   const handleDeleteWithChunks = (docId: string, docName: string) => {
     setPendingConfirm({
-      title: 'Delete Document',
-      description: (
-        <>
-          Delete <strong>{docName}</strong> and all its chunks? This cannot be undone.
-        </>
-      ),
-      confirmLabel: 'Delete',
+      title: t('admin.documents.confirm.deleteTitle'),
+      description: t('admin.documents.confirm.deleteBody', { name: docName }),
+      confirmLabel: t('common.delete'),
       destructive: true,
       onConfirm: async () => {
         const result = await deleteDocument(docId, true, csrfTokenRef.current || '');
@@ -329,7 +321,7 @@ export function DocumentManagement() {
           runDiagnostics();
         } else {
           // v1.2.0 re-audit follow-up: was silent on failure.
-          setRestoreError(result.error || 'Failed to delete document');
+          setRestoreError(result.error || t('admin.documents.errors.deleteFailed'));
         }
       },
     });
@@ -343,20 +335,16 @@ export function DocumentManagement() {
 
   const handleRestore = (docId: string, docName?: string) => {
     setPendingConfirm({
-      title: 'Restore Document',
-      description: (
-        <>
-          Restore <strong>{docName || docId}</strong>? It will become active and visible to users again.
-        </>
-      ),
-      confirmLabel: 'Restore',
+      title: t('admin.documents.confirm.restoreTitle'),
+      description: t('admin.documents.confirm.restoreBody', { name: docName || docId }),
+      confirmLabel: t('admin.documents.restore'),
       destructive: false,
       onConfirm: async () => {
         const result = await restoreDocument(docId, csrfTokenRef.current || '');
         if (result.success) {
           loadDocuments();
         } else {
-          setRestoreError(result.error || 'Failed to restore document');
+          setRestoreError(result.error || t('admin.documents.errors.restoreFailed'));
         }
       },
     });
@@ -381,14 +369,9 @@ export function DocumentManagement() {
     if (reingestInfo) {
       const chunkCount = reingestInfo.chunkCount;
       setPendingConfirm({
-        title: 'Replace existing chunks?',
-        description: (
-          <>
-            The uploaded PDF differs from the one that produced the current {chunkCount} chunks.
-            Replace existing {chunkCount} chunks before re-ingesting?
-          </>
-        ),
-        confirmLabel: 'Replace and re-ingest',
+        title: t('admin.documents.confirm.replaceTitle'),
+        description: t('admin.documents.confirm.replaceBody', { count: chunkCount }),
+        confirmLabel: t('admin.documents.confirm.replaceConfirm'),
         destructive: true,
         onConfirm: async () => {
           await startIngestion(documentId, csrfTokenRef.current, true);
@@ -408,26 +391,22 @@ export function DocumentManagement() {
 
   const handleClearChunks = (documentId: string, displayName: string) => {
     setPendingConfirm({
-      title: 'Clear all chunks',
-      description: (
-        <>
-          Clear all chunks for <strong>{displayName}</strong>? This cannot be undone.
-        </>
-      ),
-      confirmLabel: 'Clear',
+      title: t('admin.documents.confirm.clearTitle'),
+      description: t('admin.documents.confirm.clearBody', { name: displayName }),
+      confirmLabel: t('admin.documents.confirm.clearConfirm'),
       destructive: true,
       onConfirm: async () => {
         setIngestionStatus(documentId, 'loading');
         try {
           const result = await clearDocumentChunks(documentId, csrfTokenRef.current || '');
           if (result.success) {
-            setIngestionStatus(documentId, 'idle', `Cleared ${result.deletedCount || 0} chunks`);
+            setIngestionStatus(documentId, 'idle', t('admin.documents.clearedChunks', { count: result.deletedCount || 0 }));
             runDiagnostics();
           } else {
-            setIngestionStatus(documentId, 'error', result.error || 'Failed to clear');
+            setIngestionStatus(documentId, 'error', result.error || t('admin.documents.errors.clearFailed'));
           }
         } catch (error) {
-          setIngestionStatus(documentId, 'error', error instanceof Error ? error.message : 'Failed');
+          setIngestionStatus(documentId, 'error', error instanceof Error ? error.message : t('admin.documents.errors.failed'));
         }
       },
     });
@@ -441,7 +420,7 @@ export function DocumentManagement() {
   const getDocPageRange = (docId: string) => {
     const stat = diagnostic.documentStats.find(s => s.document_name === docId);
     if (!stat || stat.chunk_count === 0) return null;
-    return `pp. ${stat.min_page}-${stat.max_page}`;
+    return t('admin.documents.pageRange', { min: stat.min_page, max: stat.max_page });
   };
 
   const activeDocuments = documents.filter(d => d.isActive);
@@ -475,7 +454,7 @@ export function DocumentManagement() {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Zap className="h-4 w-4 text-yellow-500" />
-              System Status
+              {t('admin.documents.systemStatus')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -487,11 +466,11 @@ export function DocumentManagement() {
               <div className="flex flex-wrap gap-4 text-sm">
                 <div className="flex items-center gap-1.5">
                   {diagnostic.dbConnected ? <CheckCircle className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-red-500" />}
-                  Database
+                  {t('admin.documents.database')}
                 </div>
                 <div className="flex items-center gap-1.5">
                   {diagnostic.rpcWorking ? <CheckCircle className="h-3.5 w-3.5 text-green-500" /> : <XCircle className="h-3.5 w-3.5 text-red-500" />}
-                  Hybrid Search
+                  {t('admin.documents.hybridSearch')}
                 </div>
                 <div className="flex items-center gap-1.5">
                   <Database className="h-3.5 w-3.5 text-muted-foreground" />
@@ -554,11 +533,11 @@ export function DocumentManagement() {
                       </Badge>
                       {doc.storagePath ? (
                         <Badge className="bg-green-500/20 text-green-700 dark:text-green-300 border-green-500/30 text-[10px] shrink-0">
-                          PDF
+                          {t('admin.documents.pdfBadge')}
                         </Badge>
                       ) : (
                         <Badge className="bg-yellow-500/20 text-yellow-700 dark:text-yellow-300 border-yellow-500/30 text-[10px] shrink-0">
-                          No PDF
+                          {t('admin.documents.noPdf')}
                         </Badge>
                       )}
                       {isIngested && (
@@ -571,8 +550,8 @@ export function DocumentManagement() {
                         size="icon"
                         className="shrink-0"
                         onClick={() => openEditForm(doc)}
-                        aria-label={`Edit ${doc.displayName}`}
-                        title="Edit document"
+                        aria-label={t('admin.documents.editAria', { name: doc.displayName })}
+                        title={t('admin.documents.editTitle')}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -584,7 +563,7 @@ export function DocumentManagement() {
                       </span>
                       {pageRange && <span className="text-muted-foreground shrink-0">{pageRange}</span>}
                       {doc.keywords.length > 0 && (
-                        <span className="text-muted-foreground shrink-0">{doc.keywords.length} keywords</span>
+                        <span className="text-muted-foreground shrink-0">{t('admin.documents.keywordsCount', { count: doc.keywords.length })}</span>
                       )}
                     </CardDescription>
                   </CardHeader>
@@ -604,7 +583,7 @@ export function DocumentManagement() {
                         </div>
                         {progress.chunksProcessed !== undefined && progress.chunksProcessed > 0 && (
                           <p className="text-[10px] text-muted-foreground text-center">
-                            {progress.chunksProcessed} chunks processed
+                            {t('admin.documents.chunksProcessedShort', { count: progress.chunksProcessed })}
                           </p>
                         )}
                       </div>
@@ -651,7 +630,7 @@ export function DocumentManagement() {
                           onClick={() => handleCancelIngestion(doc.id)}
                           variant="outline"
                           size="sm"
-                          title="Cancel ingestion"
+                          title={t('admin.documents.cancelIngestion')}
                         >
                           <X className="mr-1.5 h-3 w-3" />
                           {t('common.cancel')}
@@ -675,8 +654,8 @@ export function DocumentManagement() {
                         variant="ghost"
                         size="sm"
                         className="text-muted-foreground hover:text-red-600 dark:hover:text-red-400"
-                        aria-label={`Deactivate ${doc.displayName}`}
-                        title="Deactivate document"
+                        aria-label={t('admin.documents.deactivateAria', { name: doc.displayName })}
+                        title={t('admin.documents.deactivateTitle')}
                       >
                         <Archive className="h-4 w-4" />
                       </Button>
@@ -738,7 +717,7 @@ export function DocumentManagement() {
         onOpenChange={(open) => { if (!open) setPendingConfirm(null); }}
         title={pendingConfirm?.title ?? ''}
         description={pendingConfirm?.description}
-        confirmLabel={pendingConfirm?.confirmLabel ?? 'Confirm'}
+        confirmLabel={pendingConfirm?.confirmLabel ?? t('common.confirm')}
         confirmVariant={pendingConfirm?.destructive ? 'destructive' : 'default'}
         destructive={pendingConfirm?.destructive}
         loading={confirmLoading}

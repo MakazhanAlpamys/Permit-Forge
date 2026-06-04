@@ -165,7 +165,13 @@
         "q2": "Какой высоты может быть коммерческое здание?",
         "q3": "Какие требования пожарной безопасности для квартир?",
         "q4": "Какие документы нужны для разрешения на строительство?"
-      }
+      },
+      "verified": "проверено",
+      "range": "диапазон",
+      "verifiedCount": "{{count}} проверено",
+      "highConfidenceCount": "{{count}} высокая уверенность",
+      "contentTable": "Таблица",
+      "contentList": "Список"
     }
   },
   "profile": {
@@ -271,10 +277,31 @@
       "unitsShort": "Юниты",
       "parkingSpaces": "Парковочные места",
       "parkingShort": "Парковка",
-      "occupancyType": "Тип занятости",
-      "occupancyShort": "Занятость",
+      "occupancyType": "Тип назначения",
+      "occupancyShort": "Назначение",
       "constructionType": "Тип конструкции",
-      "constructionShort": "Конструкция"
+      "constructionShort": "Конструкция",
+      "occupancy": {
+        "residential": "Жилое",
+        "commercial": "Коммерческое",
+        "office": "Офис",
+        "retail": "Розничная торговля",
+        "hotel": "Гостиница",
+        "hospital": "Больница",
+        "educational": "Образовательное",
+        "industrial": "Промышленное",
+        "mixed": "Смешанное использование",
+        "assembly": "Места массового скопления",
+        "warehouse": "Склад"
+      },
+      "construction": {
+        "reinforcedConcrete": "Железобетон",
+        "steelFrame": "Стальной каркас",
+        "precastConcrete": "Сборный железобетон",
+        "masonry": "Каменная кладка",
+        "composite": "Композит",
+        "timber": "Дерево"
+      }
     },
     "step3": {
       "title": "Требования соответствия",
@@ -290,6 +317,7 @@
     },
     "actions": {
       "saveDraft": "Сохранить черновик",
+      "editDraft": "Редактировать черновик",
       "submit": "Отправить заявку",
       "submitting": "Отправка...",
       "runCompliance": "AI-проверка",
@@ -318,7 +346,9 @@
       "noAttachments": "Нет вложений",
       "uploadAttachment": "Загрузить вложение",
       "deleteConfirm": "Удалить это разрешение? Действие необратимо.",
-      "deleteAttachmentConfirm": "Удалить это вложение?"
+      "deleteAttachmentConfirm": "Удалить это вложение?",
+      "far": "Коэф. застройки",
+      "coverage": "Застройка"
     },
     "status": {
       "draft": "Черновик",
@@ -404,7 +434,18 @@
         "role": "Роль",
         "submit": "Создать пользователя",
         "submitting": "Создание..."
-      }
+      },
+      "makeAdmin": "Назначить админом",
+      "removeAdmin": "Снять админа",
+      "makeAdminAria": "Назначить {{username}} администратором",
+      "removeAdminAria": "Снять роль администратора с {{username}}",
+      "blockUser": "Заблокировать",
+      "unblockUser": "Разблокировать",
+      "blockAria": "Заблокировать {{username}}",
+      "unblockAria": "Разблокировать {{username}}",
+      "resetPasswordAria": "Сбросить пароль для {{username}}",
+      "deleteUser": "Удалить пользователя",
+      "deleteAria": "Удалить {{username}}"
     },
     "permits": {
       "title": "Управление разрешениями",
@@ -454,7 +495,11 @@
         "keywords": "Ключевые слова (через запятую)",
         "categories": "Категории (через запятую)",
         "submit": "Сохранить документ",
-        "submitting": "Сохранение..."
+        "submitting": "Сохранение...",
+        "authority": "Орган",
+        "authorityPlaceholder": "напр., Городской орган",
+        "sourceUrl": "Ссылка на источник",
+        "badgeColor": "Цвет метки"
       },
       "ingestion": {
         "title": "Загрузка PDF",
@@ -465,6 +510,61 @@
         "embedding": "Генерация эмбеддингов...",
         "complete": "Загрузка завершена",
         "chunksProcessed": "Обработано чанков: {{count}}"
+      },
+      "systemStatus": "Состояние системы",
+      "database": "База данных",
+      "hybridSearch": "Гибридный поиск",
+      "pdfBadge": "PDF",
+      "noPdf": "Нет PDF",
+      "keywordsCount": "{{count}} ключевых слов",
+      "chunksProcessedShort": "Обработано чанков: {{count}}",
+      "pageRange": "стр. {{min}}-{{max}}",
+      "clearedChunks": "Очищено {{count}} чанков",
+      "editTitle": "Редактировать документ",
+      "editAria": "Редактировать {{name}}",
+      "deactivateTitle": "Деактивировать документ",
+      "deactivateAria": "Деактивировать {{name}}",
+      "cancelIngestion": "Отменить загрузку",
+      "colors": {
+        "blue": "Синий",
+        "red": "Красный",
+        "violet": "Фиолетовый",
+        "purple": "Пурпурный",
+        "cyan": "Голубой",
+        "green": "Зелёный",
+        "orange": "Оранжевый",
+        "yellow": "Жёлтый",
+        "gray": "Серый"
+      },
+      "confirm": {
+        "deactivateTitle": "Деактивировать документ",
+        "deactivateBody": "Деактивировать {{name}}? Документ будет скрыт из поиска, но его данные сохранятся.",
+        "deleteTitle": "Удалить документ",
+        "deleteBody": "Удалить {{name}} и все его чанки? Это действие необратимо.",
+        "restoreTitle": "Восстановить документ",
+        "restoreBody": "Восстановить {{name}}? Он снова станет активным и видимым для пользователей.",
+        "replaceTitle": "Заменить существующие чанки?",
+        "replaceBody": "Загруженный PDF отличается от того, из которого получены текущие {{count}} чанков. Заменить существующие {{count}} чанков перед повторной загрузкой?",
+        "replaceConfirm": "Заменить и загрузить заново",
+        "clearTitle": "Очистить все чанки",
+        "clearBody": "Очистить все чанки для {{name}}? Это действие необратимо.",
+        "clearConfirm": "Очистить"
+      },
+      "errors": {
+        "diagnosticFailed": "Диагностика не удалась",
+        "nameRequired": "Необходимо указать отображаемое имя и короткое имя",
+        "selectPdf": "Пожалуйста, выберите PDF-файл",
+        "saveFailed": "Не удалось сохранить",
+        "uploadFailedHttp": "Загрузка не удалась: HTTP {{status}}",
+        "pdfUploadFailed": "Не удалось загрузить PDF",
+        "rolledBackSuffix": " — запись документа была отменена. Пожалуйста, попробуйте снова.",
+        "metadataKeptSuffix": " — метаданные сохранены, но новый PDF не загружен. Предыдущий PDF (если был) не изменён.",
+        "unexpected": "Произошла непредвиденная ошибка",
+        "deactivateFailed": "Не удалось деактивировать документ",
+        "deleteFailed": "Не удалось удалить документ",
+        "restoreFailed": "Не удалось восстановить документ",
+        "clearFailed": "Не удалось очистить",
+        "failed": "Ошибка"
       }
     },
     "audit": {
@@ -475,7 +575,20 @@
       "userAgent": "User Agent",
       "timestamp": "Время",
       "metadata": "Метаданные",
-      "noLogs": "Записи в журнале не найдены"
+      "noLogs": "Записи в журнале не найдены",
+      "events": {
+        "login_success": "Успешный вход",
+        "login_failed": "Неудачный вход",
+        "logout": "Выход",
+        "user_created": "Пользователь создан",
+        "user_blocked": "Пользователь заблокирован",
+        "user_unblocked": "Пользователь разблокирован",
+        "role_changed": "Роль изменена",
+        "password_reset": "Сброс пароля",
+        "pdf_ingested": "PDF загружен",
+        "chunks_cleared": "Чанки очищены",
+        "session_deleted": "Сессия удалена"
+      }
     }
   },
   "notifications": {

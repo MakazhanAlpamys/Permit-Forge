@@ -15,7 +15,6 @@ import {
   updatePermitComplianceRequirements,
   submitPermit,
   runComplianceCheck,
-  getMyPermits,
   getPermitById,
 } from '@/actions/permits';
 import { getPermitAttachments } from '@/actions/permit-attachments';
@@ -179,47 +178,29 @@ function NewPermitPageInner() {
     syncUrl(permitId, step);
   }, [permitId, syncUrl]);
 
-  // B9: hydrate from URL (?id=...) or fall back to the user's most recently
-  // updated draft. Either way we land the user on whatever they were doing
-  // last instead of resetting to a blank step 1.
+  // Hydrate only from an explicit ?id= (continuing an existing draft via the
+  // "Edit Draft" button on the permit detail page). With no ?id=, "New Permit"
+  // always means a blank form — we do NOT silently resume the latest draft,
+  // which used to pre-fill the wizard with stale data on every visit.
   useEffect(() => {
     let cancelled = false;
 
     async function hydrate() {
-      // Explicit ?id= takes priority.
-      if (urlPermitId) {
-        const result = await getPermitById(urlPermitId);
-        if (cancelled) return;
-        if (result.data && (result.data.status === 'draft' || result.data.status === 'revision_requested')) {
-          setPermitId(result.data.id);
-          setPermitVersion(result.data.version);
-          applyPermitToFormState(result.data, setStep1Data, setStep2Data, setStep3Data);
-          setCurrentStep(urlStep);
-        } else {
-          // Stale / inaccessible id — drop it from the URL and start fresh.
-          router.replace('/permits/new');
-        }
+      if (!urlPermitId) {
         setBootstrapping(false);
         return;
       }
 
-      // No ?id= — look for the user's latest open draft and pivot to it.
-      const my = await getMyPermits();
+      const result = await getPermitById(urlPermitId);
       if (cancelled) return;
-      const latestDraft = my.data.find(p => p.status === 'draft' || p.status === 'revision_requested');
-      if (latestDraft) {
-        setPermitId(latestDraft.id);
-        setPermitVersion(latestDraft.version);
-        applyPermitToFormState(latestDraft, setStep1Data, setStep2Data, setStep3Data);
-        // Resume on step 2 if building details exist, step 3 if compliance
-        // requirements exist — otherwise step 1 is the natural entry point.
-        const bd = latestDraft.buildingDetails;
-        const cr = latestDraft.complianceRequirements;
-        const hasBuilding = !!(bd && bd.numberOfFloors);
-        const hasCompliance = !!(cr && (cr.fireSafety || cr.accessibility || cr.parkingCompliance || cr.structuralSafety || cr.mepSystems || cr.energyEfficiency));
-        const resumeStep: 1 | 2 | 3 = hasCompliance ? 3 : hasBuilding ? 2 : 1;
-        setCurrentStep(resumeStep);
-        syncUrl(latestDraft.id, resumeStep);
+      if (result.data && (result.data.status === 'draft' || result.data.status === 'revision_requested')) {
+        setPermitId(result.data.id);
+        setPermitVersion(result.data.version);
+        applyPermitToFormState(result.data, setStep1Data, setStep2Data, setStep3Data);
+        setCurrentStep(urlStep);
+      } else {
+        // Stale / inaccessible / non-editable id — drop it and start fresh.
+        router.replace('/permits/new');
       }
       setBootstrapping(false);
     }

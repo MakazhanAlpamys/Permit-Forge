@@ -165,7 +165,13 @@
         "q2": "How tall can a commercial building be?",
         "q3": "What are fire safety requirements for apartments?",
         "q4": "What documents are needed for a building permit?"
-      }
+      },
+      "verified": "verified",
+      "range": "range",
+      "verifiedCount": "{{count}} verified",
+      "highConfidenceCount": "{{count}} high confidence",
+      "contentTable": "Table",
+      "contentList": "List"
     }
   },
   "profile": {
@@ -274,7 +280,28 @@
       "occupancyType": "Occupancy Type",
       "occupancyShort": "Occupancy",
       "constructionType": "Construction Type",
-      "constructionShort": "Construction"
+      "constructionShort": "Construction",
+      "occupancy": {
+        "residential": "Residential",
+        "commercial": "Commercial",
+        "office": "Office",
+        "retail": "Retail",
+        "hotel": "Hotel",
+        "hospital": "Hospital",
+        "educational": "Educational",
+        "industrial": "Industrial",
+        "mixed": "Mixed Use",
+        "assembly": "Assembly",
+        "warehouse": "Warehouse"
+      },
+      "construction": {
+        "reinforcedConcrete": "Reinforced Concrete",
+        "steelFrame": "Steel Frame",
+        "precastConcrete": "Precast Concrete",
+        "masonry": "Masonry",
+        "composite": "Composite",
+        "timber": "Timber"
+      }
     },
     "step3": {
       "title": "Compliance Requirements",
@@ -290,6 +317,7 @@
     },
     "actions": {
       "saveDraft": "Save Draft",
+      "editDraft": "Edit Draft",
       "submit": "Submit Application",
       "submitting": "Submitting...",
       "runCompliance": "Run AI Check",
@@ -318,7 +346,9 @@
       "noAttachments": "No attachments",
       "uploadAttachment": "Upload Attachment",
       "deleteConfirm": "Delete this permit? This cannot be undone.",
-      "deleteAttachmentConfirm": "Delete this attachment?"
+      "deleteAttachmentConfirm": "Delete this attachment?",
+      "far": "FAR",
+      "coverage": "Coverage"
     },
     "status": {
       "draft": "Draft",
@@ -404,7 +434,18 @@
         "role": "Role",
         "submit": "Create User",
         "submitting": "Creating..."
-      }
+      },
+      "makeAdmin": "Make admin",
+      "removeAdmin": "Remove admin",
+      "makeAdminAria": "Make {{username}} an admin",
+      "removeAdminAria": "Remove admin role from {{username}}",
+      "blockUser": "Block user",
+      "unblockUser": "Unblock user",
+      "blockAria": "Block {{username}}",
+      "unblockAria": "Unblock {{username}}",
+      "resetPasswordAria": "Reset password for {{username}}",
+      "deleteUser": "Delete user",
+      "deleteAria": "Delete {{username}}"
     },
     "permits": {
       "title": "Permits Management",
@@ -454,7 +495,11 @@
         "keywords": "Keywords (comma-separated)",
         "categories": "Categories (comma-separated)",
         "submit": "Save Document",
-        "submitting": "Saving..."
+        "submitting": "Saving...",
+        "authority": "Authority",
+        "authorityPlaceholder": "e.g., City Authority",
+        "sourceUrl": "Source URL",
+        "badgeColor": "Badge Color"
       },
       "ingestion": {
         "title": "PDF Ingestion",
@@ -465,6 +510,61 @@
         "embedding": "Generating embeddings...",
         "complete": "Ingestion complete",
         "chunksProcessed": "Chunks processed: {{count}}"
+      },
+      "systemStatus": "System Status",
+      "database": "Database",
+      "hybridSearch": "Hybrid Search",
+      "pdfBadge": "PDF",
+      "noPdf": "No PDF",
+      "keywordsCount": "{{count}} keywords",
+      "chunksProcessedShort": "{{count}} chunks processed",
+      "pageRange": "pp. {{min}}-{{max}}",
+      "clearedChunks": "Cleared {{count}} chunks",
+      "editTitle": "Edit document",
+      "editAria": "Edit {{name}}",
+      "deactivateTitle": "Deactivate document",
+      "deactivateAria": "Deactivate {{name}}",
+      "cancelIngestion": "Cancel ingestion",
+      "colors": {
+        "blue": "Blue",
+        "red": "Red",
+        "violet": "Violet",
+        "purple": "Purple",
+        "cyan": "Cyan",
+        "green": "Green",
+        "orange": "Orange",
+        "yellow": "Yellow",
+        "gray": "Gray"
+      },
+      "confirm": {
+        "deactivateTitle": "Deactivate Document",
+        "deactivateBody": "Deactivate {{name}}? This will hide it from search but preserve its data.",
+        "deleteTitle": "Delete Document",
+        "deleteBody": "Delete {{name}} and all its chunks? This cannot be undone.",
+        "restoreTitle": "Restore Document",
+        "restoreBody": "Restore {{name}}? It will become active and visible to users again.",
+        "replaceTitle": "Replace existing chunks?",
+        "replaceBody": "The uploaded PDF differs from the one that produced the current {{count}} chunks. Replace existing {{count}} chunks before re-ingesting?",
+        "replaceConfirm": "Replace and re-ingest",
+        "clearTitle": "Clear all chunks",
+        "clearBody": "Clear all chunks for {{name}}? This cannot be undone.",
+        "clearConfirm": "Clear"
+      },
+      "errors": {
+        "diagnosticFailed": "Diagnostic failed",
+        "nameRequired": "Display Name and Short Name are required",
+        "selectPdf": "Please select a PDF file",
+        "saveFailed": "Failed to save",
+        "uploadFailedHttp": "Upload failed: HTTP {{status}}",
+        "pdfUploadFailed": "PDF upload failed",
+        "rolledBackSuffix": " — the document entry was rolled back. Please try again.",
+        "metadataKeptSuffix": " — metadata was saved but the new PDF was not uploaded. The previous PDF (if any) is unchanged.",
+        "unexpected": "An unexpected error occurred",
+        "deactivateFailed": "Failed to deactivate document",
+        "deleteFailed": "Failed to delete document",
+        "restoreFailed": "Failed to restore document",
+        "clearFailed": "Failed to clear",
+        "failed": "Failed"
       }
     },
     "audit": {
@@ -475,7 +575,20 @@
       "userAgent": "User Agent",
       "timestamp": "Timestamp",
       "metadata": "Metadata",
-      "noLogs": "No audit logs found"
+      "noLogs": "No audit logs found",
+      "events": {
+        "login_success": "Login Success",
+        "login_failed": "Login Failed",
+        "logout": "Logout",
+        "user_created": "User Created",
+        "user_blocked": "User Blocked",
+        "user_unblocked": "User Unblocked",
+        "role_changed": "Role Changed",
+        "password_reset": "Password Reset",
+        "pdf_ingested": "PDF Ingested",
+        "chunks_cleared": "Chunks Cleared",
+        "session_deleted": "Session Deleted"
+      }
     }
   },
   "notifications": {

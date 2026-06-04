@@ -222,13 +222,12 @@ describe('CitationsList', () => {
     expect(screen.queryByText('30%')).not.toBeInTheDocument();
   });
 
-  it('builds the View in PDF link with the start page anchor', () => {
+  it('does not render a clickable PDF link (PDFs live in Storage, not served at /)', () => {
     render(<CitationsList citations={[citation({ documentName: 'building-code-2021', startPage: 45 })]} />);
     fireEvent.click(screen.getByText('Page 45').closest('button')!);
-    const pdfLink = screen.getByText('View in PDF').closest('a') as HTMLAnchorElement;
-    expect(pdfLink.getAttribute('href')).toContain('#page=45');
-    // Document mapping is loaded from DB at runtime; default fallback uses id + .pdf.
-    expect(pdfLink.getAttribute('href')).toContain('building-code-2021.pdf');
+    // The old "View in PDF" anchor built a /<doc>.pdf#page=N path that 404'd —
+    // it was removed. The citation card stays info-only (excerpt + page + confidence).
+    expect(screen.queryByText('View in PDF')).not.toBeInTheDocument();
   });
 
   // Defense-in-depth: confirm the table-rendering path is exercised for tabular content.

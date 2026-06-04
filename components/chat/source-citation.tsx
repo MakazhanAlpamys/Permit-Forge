@@ -17,8 +17,7 @@ import {
   AlertCircle,
   ShieldCheck,
   Table2,
-  List,
-  ExternalLink
+  List
 } from 'lucide-react';
 import type { Citation } from '@/types';
 
@@ -98,20 +97,20 @@ function getConfidenceLevel(confidence: number | undefined): {
  */
 function getContentTypeInfo(contentType: Citation['contentType']): {
   icon: React.ReactNode;
-  label: string;
+  labelKey: string;
   color: string;
 } | null {
   switch (contentType) {
     case 'table':
       return {
         icon: <Table2 className="h-2.5 w-2.5" />,
-        label: 'Table',
+        labelKey: 'dashboard.chat.contentTable',
         color: 'text-purple-600 bg-purple-500/10 border-purple-500/20',
       };
     case 'list':
       return {
         icon: <List className="h-2.5 w-2.5" />,
-        label: 'List',
+        labelKey: 'dashboard.chat.contentList',
         color: 'text-cyan-600 bg-cyan-500/10 border-cyan-500/20',
       };
     default:
@@ -208,18 +207,7 @@ function parseTableContent(text: string): string[][] {
   return rows.slice(0, 10); // Limit to 10 rows for display
 }
 
-// Document file mapping for "View in PDF" button (loaded from DB registry)
-const DOC_FILES: Record<string, string> = {};
-
 const DOC_SHORT_NAMES: Record<string, { name: string; color: string }> = {};
-
-/**
- * Get PDF URL for "View in PDF" button
- */
-function getPdfUrl(page: number, documentName?: string): string {
-  const fileName = documentName ? (DOC_FILES[documentName] || `${documentName}.pdf`) : 'document.pdf';
-  return `/${fileName}#page=${page}`;
-}
 
 // -----------------------------------------------------------------------------
 // Source Citation Component
@@ -272,7 +260,7 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
           {isPageRange && (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-blue-500/10 text-blue-600 border-blue-500/20">
               <BookOpen className="h-2.5 w-2.5 mr-0.5" />
-              range
+              {t('dashboard.chat.range')}
             </Badge>
           )}
 
@@ -280,7 +268,7 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
           {contentTypeInfo && (
             <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${contentTypeInfo.color}`}>
               {contentTypeInfo.icon}
-              <span className="ml-0.5">{contentTypeInfo.label}</span>
+              <span className="ml-0.5">{t(contentTypeInfo.labelKey)}</span>
             </Badge>
           )}
 
@@ -295,7 +283,7 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
           {citation.isVerified && (
             <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-violet-500/10 text-violet-600 border-violet-500/20 shrink-0">
               <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />
-              verified
+              {t('dashboard.chat.verified')}
             </Badge>
           )}
 
@@ -338,7 +326,7 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
           {/* Rich Excerpt - renders tables/lists with formatting */}
           <RichExcerpt excerpt={citation.excerpt} contentType={citation.contentType} />
 
-          {/* Footer with confidence, relevance and View in PDF */}
+          {/* Footer with confidence and relevance */}
           <div className="flex items-center justify-between gap-4 pt-2 border-t border-border/50">
             <div className="flex items-center gap-4 flex-1">
               {/* Confidence bar */}
@@ -368,18 +356,6 @@ function SourceCitation({ citation, index }: SourceCitationProps) {
                 </span>
               )}
             </div>
-
-            {/* View in PDF button */}
-            <a
-              href={getPdfUrl(citation.startPage ?? citation.page, citation.documentName)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors shrink-0"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <ExternalLink className="h-3 w-3" />
-              {t('dashboard.chat.viewSource')}
-            </a>
           </div>
         </div>
       )}
@@ -435,13 +411,13 @@ export function CitationsList({ citations }: CitationsListProps) {
         {verifiedCount > 0 && (
           <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-violet-500/10 text-violet-600 border-violet-500/20 ml-auto">
             <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />
-            {verifiedCount} verified
+            {t('dashboard.chat.verifiedCount', { count: verifiedCount })}
           </Badge>
         )}
         {highConfidenceCount > 0 && !verifiedCount && (
           <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-blue-500/10 text-blue-600 border-blue-500/20 ml-auto">
             <ShieldCheck className="h-2.5 w-2.5 mr-0.5" />
-            {highConfidenceCount} high confidence
+            {t('dashboard.chat.highConfidenceCount', { count: highConfidenceCount })}
           </Badge>
         )}
       </div>

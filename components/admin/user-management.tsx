@@ -332,7 +332,7 @@ export function UserManagement({
                           className={user.role === 'admin' ? 'bg-purple-500/20 text-purple-700 dark:text-purple-300 border-purple-500/30' : ''}
                         >
                           {user.role === 'admin' && <Shield className="h-3 w-3 mr-1" />}
-                          {user.role}
+                          {user.role === 'admin' ? t('admin.users.roleAdmin') : t('admin.users.roleUser')}
                         </Badge>
                       </td>
                       <td className="py-4">
@@ -367,8 +367,8 @@ export function UserManagement({
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => openRoleModal(user)}
-                                aria-label={user.role === 'admin' ? `Remove admin role from ${user.username}` : `Make ${user.username} an admin`}
-                                title={user.role === 'admin' ? 'Remove admin' : 'Make admin'}
+                                aria-label={user.role === 'admin' ? t('admin.users.removeAdminAria', { username: user.username }) : t('admin.users.makeAdminAria', { username: user.username })}
+                                title={user.role === 'admin' ? t('admin.users.removeAdmin') : t('admin.users.makeAdmin')}
                               >
                                 {user.role === 'admin' ? (
                                   <ShieldOff className="h-4 w-4 text-orange-600 dark:text-orange-400" />
@@ -380,8 +380,8 @@ export function UserManagement({
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => openBlockModal(user)}
-                                aria-label={user.blocked ? `Unblock ${user.username}` : `Block ${user.username}`}
-                                title={user.blocked ? 'Unblock user' : 'Block user'}
+                                aria-label={user.blocked ? t('admin.users.unblockAria', { username: user.username }) : t('admin.users.blockAria', { username: user.username })}
+                                title={user.blocked ? t('admin.users.unblockUser') : t('admin.users.blockUser')}
                               >
                                 {user.blocked ? (
                                   <CheckCircle className="h-4 w-4 text-violet-600 dark:text-violet-400" />
@@ -393,8 +393,8 @@ export function UserManagement({
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => openPasswordModal(user)}
-                                aria-label={`Reset password for ${user.username}`}
-                                title="Reset password"
+                                aria-label={t('admin.users.resetPasswordAria', { username: user.username })}
+                                title={t('admin.users.resetPassword')}
                               >
                                 <Key className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                               </Button>
@@ -402,8 +402,8 @@ export function UserManagement({
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => openDeleteModal(user)}
-                                aria-label={`Delete ${user.username}`}
-                                title="Delete user"
+                                aria-label={t('admin.users.deleteAria', { username: user.username })}
+                                title={t('admin.users.deleteUser')}
                               >
                                 <Trash2 className="h-4 w-4 text-red-600 dark:text-red-400" />
                               </Button>

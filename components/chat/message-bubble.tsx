@@ -71,7 +71,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
               <div className="mb-2">
                 <Badge variant="outline" className={`${compliance.badgeClassName} text-xs`}>
                   <ComplianceIcon className="h-3 w-3 mr-1" />
-                  {compliance.label}
+                  {t(message.complianceStatus === 'compliant' ? 'permits.compliance.compliant' : 'permits.compliance.non_compliant')}
                 </Badge>
               </div>
             );

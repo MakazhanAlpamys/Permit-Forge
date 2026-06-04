@@ -62,7 +62,7 @@
       "passwordLabel": "Құпиясөз",
       "passwordPlaceholder": "Құпиясөзіңізді енгізіңіз",
       "submit": "Кіру",
-      "submitting": "Кіру...",
+      "submitting": "Кіруде...",
       "forgotPassword": "Құпиясөзді ұмыттыңыз ба?",
       "noAccount": "Аккаунтыңыз жоқ па?",
       "createOne": "Жасау",
@@ -165,7 +165,13 @@
         "q2": "Коммерциялық ғимарат қаншалықты биік бола алады?",
         "q3": "Пәтерлерге арналған өрт қауіпсіздігі талаптары қандай?",
         "q4": "Құрылыс рұқсаты үшін қандай құжаттар қажет?"
-      }
+      },
+      "verified": "тексерілген",
+      "range": "аралық",
+      "verifiedCount": "{{count}} тексерілген",
+      "highConfidenceCount": "{{count}} жоғары сенімділік",
+      "contentTable": "Кесте",
+      "contentList": "Тізім"
     }
   },
   "profile": {
@@ -274,7 +280,28 @@
       "occupancyType": "Пайдалану түрі",
       "occupancyShort": "Пайдалану",
       "constructionType": "Құрылыс түрі",
-      "constructionShort": "Құрылыс"
+      "constructionShort": "Құрылыс",
+      "occupancy": {
+        "residential": "Тұрғын үй",
+        "commercial": "Коммерциялық",
+        "office": "Кеңсе",
+        "retail": "Бөлшек сауда",
+        "hotel": "Қонақ үй",
+        "hospital": "Аурухана",
+        "educational": "Білім беру",
+        "industrial": "Өнеркәсіптік",
+        "mixed": "Аралас пайдалану",
+        "assembly": "Жиналыс орны",
+        "warehouse": "Қойма"
+      },
+      "construction": {
+        "reinforcedConcrete": "Темірбетон",
+        "steelFrame": "Болат қаңқа",
+        "precastConcrete": "Жинақы темірбетон",
+        "masonry": "Тас қалау",
+        "composite": "Композит",
+        "timber": "Ағаш"
+      }
     },
     "step3": {
       "title": "Сәйкестік талаптары",
@@ -290,6 +317,7 @@
     },
     "actions": {
       "saveDraft": "Жобаны сақтау",
+      "editDraft": "Жобаны өңдеу",
       "submit": "Өтінімді жіберу",
       "submitting": "Жіберілуде...",
       "runCompliance": "AI тексеру",
@@ -318,7 +346,9 @@
       "noAttachments": "Тіркемелер жоқ",
       "uploadAttachment": "Тіркеме жүктеу",
       "deleteConfirm": "Бұл рұқсатты жоюды растайсыз ба? Кері қайтару мүмкін емес.",
-      "deleteAttachmentConfirm": "Бұл тіркемені жоясыз ба?"
+      "deleteAttachmentConfirm": "Бұл тіркемені жоясыз ба?",
+      "far": "Құрылыс коэффициенті",
+      "coverage": "Жабындылық"
     },
     "status": {
       "draft": "Жоба",
@@ -404,7 +434,18 @@
         "role": "Рөлі",
         "submit": "Пайдаланушы жасау",
         "submitting": "Жасалуда..."
-      }
+      },
+      "makeAdmin": "Әкімші ету",
+      "removeAdmin": "Әкімшіні алу",
+      "makeAdminAria": "{{username}} пайдаланушысын әкімші ету",
+      "removeAdminAria": "{{username}} пайдаланушысынан әкімші рөлін алу",
+      "blockUser": "Бұғаттау",
+      "unblockUser": "Бұғаттан шығару",
+      "blockAria": "{{username}} бұғаттау",
+      "unblockAria": "{{username}} бұғаттан шығару",
+      "resetPasswordAria": "{{username}} үшін құпиясөзді қалпына келтіру",
+      "deleteUser": "Пайдаланушыны жою",
+      "deleteAria": "{{username}} жою"
     },
     "permits": {
       "title": "Рұқсаттарды басқару",
@@ -454,7 +495,11 @@
         "keywords": "Кілт сөздер (үтірмен)",
         "categories": "Санаттар (үтірмен)",
         "submit": "Құжатты сақтау",
-        "submitting": "Сақталуда..."
+        "submitting": "Сақталуда...",
+        "authority": "Орган",
+        "authorityPlaceholder": "мыс., Қалалық орган",
+        "sourceUrl": "Дереккөз сілтемесі",
+        "badgeColor": "Белгі түсі"
       },
       "ingestion": {
         "title": "PDF жүктеу",
@@ -465,6 +510,61 @@
         "embedding": "Эмбеддингтер жасалуда...",
         "complete": "Жүктеу аяқталды",
         "chunksProcessed": "Өңделген бөліктер: {{count}}"
+      },
+      "systemStatus": "Жүйе күйі",
+      "database": "Дерекқор",
+      "hybridSearch": "Гибридті іздеу",
+      "pdfBadge": "PDF",
+      "noPdf": "PDF жоқ",
+      "keywordsCount": "{{count}} кілт сөз",
+      "chunksProcessedShort": "Өңделген чанктар: {{count}}",
+      "pageRange": "бет. {{min}}-{{max}}",
+      "clearedChunks": "{{count}} чанк тазартылды",
+      "editTitle": "Құжатты өңдеу",
+      "editAria": "{{name}} өңдеу",
+      "deactivateTitle": "Құжатты белсенсіздендіру",
+      "deactivateAria": "{{name}} белсенсіздендіру",
+      "cancelIngestion": "Жүктеуді тоқтату",
+      "colors": {
+        "blue": "Көк",
+        "red": "Қызыл",
+        "violet": "Күлгін",
+        "purple": "Қызылкүрең",
+        "cyan": "Көгілдір",
+        "green": "Жасыл",
+        "orange": "Қызғылт сары",
+        "yellow": "Сары",
+        "gray": "Сұр"
+      },
+      "confirm": {
+        "deactivateTitle": "Құжатты белсенсіздендіру",
+        "deactivateBody": "{{name}} белсенсіздендіру керек пе? Ол іздеуден жасырылады, бірақ деректері сақталады.",
+        "deleteTitle": "Құжатты жою",
+        "deleteBody": "{{name}} және оның барлық чанктарын жою керек пе? Бұл әрекетті қайтару мүмкін емес.",
+        "restoreTitle": "Құжатты қалпына келтіру",
+        "restoreBody": "{{name}} қалпына келтіру керек пе? Ол қайтадан белсенді және пайдаланушыларға көрінетін болады.",
+        "replaceTitle": "Бар чанктарды ауыстыру керек пе?",
+        "replaceBody": "Жүктелген PDF ағымдағы {{count}} чанкты жасаған PDF-тен өзгеше. Қайта жүктемес бұрын бар {{count}} чанкты ауыстыру керек пе?",
+        "replaceConfirm": "Ауыстырып, қайта жүктеу",
+        "clearTitle": "Барлық чанктарды тазарту",
+        "clearBody": "{{name}} үшін барлық чанктарды тазарту керек пе? Бұл әрекетті қайтару мүмкін емес.",
+        "clearConfirm": "Тазарту"
+      },
+      "errors": {
+        "diagnosticFailed": "Диагностика сәтсіз аяқталды",
+        "nameRequired": "Көрсетілетін атау мен қысқа атау қажет",
+        "selectPdf": "PDF файлын таңдаңыз",
+        "saveFailed": "Сақтау сәтсіз аяқталды",
+        "uploadFailedHttp": "Жүктеу сәтсіз аяқталды: HTTP {{status}}",
+        "pdfUploadFailed": "PDF жүктеу сәтсіз аяқталды",
+        "rolledBackSuffix": " — құжат жазбасы қайтарылды. Қайталап көріңіз.",
+        "metadataKeptSuffix": " — метадеректер сақталды, бірақ жаңа PDF жүктелмеді. Алдыңғы PDF (бар болса) өзгеріссіз қалды.",
+        "unexpected": "Күтпеген қате орын алды",
+        "deactivateFailed": "Құжатты белсенсіздендіру сәтсіз аяқталды",
+        "deleteFailed": "Құжатты жою сәтсіз аяқталды",
+        "restoreFailed": "Құжатты қалпына келтіру сәтсіз аяқталды",
+        "clearFailed": "Тазарту сәтсіз аяқталды",
+        "failed": "Қате"
       }
     },
     "audit": {
@@ -475,7 +575,20 @@
       "userAgent": "User Agent",
       "timestamp": "Уақыт",
       "metadata": "Метадеректер",
-      "noLogs": "Журнал жазбалары табылмады"
+      "noLogs": "Журнал жазбалары табылмады",
+      "events": {
+        "login_success": "Сәтті кіру",
+        "login_failed": "Сәтсіз кіру",
+        "logout": "Шығу",
+        "user_created": "Пайдаланушы құрылды",
+        "user_blocked": "Пайдаланушы бұғатталды",
+        "user_unblocked": "Пайдаланушы бұғаттан шығарылды",
+        "role_changed": "Рөл өзгертілді",
+        "password_reset": "Құпиясөз қалпына келтірілді",
+        "pdf_ingested": "PDF жүктелді",
+        "chunks_cleared": "Чанктар тазартылды",
+        "session_deleted": "Сессия жойылды"
+      }
     }
   },
   "notifications": {

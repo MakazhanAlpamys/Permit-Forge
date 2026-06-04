@@ -20,7 +20,7 @@ import { getPermitAttachments } from '@/actions/permit-attachments';
 import { readCsrfCookie } from '@/lib/csrf-client';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { ArrowLeft, Send, ShieldCheck, Trash2, Loader2, Download, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Send, ShieldCheck, Trash2, Loader2, Download, RotateCcw, Pencil } from 'lucide-react';
 import type { PermitApplication, PermitStatusHistoryEntry, PermitAttachment } from '@/types';
 import { isOperationAllowed, type PermitStatus } from '@/lib/permit-state-machine';
 
@@ -248,6 +248,15 @@ export default function PermitDetailPage() {
             {/* Draft actions */}
             {isDraft && (
               <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push(`/permits/new?id=${permitId}`)}
+                  disabled={actionLoading !== null}
+                >
+                  <Pencil className="h-4 w-4 mr-2" />
+                  {t('permits.actions.editDraft')}
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"

@@ -316,6 +316,11 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
               complianceStatus: 'pending',
             };
             setMessages((prev) => [...prev, errorMessage]);
+            // Same atomic transition as the success path: drop the skeleton in
+            // the commit that shows the error so it can't shimmer underneath it.
+            setStreamingContent('');
+            setIsStreaming(false);
+            setIsVerifyingSources(false);
             console.error('Chat error:', error);
           },
           onAbort: () => {
@@ -340,7 +345,14 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+      // Clear the streaming buffer AND leave streaming mode in the same commit
+      // that appends the final bubble. Otherwise there's a frame where
+      // streamingContent==='' but isStreaming===true, which the skeleton
+      // condition above would render as a loading shimmer *below* the finished
+      // answer while the DB save below is in flight.
       setStreamingContent('');
+      setIsStreaming(false);
+      setIsVerifyingSources(false);
 
       // B17: persist the assistant reply best-effort. If the save throws or
       // returns success:false, the on-screen transcript is ahead of the DB.
@@ -447,7 +459,12 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
             {messages.map(message => (
               <MessageBubble key={message.id} message={message} />
             ))}
-            {isLoading && <LoadingMessage />}
+            {/* Keep the skeleton up from send until the first streamed token.
+                isLoading covers the user-message save; isStreaming-without-content
+                covers the RAG pipeline + time-to-first-token gap. Without the
+                second clause the assistant bubble vanished for a beat (skeleton
+                gone, no text yet) before streaming began. */}
+            {(isLoading || isStreaming) && !streamingContent && <LoadingMessage />}
             {isStreaming && streamingContent && (
               <StreamingMessage content={streamingContent} isComplete={false} />
             )}

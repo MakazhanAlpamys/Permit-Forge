@@ -183,12 +183,12 @@ export function DocumentForm({
             )}
           </div>
           <div>
-            <label htmlFor="doc-authority" className="text-xs font-medium text-muted-foreground">Authority</label>
+            <label htmlFor="doc-authority" className="text-xs font-medium text-muted-foreground">{t('admin.documents.form.authority')}</label>
             <Input
               id="doc-authority"
               value={formData.authority}
               onChange={(e) => set('authority', e.target.value)}
-              placeholder="e.g., City Authority"
+              placeholder={t('admin.documents.form.authorityPlaceholder')}
             />
           </div>
         </div>
@@ -218,7 +218,7 @@ export function DocumentForm({
         </div>
 
         <div>
-          <label htmlFor="doc-source-url" className="text-xs font-medium text-muted-foreground">Source URL</label>
+          <label htmlFor="doc-source-url" className="text-xs font-medium text-muted-foreground">{t('admin.documents.form.sourceUrl')}</label>
           <Input
             id="doc-source-url"
             value={formData.sourceUrl}
@@ -250,8 +250,8 @@ export function DocumentForm({
         </div>
 
         <div>
-          <span className="text-xs font-medium text-muted-foreground">Badge Color</span>
-          <div role="radiogroup" aria-label="Badge color" className="flex flex-wrap gap-2 mt-1">
+          <span className="text-xs font-medium text-muted-foreground">{t('admin.documents.form.badgeColor')}</span>
+          <div role="radiogroup" aria-label={t('admin.documents.form.badgeColor')} className="flex flex-wrap gap-2 mt-1">
             {DOCUMENT_BADGE_COLORS.map((color) => {
               const selected = formData.badgeColor === color.value;
               return (
@@ -267,7 +267,7 @@ export function DocumentForm({
                       : ''
                   }`}
                 >
-                  {color.label}
+                  {t(`admin.documents.colors.${color.label.toLowerCase()}`)}
                 </button>
               );
             })}

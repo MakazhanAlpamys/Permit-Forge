@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTranslation } from 'react-i18next';
+import { OCCUPANCY_TYPES, CONSTRUCTION_TYPES } from '@/lib/constants';
 import type { BuildingDetails } from '@/types';
 
 interface PermitFormStep2Props {
@@ -127,17 +128,9 @@ export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error
                 disabled={loading}
               >
                 <option value="">{t('permits.step2.occupancyType')}</option>
-                <option value="Residential">Residential</option>
-                <option value="Commercial">Commercial</option>
-                <option value="Office">Office</option>
-                <option value="Retail">Retail</option>
-                <option value="Hotel">Hotel</option>
-                <option value="Hospital">Hospital</option>
-                <option value="Educational">Educational</option>
-                <option value="Industrial">Industrial</option>
-                <option value="Mixed">Mixed Use</option>
-                <option value="Assembly">Assembly</option>
-                <option value="Warehouse">Warehouse</option>
+                {OCCUPANCY_TYPES.map((o) => (
+                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+                ))}
               </select>
             </div>
 
@@ -151,12 +144,9 @@ export function PermitFormStep2({ data, onChange, onNext, onBack, loading, error
                 disabled={loading}
               >
                 <option value="">{t('permits.step2.constructionType')}</option>
-                <option value="Reinforced Concrete">Reinforced Concrete</option>
-                <option value="Steel Frame">Steel Frame</option>
-                <option value="Precast Concrete">Precast Concrete</option>
-                <option value="Masonry">Masonry</option>
-                <option value="Composite">Composite</option>
-                <option value="Timber">Timber</option>
+                {CONSTRUCTION_TYPES.map((o) => (
+                  <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+                ))}
               </select>
             </div>
           </div>

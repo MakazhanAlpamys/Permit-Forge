@@ -56,20 +56,6 @@ const actionColors: Record<string, string> = {
   session_deleted: 'text-gray-600 dark:text-gray-300 bg-gray-500/10',
 };
 
-const actionLabels: Record<string, string> = {
-  login_success: 'Login Success',
-  login_failed: 'Login Failed',
-  logout: 'Logout',
-  user_created: 'User Created',
-  user_blocked: 'User Blocked',
-  user_unblocked: 'User Unblocked',
-  role_changed: 'Role Changed',
-  password_reset: 'Password Reset',
-  pdf_ingested: 'PDF Ingested',
-  chunks_cleared: 'Chunks Cleared',
-  session_deleted: 'Session Deleted',
-};
-
 export function AuditLogs({ logs, loading }: AuditLogsProps) {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage || i18n.language || 'en';
@@ -125,7 +111,7 @@ export function AuditLogs({ logs, loading }: AuditLogsProps) {
               {logs.map((log) => {
                 const IconComponent = actionIcons[log.action] || History;
                 const colorClass = actionColors[log.action] || 'text-gray-500 bg-gray-500/10';
-                const label = actionLabels[log.action] || log.action;
+                const label = t(`admin.audit.events.${log.action}`, { defaultValue: log.action });
                 
                 return (
                   <div 
