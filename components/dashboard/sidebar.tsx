@@ -10,6 +10,7 @@ import { usePathname } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { formatTimeAgo } from '@/lib/relative-time';
 import { Separator } from '@/components/ui/separator';
 import { getChatSessions, deleteChatSession, searchChatHistory } from '@/actions/chat-history';
 import { readCsrfCookie } from '@/lib/csrf-client';
@@ -42,42 +43,6 @@ interface SidebarProps {
   sessionsVersion?: number;
   onNewChat?: () => void;
   onSelectSession?: (sessionId: string) => void;
-}
-
-// Helper function to format time ago
-function formatTimeAgo(date: Date, locale: string): string {
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-
-  // Map our internal locale codes (e.g. "kk") to BCP 47 tags
-  // accepted by Intl.RelativeTimeFormat. "kk" is fine as-is.
-  const tag = locale === 'kk' ? 'kk-KZ' : locale;
-  let rtf: Intl.RelativeTimeFormat;
-  try {
-    rtf = new Intl.RelativeTimeFormat(tag, { numeric: 'auto' });
-  } catch {
-    rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-  }
-
-  if (days > 7) {
-    try {
-      return date.toLocaleDateString(tag);
-    } catch {
-      return date.toLocaleDateString();
-    }
-  } else if (days > 0) {
-    return rtf.format(-days, 'day');
-  } else if (hours > 0) {
-    return rtf.format(-hours, 'hour');
-  } else if (minutes > 0) {
-    return rtf.format(-minutes, 'minute');
-  } else {
-    return rtf.format(-Math.max(seconds, 1), 'second');
-  }
 }
 
 export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0, onNewChat, onSelectSession }: SidebarProps) {
@@ -338,7 +303,7 @@ export function Sidebar({ isOpen, onClose, currentSessionId, sessionsVersion = 0
                     {sessions.map((session) => {
                       const isActive = currentSessionId === session.id;
                       const date = new Date(session.updated_at);
-                      const timeAgo = formatTimeAgo(date, i18n.resolvedLanguage || i18n.language || 'en');
+                      const timeAgo = formatTimeAgo(date, t, i18n.resolvedLanguage || i18n.language || 'en');
                       
                       return (
                         <div

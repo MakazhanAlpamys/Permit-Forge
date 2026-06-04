@@ -8,34 +8,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Trophy, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { formatTimeAgo } from '@/lib/relative-time';
 import type { TopActiveUser } from '@/actions/analytics';
 
 interface TopUsersTableProps {
   data: TopActiveUser[];
   loading?: boolean;
-}
-
-function formatTimeAgo(dateStr: string, locale: string): string {
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const tag = locale === 'kk' ? 'kk-KZ' : locale;
-
-  let rtf: Intl.RelativeTimeFormat;
-  try {
-    rtf = new Intl.RelativeTimeFormat(tag, { numeric: 'auto' });
-  } catch {
-    rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-  }
-  if (diff < 60000) return rtf.format(0, 'second');
-  if (diff < 3600000) return rtf.format(-Math.floor(diff / 60000), 'minute');
-  if (diff < 86400000) return rtf.format(-Math.floor(diff / 3600000), 'hour');
-  if (diff < 604800000) return rtf.format(-Math.floor(diff / 86400000), 'day');
-  try {
-    return date.toLocaleDateString(tag, { month: 'short', day: 'numeric' });
-  } catch {
-    return date.toLocaleDateString();
-  }
 }
 
 const RANK_COLORS = ['text-yellow-500', 'text-gray-400', 'text-amber-600'];
@@ -85,7 +63,7 @@ export function TopUsersTable({ data, loading }: TopUsersTableProps) {
                     {user.messageCount} {t('admin.overview.messages')}
                   </Badge>
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    {formatTimeAgo(user.lastActive, locale)}
+                    {formatTimeAgo(user.lastActive, t, locale)}
                   </span>
                 </div>
               </div>

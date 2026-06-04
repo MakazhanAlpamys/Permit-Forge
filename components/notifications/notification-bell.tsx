@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Bell, Check } from 'lucide-react';
 import { getNotifications, markNotificationRead, markAllNotificationsRead } from '@/actions/notifications';
 import { readCsrfCookie } from '@/lib/csrf-client';
+import { formatTimeAgo } from '@/lib/relative-time';
 import type { Notification, NotificationType } from '@/types';
 
 const NOTIFICATION_COLORS: Record<NotificationType, string> = {
@@ -16,24 +17,6 @@ const NOTIFICATION_COLORS: Record<NotificationType, string> = {
   permit_rejected: 'text-red-400',
   permit_revision_requested: 'text-orange-400',
 };
-
-function timeAgo(dateString: string, locale: string): string {
-  const seconds = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
-  const tag = locale === 'kk' ? 'kk-KZ' : locale;
-  let rtf: Intl.RelativeTimeFormat;
-  try {
-    rtf = new Intl.RelativeTimeFormat(tag, { numeric: 'auto' });
-  } catch {
-    rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-  }
-  if (seconds < 60) return rtf.format(-Math.max(seconds, 1), 'second');
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return rtf.format(-minutes, 'minute');
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return rtf.format(-hours, 'hour');
-  const days = Math.floor(hours / 24);
-  return rtf.format(-days, 'day');
-}
 
 export function NotificationBell() {
   const { t, i18n } = useTranslation();
@@ -215,7 +198,7 @@ export function NotificationBell() {
                           {notification.body}
                         </p>
                         <p className="text-xs text-muted-foreground/70 mt-1">
-                          {timeAgo(notification.createdAt, i18n.resolvedLanguage || i18n.language || 'en')}
+                          {formatTimeAgo(notification.createdAt, t, i18n.resolvedLanguage || i18n.language || 'en')}
                         </p>
                       </div>
                       {!notification.read && (

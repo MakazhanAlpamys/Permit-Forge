@@ -64,15 +64,9 @@ export function AuditLogs({ logs, loading }: AuditLogsProps) {
     const date = new Date(dateStr);
     const now = new Date();
     const diff = now.getTime() - date.getTime();
-    let rtf: Intl.RelativeTimeFormat;
-    try {
-      rtf = new Intl.RelativeTimeFormat(tag, { numeric: 'auto' });
-    } catch {
-      rtf = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
-    }
     if (diff < 60000) return t('common.today');
-    if (diff < 3600000) return rtf.format(-Math.floor(diff / 60000), 'minute');
-    if (diff < 86400000) return rtf.format(-Math.floor(diff / 3600000), 'hour');
+    if (diff < 3600000) return t('common.time.minutesAgo', { count: Math.floor(diff / 60000) });
+    if (diff < 86400000) return t('common.time.hoursAgo', { count: Math.floor(diff / 3600000) });
     try {
       return date.toLocaleDateString(tag, {
         month: 'short',

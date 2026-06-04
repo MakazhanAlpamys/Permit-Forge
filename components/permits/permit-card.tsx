@@ -15,7 +15,7 @@ interface PermitCardProps {
   onDelete?: (id: string) => void;
 }
 
-function formatDate(dateStr: string, locale: string, t: (k: string) => string): string {
+function formatDate(dateStr: string, locale: string, t: (k: string, opts?: { count?: number }) => string): string {
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -27,13 +27,10 @@ function formatDate(dateStr: string, locale: string, t: (k: string) => string): 
   if (diffDays === 1) return t('common.yesterday');
   if (diffDays < 7) {
     // EN: keep terse "Xd ago" form matching the pre-i18n format that existing
-    // tests assert on. RU/KK use Intl.RelativeTimeFormat for proper grammar.
+    // tests assert on. RU/KK use our own i18n dictionary (common.time.*) which
+    // is ICU-independent — some runtimes lack Kazakh RelativeTimeFormat data.
     if (locale === 'en') return `${diffDays}d ago`;
-    try {
-      return new Intl.RelativeTimeFormat(tag, { numeric: 'auto' }).format(-diffDays, 'day');
-    } catch {
-      return `${diffDays}d ago`;
-    }
+    return t('common.time.daysAgo', { count: diffDays });
   }
   try {
     return date.toLocaleDateString(tag, { month: 'short', day: 'numeric', year: 'numeric' });

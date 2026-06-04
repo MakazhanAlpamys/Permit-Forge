@@ -51,7 +51,13 @@
     "warning": "Предупреждение",
     "info": "Информация",
     "comingSoon": "Скоро",
-    "notAvailable": "Н/Д"
+    "notAvailable": "Н/Д",
+    "time": {
+      "justNow": "только что",
+      "minutesAgo": "{{count}} мин назад",
+      "hoursAgo": "{{count}} ч назад",
+      "daysAgo": "{{count}} дн назад"
+    }
   },
   "auth": {
     "login": {

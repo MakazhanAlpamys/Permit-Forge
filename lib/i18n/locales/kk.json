@@ -51,7 +51,13 @@
     "warning": "Ескерту",
     "info": "Ақпарат",
     "comingSoon": "Жақын арада",
-    "notAvailable": "Қ/Е"
+    "notAvailable": "Қ/Е",
+    "time": {
+      "justNow": "жаңа ғана",
+      "minutesAgo": "{{count}} мин бұрын",
+      "hoursAgo": "{{count}} сағ бұрын",
+      "daysAgo": "{{count}} күн бұрын"
+    }
   },
   "auth": {
     "login": {
