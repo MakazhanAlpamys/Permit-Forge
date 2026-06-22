@@ -64,11 +64,18 @@ export async function classifyTopic(userQuery: string): Promise<TopicClassificat
     }
   }
 
-  // Greetings - on-topic but don't use RAG
+  // Greetings - on-topic but don't use RAG (EN / RU / KK)
   const greetingPatterns = [
-    /^(hi|hello|hey|greetings|good\s*(morning|afternoon|evening))[\s!?.]*$/i,
+    // English
+    /^(hi+|hello+|hey+|hiya|yo|sup|greetings|good\s*(morning|afternoon|evening|day))[\s!?.,]*$/i,
     /^(what can you|how can you|what do you|can you help)/i,
     /^help[\s!?.]*$/i,
+    // Russian
+    /^(привет(ик|ствую|ики)?|здравствуй(те)?|здаров(а|о)?|здорово|хай|салют|добр(ый|ое|ой)\s*(день|утро|вечер|ночи)|доброго\s+времени\s+суток)[\s!?.,]*$/i,
+    /^(что\s+ты\s+(можешь|умеешь)|чем\s+(ты\s+)?(можешь\s+)?(мне\s+)?помочь|кто\s+ты)[\s!?.,]*$/i,
+    // Kazakh
+    /^(сәлем(етсіз)?(дер)?(\s*бе)?(\s*ме)?|ассалаумағалейкум|ассалам|салам|сәлеметсіз\s*бе|қайырлы\s*(таң|күн|кеш))[\s!?.,]*$/i,
+    /^(не(ні)?\s+(істей|жасай)\s+аласы[нң]|немен\s+көмектесе\s+аласы[нң]|сен\s+кімсің|кімсің)[\s!?.,]*$/i,
   ];
 
   for (const pattern of greetingPatterns) {
