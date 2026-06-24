@@ -33,6 +33,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 .env.local
+!.env.example
 # vercel
 .vercel
 
@@ -51,4 +52,11 @@ phase2-simplify.md
 
 # Claude Code runtime state
 .claude/
+
+# local-only diploma report drafts (Kazakh/Russian) + scratch parts — never commit
+*дипломдық*.md
+*преддипломной*.md
+*дипломный*.md
+*отчет*.md
+_part*.md
 

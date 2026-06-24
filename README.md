@@ -17,6 +17,7 @@
 [![Zod](https://img.shields.io/badge/Zod-4-3E67B1?style=flat-square&logo=zod&logoColor=white)](https://zod.dev/)
 [![Tests](https://img.shields.io/badge/Tests-1202_passing-22c55e?style=flat-square)](./test)
 [![License](https://img.shields.io/badge/License-MIT-eab308?style=flat-square)](./LICENSE)
+[![Diploma](https://img.shields.io/badge/Diploma_Project-100%2F100-22c55e?style=flat-square)](#-about)
 
 <br />
 
@@ -36,6 +37,12 @@
 2. **Permit Application System** — full lifecycle permit management with AI-powered compliance checks, multi-step forms, file attachments, admin review workflow, and PDF certificate generation.
 
 > **Who is it for?** — Architects, engineers, construction professionals, and regulatory consultants working with building codes.
+
+<br />
+
+## 🎓 About
+
+PermitForge was built as the author's graduation diploma project at **Astana IT University College** (Software Engineering, 2026). The project was defended before the state examination committee and awarded a final grade of **100/100**.
 
 <br />
 
